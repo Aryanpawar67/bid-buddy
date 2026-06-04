@@ -1,29 +1,29 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
+import { useEffect } from "react";
+import { useSession, useCurrentUser, defaultLandingFor } from "@/lib/auth";
+import { useNavigate } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/")({
-  head: () => ({
-    meta: [
-      { title: "Your App" },
-      { name: "description", content: "Replace this with a one-sentence description of your app." },
-      { property: "og:title", content: "Your App" },
-      { property: "og:description", content: "Replace this with a one-sentence description of your app." },
-    ],
-  }),
-  component: Index,
+  component: IndexRedirect,
 });
 
-// IMPORTANT: Replace this placeholder. See ./README.md for routing conventions.
-function Index() {
+function IndexRedirect() {
+  const { session, loading } = useSession();
+  const { primaryRole, loading: pLoading } = useCurrentUser();
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (loading) return;
+    if (!session) {
+      navigate({ to: "/auth", replace: true });
+      return;
+    }
+    if (!pLoading) {
+      navigate({ to: defaultLandingFor(primaryRole), replace: true });
+    }
+  }, [loading, pLoading, session, primaryRole, navigate]);
   return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{ backgroundColor: "#fcfbf8" }}
-    >
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
-      />
+    <div className="h-screen flex items-center justify-center text-muted-foreground text-sm">
+      Loading…
     </div>
   );
 }
