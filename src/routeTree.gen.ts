@@ -9,38 +9,173 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as AuthRouteImport } from './routes/auth'
+import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AppSettingsRouteImport } from './routes/_app/settings'
+import { Route as AppQueueRouteImport } from './routes/_app/queue'
+import { Route as AppHubspotRouteImport } from './routes/_app/hubspot'
+import { Route as AppDocsRouteImport } from './routes/_app/docs'
+import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
+import { Route as AppAnalyticsRouteImport } from './routes/_app/analytics'
+import { Route as AppBidsIdRouteImport } from './routes/_app/bids.$id'
+import { Route as AppBidsIdGonogoRouteImport } from './routes/_app/bids.$id.gonogo'
 
+const AuthRoute = AuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AppRoute = AppRouteImport.update({
+  id: '/_app',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppSettingsRoute = AppSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppQueueRoute = AppQueueRouteImport.update({
+  id: '/queue',
+  path: '/queue',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppHubspotRoute = AppHubspotRouteImport.update({
+  id: '/hubspot',
+  path: '/hubspot',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppDocsRoute = AppDocsRouteImport.update({
+  id: '/docs',
+  path: '/docs',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppDashboardRoute = AppDashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAnalyticsRoute = AppAnalyticsRouteImport.update({
+  id: '/analytics',
+  path: '/analytics',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppBidsIdRoute = AppBidsIdRouteImport.update({
+  id: '/bids/$id',
+  path: '/bids/$id',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppBidsIdGonogoRoute = AppBidsIdGonogoRouteImport.update({
+  id: '/gonogo',
+  path: '/gonogo',
+  getParentRoute: () => AppBidsIdRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
+  '/analytics': typeof AppAnalyticsRoute
+  '/dashboard': typeof AppDashboardRoute
+  '/docs': typeof AppDocsRoute
+  '/hubspot': typeof AppHubspotRoute
+  '/queue': typeof AppQueueRoute
+  '/settings': typeof AppSettingsRoute
+  '/bids/$id': typeof AppBidsIdRouteWithChildren
+  '/bids/$id/gonogo': typeof AppBidsIdGonogoRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
+  '/analytics': typeof AppAnalyticsRoute
+  '/dashboard': typeof AppDashboardRoute
+  '/docs': typeof AppDocsRoute
+  '/hubspot': typeof AppHubspotRoute
+  '/queue': typeof AppQueueRoute
+  '/settings': typeof AppSettingsRoute
+  '/bids/$id': typeof AppBidsIdRouteWithChildren
+  '/bids/$id/gonogo': typeof AppBidsIdGonogoRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/_app': typeof AppRouteWithChildren
+  '/auth': typeof AuthRoute
+  '/_app/analytics': typeof AppAnalyticsRoute
+  '/_app/dashboard': typeof AppDashboardRoute
+  '/_app/docs': typeof AppDocsRoute
+  '/_app/hubspot': typeof AppHubspotRoute
+  '/_app/queue': typeof AppQueueRoute
+  '/_app/settings': typeof AppSettingsRoute
+  '/_app/bids/$id': typeof AppBidsIdRouteWithChildren
+  '/_app/bids/$id/gonogo': typeof AppBidsIdGonogoRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/auth'
+    | '/analytics'
+    | '/dashboard'
+    | '/docs'
+    | '/hubspot'
+    | '/queue'
+    | '/settings'
+    | '/bids/$id'
+    | '/bids/$id/gonogo'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/auth'
+    | '/analytics'
+    | '/dashboard'
+    | '/docs'
+    | '/hubspot'
+    | '/queue'
+    | '/settings'
+    | '/bids/$id'
+    | '/bids/$id/gonogo'
+  id:
+    | '__root__'
+    | '/'
+    | '/_app'
+    | '/auth'
+    | '/_app/analytics'
+    | '/_app/dashboard'
+    | '/_app/docs'
+    | '/_app/hubspot'
+    | '/_app/queue'
+    | '/_app/settings'
+    | '/_app/bids/$id'
+    | '/_app/bids/$id/gonogo'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AppRoute: typeof AppRouteWithChildren
+  AuthRoute: typeof AuthRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_app': {
+      id: '/_app'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -48,22 +183,104 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_app/settings': {
+      id: '/_app/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AppSettingsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/queue': {
+      id: '/_app/queue'
+      path: '/queue'
+      fullPath: '/queue'
+      preLoaderRoute: typeof AppQueueRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/hubspot': {
+      id: '/_app/hubspot'
+      path: '/hubspot'
+      fullPath: '/hubspot'
+      preLoaderRoute: typeof AppHubspotRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/docs': {
+      id: '/_app/docs'
+      path: '/docs'
+      fullPath: '/docs'
+      preLoaderRoute: typeof AppDocsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/dashboard': {
+      id: '/_app/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof AppDashboardRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/analytics': {
+      id: '/_app/analytics'
+      path: '/analytics'
+      fullPath: '/analytics'
+      preLoaderRoute: typeof AppAnalyticsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/bids/$id': {
+      id: '/_app/bids/$id'
+      path: '/bids/$id'
+      fullPath: '/bids/$id'
+      preLoaderRoute: typeof AppBidsIdRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/bids/$id/gonogo': {
+      id: '/_app/bids/$id/gonogo'
+      path: '/gonogo'
+      fullPath: '/bids/$id/gonogo'
+      preLoaderRoute: typeof AppBidsIdGonogoRouteImport
+      parentRoute: typeof AppBidsIdRoute
+    }
   }
 }
 
+interface AppBidsIdRouteChildren {
+  AppBidsIdGonogoRoute: typeof AppBidsIdGonogoRoute
+}
+
+const AppBidsIdRouteChildren: AppBidsIdRouteChildren = {
+  AppBidsIdGonogoRoute: AppBidsIdGonogoRoute,
+}
+
+const AppBidsIdRouteWithChildren = AppBidsIdRoute._addFileChildren(
+  AppBidsIdRouteChildren,
+)
+
+interface AppRouteChildren {
+  AppAnalyticsRoute: typeof AppAnalyticsRoute
+  AppDashboardRoute: typeof AppDashboardRoute
+  AppDocsRoute: typeof AppDocsRoute
+  AppHubspotRoute: typeof AppHubspotRoute
+  AppQueueRoute: typeof AppQueueRoute
+  AppSettingsRoute: typeof AppSettingsRoute
+  AppBidsIdRoute: typeof AppBidsIdRouteWithChildren
+}
+
+const AppRouteChildren: AppRouteChildren = {
+  AppAnalyticsRoute: AppAnalyticsRoute,
+  AppDashboardRoute: AppDashboardRoute,
+  AppDocsRoute: AppDocsRoute,
+  AppHubspotRoute: AppHubspotRoute,
+  AppQueueRoute: AppQueueRoute,
+  AppSettingsRoute: AppSettingsRoute,
+  AppBidsIdRoute: AppBidsIdRouteWithChildren,
+}
+
+const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AppRoute: AppRouteWithChildren,
+  AuthRoute: AuthRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
