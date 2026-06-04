@@ -21,7 +21,7 @@ const NAV: { to: string; icon: typeof Trophy; label: string; roles: AppRole[] }[
   { to: "/docs", icon: FileText, label: "Documents", roles: ALL },
   { to: "/hubspot", icon: RefreshCcw, label: "HubSpot", roles: ["pre_sales", "admin"] },
   { to: "/settings", icon: Settings, label: "Settings", roles: ["admin"] },
-] as const;
+];
 
 export function Sidebar() {
   const { primaryRole, profile } = useCurrentUser();
