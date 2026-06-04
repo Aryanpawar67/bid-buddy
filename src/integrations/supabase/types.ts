@@ -14,16 +14,405 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      bid_activity_log: {
+        Row: {
+          action: string
+          bid_id: string
+          created_at: string
+          id: string
+          metadata: Json | null
+          user_id: string | null
+        }
+        Insert: {
+          action: string
+          bid_id: string
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          user_id?: string | null
+        }
+        Update: {
+          action?: string
+          bid_id?: string
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bid_activity_log_bid_id_fkey"
+            columns: ["bid_id"]
+            isOneToOne: false
+            referencedRelation: "bids"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bid_activity_log_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bid_deliverables: {
+        Row: {
+          assigned_team: Database["public"]["Enums"]["assigned_team"]
+          assigned_to: string | null
+          bid_id: string
+          created_at: string
+          due_date: string | null
+          id: string
+          label: string
+          order_index: number
+          stage: Database["public"]["Enums"]["bid_stage"]
+          status: Database["public"]["Enums"]["task_status"]
+          storage_path: string | null
+          type: Database["public"]["Enums"]["deliverable_type"]
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          assigned_team?: Database["public"]["Enums"]["assigned_team"]
+          assigned_to?: string | null
+          bid_id: string
+          created_at?: string
+          due_date?: string | null
+          id?: string
+          label: string
+          order_index?: number
+          stage: Database["public"]["Enums"]["bid_stage"]
+          status?: Database["public"]["Enums"]["task_status"]
+          storage_path?: string | null
+          type?: Database["public"]["Enums"]["deliverable_type"]
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          assigned_team?: Database["public"]["Enums"]["assigned_team"]
+          assigned_to?: string | null
+          bid_id?: string
+          created_at?: string
+          due_date?: string | null
+          id?: string
+          label?: string
+          order_index?: number
+          stage?: Database["public"]["Enums"]["bid_stage"]
+          status?: Database["public"]["Enums"]["task_status"]
+          storage_path?: string | null
+          type?: Database["public"]["Enums"]["deliverable_type"]
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bid_deliverables_assigned_to_fkey"
+            columns: ["assigned_to"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bid_deliverables_bid_id_fkey"
+            columns: ["bid_id"]
+            isOneToOne: false
+            referencedRelation: "bids"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bid_questions: {
+        Row: {
+          assigned_team: Database["public"]["Enums"]["assigned_team"]
+          assigned_to: string | null
+          bid_id: string
+          created_at: string
+          due_date: string | null
+          id: string
+          internal_notes: string | null
+          order_index: number
+          question_text: string
+          response_text: string | null
+          stage: Database["public"]["Enums"]["bid_stage"]
+          status: Database["public"]["Enums"]["task_status"]
+          updated_at: string
+        }
+        Insert: {
+          assigned_team: Database["public"]["Enums"]["assigned_team"]
+          assigned_to?: string | null
+          bid_id: string
+          created_at?: string
+          due_date?: string | null
+          id?: string
+          internal_notes?: string | null
+          order_index?: number
+          question_text: string
+          response_text?: string | null
+          stage: Database["public"]["Enums"]["bid_stage"]
+          status?: Database["public"]["Enums"]["task_status"]
+          updated_at?: string
+        }
+        Update: {
+          assigned_team?: Database["public"]["Enums"]["assigned_team"]
+          assigned_to?: string | null
+          bid_id?: string
+          created_at?: string
+          due_date?: string | null
+          id?: string
+          internal_notes?: string | null
+          order_index?: number
+          question_text?: string
+          response_text?: string | null
+          stage?: Database["public"]["Enums"]["bid_stage"]
+          status?: Database["public"]["Enums"]["task_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bid_questions_assigned_to_fkey"
+            columns: ["assigned_to"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bid_questions_bid_id_fkey"
+            columns: ["bid_id"]
+            isOneToOne: false
+            referencedRelation: "bids"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bid_stage_history: {
+        Row: {
+          bid_id: string
+          entered_at: string
+          exited_at: string | null
+          id: string
+          moved_by: string | null
+          stage: Database["public"]["Enums"]["bid_stage"]
+        }
+        Insert: {
+          bid_id: string
+          entered_at?: string
+          exited_at?: string | null
+          id?: string
+          moved_by?: string | null
+          stage: Database["public"]["Enums"]["bid_stage"]
+        }
+        Update: {
+          bid_id?: string
+          entered_at?: string
+          exited_at?: string | null
+          id?: string
+          moved_by?: string | null
+          stage?: Database["public"]["Enums"]["bid_stage"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bid_stage_history_bid_id_fkey"
+            columns: ["bid_id"]
+            isOneToOne: false
+            referencedRelation: "bids"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bid_stage_history_moved_by_fkey"
+            columns: ["moved_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bids: {
+        Row: {
+          clarification_deadline: string | null
+          client_name: string
+          created_at: string
+          created_by: string | null
+          deadline: string
+          gonogo_completed_at: string | null
+          gonogo_completed_by: string | null
+          gonogo_decision: Database["public"]["Enums"]["gonogo_decision"] | null
+          gonogo_score: number | null
+          hubspot_deal_id: string | null
+          id: string
+          orals_date: string | null
+          owner_id: string | null
+          priority: Database["public"]["Enums"]["priority_level"]
+          procurement_portal: string | null
+          stage: Database["public"]["Enums"]["bid_stage"]
+          status: Database["public"]["Enums"]["bid_status"]
+          title: string
+          type: Database["public"]["Enums"]["bid_type"]
+          updated_at: string
+          value: number
+        }
+        Insert: {
+          clarification_deadline?: string | null
+          client_name: string
+          created_at?: string
+          created_by?: string | null
+          deadline: string
+          gonogo_completed_at?: string | null
+          gonogo_completed_by?: string | null
+          gonogo_decision?:
+            | Database["public"]["Enums"]["gonogo_decision"]
+            | null
+          gonogo_score?: number | null
+          hubspot_deal_id?: string | null
+          id?: string
+          orals_date?: string | null
+          owner_id?: string | null
+          priority?: Database["public"]["Enums"]["priority_level"]
+          procurement_portal?: string | null
+          stage?: Database["public"]["Enums"]["bid_stage"]
+          status?: Database["public"]["Enums"]["bid_status"]
+          title: string
+          type: Database["public"]["Enums"]["bid_type"]
+          updated_at?: string
+          value?: number
+        }
+        Update: {
+          clarification_deadline?: string | null
+          client_name?: string
+          created_at?: string
+          created_by?: string | null
+          deadline?: string
+          gonogo_completed_at?: string | null
+          gonogo_completed_by?: string | null
+          gonogo_decision?:
+            | Database["public"]["Enums"]["gonogo_decision"]
+            | null
+          gonogo_score?: number | null
+          hubspot_deal_id?: string | null
+          id?: string
+          orals_date?: string | null
+          owner_id?: string | null
+          priority?: Database["public"]["Enums"]["priority_level"]
+          procurement_portal?: string | null
+          stage?: Database["public"]["Enums"]["bid_stage"]
+          status?: Database["public"]["Enums"]["bid_status"]
+          title?: string
+          type?: Database["public"]["Enums"]["bid_type"]
+          updated_at?: string
+          value?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bids_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bids_gonogo_completed_by_fkey"
+            columns: ["gonogo_completed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bids_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          email: string
+          full_name: string
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          email: string
+          full_name?: string
+          id: string
+          updated_at?: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          email?: string
+          full_name?: string
+          id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      current_user_role: {
+        Args: never
+        Returns: Database["public"]["Enums"]["app_role"]
+      }
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "pre_sales" | "legal" | "finance" | "admin"
+      assigned_team:
+        | "pre_sales"
+        | "legal"
+        | "finance"
+        | "product"
+        | "engineering"
+      bid_stage:
+        | "deal_qualification"
+        | "rfi"
+        | "rfp"
+        | "orals"
+        | "due_diligence"
+        | "bafo"
+        | "contract_closure"
+        | "post_closure"
+      bid_status: "active" | "submitted" | "won" | "lost" | "no_go" | "on_hold"
+      bid_type: "rfp" | "rfi" | "rfq" | "direct"
+      deliverable_type: "document" | "approval" | "review" | "action"
+      gonogo_decision: "go" | "conditional_go" | "no_go"
+      priority_level: "high" | "medium" | "low"
+      task_status: "pending" | "in_progress" | "done" | "blocked"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +539,31 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["pre_sales", "legal", "finance", "admin"],
+      assigned_team: [
+        "pre_sales",
+        "legal",
+        "finance",
+        "product",
+        "engineering",
+      ],
+      bid_stage: [
+        "deal_qualification",
+        "rfi",
+        "rfp",
+        "orals",
+        "due_diligence",
+        "bafo",
+        "contract_closure",
+        "post_closure",
+      ],
+      bid_status: ["active", "submitted", "won", "lost", "no_go", "on_hold"],
+      bid_type: ["rfp", "rfi", "rfq", "direct"],
+      deliverable_type: ["document", "approval", "review", "action"],
+      gonogo_decision: ["go", "conditional_go", "no_go"],
+      priority_level: ["high", "medium", "low"],
+      task_status: ["pending", "in_progress", "done", "blocked"],
+    },
   },
 } as const
