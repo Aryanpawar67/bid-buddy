@@ -9,15 +9,16 @@ import {
   Trophy,
   LogOut,
 } from "lucide-react";
-import { useCurrentUser } from "@/lib/auth";
+import { useCurrentUser, type AppRole } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
 import { initials } from "@/lib/bid-constants";
 
-const NAV = [
-  { to: "/dashboard", icon: Trophy, label: "Pipeline", roles: ["pre_sales", "legal", "finance", "admin"] },
-  { to: "/queue", icon: CheckSquare, label: "My queue", roles: ["pre_sales", "legal", "finance", "admin"] },
+const ALL: AppRole[] = ["pre_sales", "legal", "finance", "admin"];
+const NAV: { to: string; icon: typeof Trophy; label: string; roles: AppRole[] }[] = [
+  { to: "/dashboard", icon: Trophy, label: "Pipeline", roles: ALL },
+  { to: "/queue", icon: CheckSquare, label: "My queue", roles: ALL },
   { to: "/analytics", icon: BarChart3, label: "Analytics", roles: ["pre_sales", "admin"] },
-  { to: "/docs", icon: FileText, label: "Documents", roles: ["pre_sales", "legal", "finance", "admin"] },
+  { to: "/docs", icon: FileText, label: "Documents", roles: ALL },
   { to: "/hubspot", icon: RefreshCcw, label: "HubSpot", roles: ["pre_sales", "admin"] },
   { to: "/settings", icon: Settings, label: "Settings", roles: ["admin"] },
 ] as const;
