@@ -72,9 +72,18 @@ export function useStageItems(bidId: string | undefined, stage: StageKey | undef
 export function useUpdateBid() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, patch }: { id: string; patch: Partial<Bid> }) => {
+    mutationFn: async ({ id, patch, currentStage }: { id: string; patch: Partial<Bid>; currentStage?: string }) => {
       const { error } = await supabase.from("bids").update(patch).eq("id", id);
       if (error) throw error;
+
+      if (patch.stage && currentStage && patch.stage !== currentStage) {
+        // Belt-and-suspenders: trigger handles this too, but write client-side for resilience
+        await supabase.from("bid_stage_transitions" as never).insert({
+          bid_id: id,
+          from_stage: currentStage,
+          to_stage: patch.stage,
+        });
+      }
     },
     onSuccess: (_d, v) => {
       qc.invalidateQueries({ queryKey: ["bids"] });
@@ -126,6 +135,31 @@ export function useMyQueue(userId: string | undefined) {
         questions: q.data ?? [],
         deliverables: d.data ?? [],
       };
+    },
+  });
+}
+
+export type ActivityEntry = {
+  id: string;
+  bid_id: string;
+  action: string;
+  created_at: string;
+  metadata: Record<string, unknown> | null;
+  user_id: string | null;
+  bids: { client_name: string; title: string } | null;
+};
+
+export function useRecentActivity(limit = 4) {
+  return useQuery({
+    queryKey: ["recent-activity", limit],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("bid_activity_log")
+        .select("*, bids(client_name, title)")
+        .order("created_at", { ascending: false })
+        .limit(limit);
+      if (error) throw error;
+      return (data ?? []) as ActivityEntry[];
     },
   });
 }
