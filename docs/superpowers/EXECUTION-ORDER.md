@@ -71,39 +71,26 @@ _Route: `/docs` (placeholder exists)_
 
 | Spec | Plan | Status |
 |---|---|---|
-| [spec](specs/2026-06-05-knowledge-hub-design.md) | [plan](plans/2026-06-05-knowledge-hub.md) | ✅ Ready to execute |
+| [spec](specs/2026-06-05-knowledge-hub-design.md) | [plan](plans/2026-06-05-knowledge-hub.md) | ✅ Implemented |
 
 **Key decisions:** Both global templates + bid-scoped (bid_id nullable) · PDF/DOCX/XLSX · In-app preview for all (PDF via iframe, DOCX/XLSX via server-generated HTML) · Replace with confirmation dialog · pgvector embeddings (voyage-3, 1024-dim) · @mention copies slug to clipboard · 25 MB limit · Grid view + preview modal
 
 **New tables:** `bid_documents`, `bid_document_chunks` · **Storage:** bucket `bid-documents` (private, signed URLs) · **Env var needed:** `VOYAGE_API_KEY`
 
-**Pending:** Apply `20260605140000_knowledge_hub.sql` migration in Supabase SQL Editor before executing the plan.
+**Pending:** Apply `20260605140000_knowledge_hub.sql` migration in Supabase SQL Editor + add `VOYAGE_API_KEY` to `.env.local`.
 
 ---
 
 ### 2.4 — Reports & Analytics
 _Route: `/analytics` (placeholder exists)_
 
-**Stub:** [`plans/stubs/reports-analytics.md`](plans/stubs/reports-analytics.md)
+| Spec | Plan | Status |
+|---|---|---|
+| — | — | ✅ Implemented |
 
-**To make the plan, answer these in a brainstorm session:**
-- [ ] Which charts are required for v1? (Win Rate Trend, Stage Distribution, Won vs Lost, Monthly Intake, Cycle Time, Team Performance — pick priority)
-- [ ] Date range filter? (last 30d / 90d / 12m toggle)
-- [ ] Export to CSV or PDF in v1?
-- [ ] Per-user vs team-wide view?
-- [ ] Backfill `closed_at` on existing bids, or start tracking fresh?
-- [ ] Stage transition log: trigger from `useUpdateBid` mutation client-side, or Postgres trigger?
+**Key decisions:** Win Rate Trend + Stage Distribution + Won vs Lost + Monthly Intake charts · Last 30d/90d/12m toggle · No export in v1 · Team-wide view · `closed_at` added to bids · `bid_stage_transitions` table via Postgres trigger
 
-**New schema needed:**
-```sql
--- Add to bids:
-closed_at timestamptz
-
--- New table:
-bid_stage_transitions (id, bid_id, from_stage, to_stage, transitioned_at, transitioned_by)
-```
-
-**Blocked by:** Nothing — but richer data if Notifications (2.1) is already writing activity log entries.
+**Pending:** Apply `supabase/migrations/20260605150000_analytics.sql` in Supabase SQL Editor.
 
 ---
 
@@ -127,7 +114,7 @@ ai_sessions (id, bid_id, user_id, messages jsonb, created_at)
 **New server function:** TanStack Start server function to proxy Anthropic API calls (keeps API key server-side).
 **Env var needed:** `ANTHROPIC_API_KEY`
 
-**Blocked by:** Nothing — Knowledge Hub (2.3) ✅ is ready. Documents will be AI-indexed with voyage-3 embeddings and `@mention` slugs ready for the AI chat to consume.
+**Blocked by:** Nothing — Knowledge Hub (2.3) ✅ is complete. Documents are AI-indexed and `@mention` copies are ready for the AI chat to consume.
 
 ---
 
