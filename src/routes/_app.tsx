@@ -3,6 +3,12 @@ import { useEffect } from "react";
 import { Sidebar } from "@/components/app/Sidebar";
 import { TopBar } from "@/components/app/TopBar";
 import { useSession } from "@/lib/auth";
+import { useDeadlineNotifier } from "@/lib/notification-queries";
+
+function DeadlineNotifier() {
+  useDeadlineNotifier();
+  return null;
+}
 
 export const Route = createFileRoute("/_app")({
   component: AppLayout,
@@ -25,6 +31,7 @@ function AppLayout() {
 
   return (
     <div className="h-screen w-screen flex bg-background overflow-hidden">
+      <DeadlineNotifier />
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0">
         <TopBar />

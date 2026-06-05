@@ -51,12 +51,14 @@ function AuthPage() {
     <div className="min-h-screen bg-background flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <div className="inline-flex size-11 rounded-xl bg-primary items-center justify-center mb-3">
-            <span className="text-primary-foreground font-semibold">BT</span>
-          </div>
-          <h1 className="text-[20px] font-medium">BidTrack</h1>
+          <img
+            src="/imocha-logo.png"
+            alt="iMocha"
+            className="h-8 w-auto mx-auto mb-4"
+          />
+          <h1 className="text-[20px] font-medium">Bid Pursuit</h1>
           <p className="text-[12px] text-muted-foreground mt-1">
-            iMocha bid management workspace
+            iMocha Pursuit Compass
           </p>
         </div>
         <form onSubmit={submit} className="bg-card hairline border rounded-xl p-5 space-y-3">

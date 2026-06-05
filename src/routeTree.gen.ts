@@ -14,10 +14,14 @@ import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as AppQueueRouteImport } from './routes/_app/queue'
+import { Route as AppPipelineRouteImport } from './routes/_app/pipeline'
+import { Route as AppNotificationsRouteImport } from './routes/_app/notifications'
 import { Route as AppHubspotRouteImport } from './routes/_app/hubspot'
 import { Route as AppDocsRouteImport } from './routes/_app/docs'
 import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
+import { Route as AppCalendarRouteImport } from './routes/_app/calendar'
 import { Route as AppAnalyticsRouteImport } from './routes/_app/analytics'
+import { Route as AppAiRouteImport } from './routes/_app/ai'
 import { Route as AppBidsIdRouteImport } from './routes/_app/bids.$id'
 import { Route as AppBidsIdGonogoRouteImport } from './routes/_app/bids.$id.gonogo'
 
@@ -45,6 +49,16 @@ const AppQueueRoute = AppQueueRouteImport.update({
   path: '/queue',
   getParentRoute: () => AppRoute,
 } as any)
+const AppPipelineRoute = AppPipelineRouteImport.update({
+  id: '/pipeline',
+  path: '/pipeline',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppNotificationsRoute = AppNotificationsRouteImport.update({
+  id: '/notifications',
+  path: '/notifications',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppHubspotRoute = AppHubspotRouteImport.update({
   id: '/hubspot',
   path: '/hubspot',
@@ -60,9 +74,19 @@ const AppDashboardRoute = AppDashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => AppRoute,
 } as any)
+const AppCalendarRoute = AppCalendarRouteImport.update({
+  id: '/calendar',
+  path: '/calendar',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppAnalyticsRoute = AppAnalyticsRouteImport.update({
   id: '/analytics',
   path: '/analytics',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAiRoute = AppAiRouteImport.update({
+  id: '/ai',
+  path: '/ai',
   getParentRoute: () => AppRoute,
 } as any)
 const AppBidsIdRoute = AppBidsIdRouteImport.update({
@@ -79,10 +103,14 @@ const AppBidsIdGonogoRoute = AppBidsIdGonogoRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/ai': typeof AppAiRoute
   '/analytics': typeof AppAnalyticsRoute
+  '/calendar': typeof AppCalendarRoute
   '/dashboard': typeof AppDashboardRoute
   '/docs': typeof AppDocsRoute
   '/hubspot': typeof AppHubspotRoute
+  '/notifications': typeof AppNotificationsRoute
+  '/pipeline': typeof AppPipelineRoute
   '/queue': typeof AppQueueRoute
   '/settings': typeof AppSettingsRoute
   '/bids/$id': typeof AppBidsIdRouteWithChildren
@@ -91,10 +119,14 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/ai': typeof AppAiRoute
   '/analytics': typeof AppAnalyticsRoute
+  '/calendar': typeof AppCalendarRoute
   '/dashboard': typeof AppDashboardRoute
   '/docs': typeof AppDocsRoute
   '/hubspot': typeof AppHubspotRoute
+  '/notifications': typeof AppNotificationsRoute
+  '/pipeline': typeof AppPipelineRoute
   '/queue': typeof AppQueueRoute
   '/settings': typeof AppSettingsRoute
   '/bids/$id': typeof AppBidsIdRouteWithChildren
@@ -105,10 +137,14 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_app': typeof AppRouteWithChildren
   '/auth': typeof AuthRoute
+  '/_app/ai': typeof AppAiRoute
   '/_app/analytics': typeof AppAnalyticsRoute
+  '/_app/calendar': typeof AppCalendarRoute
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/docs': typeof AppDocsRoute
   '/_app/hubspot': typeof AppHubspotRoute
+  '/_app/notifications': typeof AppNotificationsRoute
+  '/_app/pipeline': typeof AppPipelineRoute
   '/_app/queue': typeof AppQueueRoute
   '/_app/settings': typeof AppSettingsRoute
   '/_app/bids/$id': typeof AppBidsIdRouteWithChildren
@@ -119,10 +155,14 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/auth'
+    | '/ai'
     | '/analytics'
+    | '/calendar'
     | '/dashboard'
     | '/docs'
     | '/hubspot'
+    | '/notifications'
+    | '/pipeline'
     | '/queue'
     | '/settings'
     | '/bids/$id'
@@ -131,10 +171,14 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/auth'
+    | '/ai'
     | '/analytics'
+    | '/calendar'
     | '/dashboard'
     | '/docs'
     | '/hubspot'
+    | '/notifications'
+    | '/pipeline'
     | '/queue'
     | '/settings'
     | '/bids/$id'
@@ -144,10 +188,14 @@ export interface FileRouteTypes {
     | '/'
     | '/_app'
     | '/auth'
+    | '/_app/ai'
     | '/_app/analytics'
+    | '/_app/calendar'
     | '/_app/dashboard'
     | '/_app/docs'
     | '/_app/hubspot'
+    | '/_app/notifications'
+    | '/_app/pipeline'
     | '/_app/queue'
     | '/_app/settings'
     | '/_app/bids/$id'
@@ -197,6 +245,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppQueueRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/pipeline': {
+      id: '/_app/pipeline'
+      path: '/pipeline'
+      fullPath: '/pipeline'
+      preLoaderRoute: typeof AppPipelineRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/notifications': {
+      id: '/_app/notifications'
+      path: '/notifications'
+      fullPath: '/notifications'
+      preLoaderRoute: typeof AppNotificationsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/hubspot': {
       id: '/_app/hubspot'
       path: '/hubspot'
@@ -218,11 +280,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppDashboardRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/calendar': {
+      id: '/_app/calendar'
+      path: '/calendar'
+      fullPath: '/calendar'
+      preLoaderRoute: typeof AppCalendarRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/analytics': {
       id: '/_app/analytics'
       path: '/analytics'
       fullPath: '/analytics'
       preLoaderRoute: typeof AppAnalyticsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/ai': {
+      id: '/_app/ai'
+      path: '/ai'
+      fullPath: '/ai'
+      preLoaderRoute: typeof AppAiRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/bids/$id': {
@@ -255,20 +331,28 @@ const AppBidsIdRouteWithChildren = AppBidsIdRoute._addFileChildren(
 )
 
 interface AppRouteChildren {
+  AppAiRoute: typeof AppAiRoute
   AppAnalyticsRoute: typeof AppAnalyticsRoute
+  AppCalendarRoute: typeof AppCalendarRoute
   AppDashboardRoute: typeof AppDashboardRoute
   AppDocsRoute: typeof AppDocsRoute
   AppHubspotRoute: typeof AppHubspotRoute
+  AppNotificationsRoute: typeof AppNotificationsRoute
+  AppPipelineRoute: typeof AppPipelineRoute
   AppQueueRoute: typeof AppQueueRoute
   AppSettingsRoute: typeof AppSettingsRoute
   AppBidsIdRoute: typeof AppBidsIdRouteWithChildren
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppAiRoute: AppAiRoute,
   AppAnalyticsRoute: AppAnalyticsRoute,
+  AppCalendarRoute: AppCalendarRoute,
   AppDashboardRoute: AppDashboardRoute,
   AppDocsRoute: AppDocsRoute,
   AppHubspotRoute: AppHubspotRoute,
+  AppNotificationsRoute: AppNotificationsRoute,
+  AppPipelineRoute: AppPipelineRoute,
   AppQueueRoute: AppQueueRoute,
   AppSettingsRoute: AppSettingsRoute,
   AppBidsIdRoute: AppBidsIdRouteWithChildren,
@@ -284,3 +368,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

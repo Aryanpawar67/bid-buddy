@@ -175,3 +175,52 @@
   border-width: 0.5px;
   border-color: var(--color-border);
 }
+
+/* ─── react-big-calendar overrides ──────────────────────────────────────── */
+.rbc-wrapper .rbc-calendar {
+  font-family: inherit;
+}
+.rbc-wrapper .rbc-time-view {
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.rbc-wrapper .rbc-header {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 0;
+  border-color: var(--border);
+  color: var(--muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.rbc-wrapper .rbc-timeslot-group,
+.rbc-wrapper .rbc-time-content,
+.rbc-wrapper .rbc-time-header,
+.rbc-wrapper .rbc-time-header-content,
+.rbc-wrapper .rbc-day-slot .rbc-time-slot,
+.rbc-wrapper .rbc-allday-cell {
+  border-color: var(--border);
+}
+.rbc-wrapper .rbc-label {
+  font-size: 10px;
+  color: var(--muted-foreground);
+  padding: 0 8px;
+}
+.rbc-wrapper .rbc-today {
+  background-color: oklch(0.43 0.27 280 / 0.04);
+}
+.rbc-wrapper .rbc-current-time-indicator {
+  background-color: var(--primary);
+  height: 1.5px;
+}
+.rbc-wrapper .rbc-time-slot {
+  min-height: 24px;
+}
+.rbc-wrapper .rbc-event:focus {
+  outline: none;
+}
+.rbc-wrapper .rbc-show-more {
+  font-size: 10px;
+  color: var(--primary);
+}

@@ -1,55 +1,60 @@
-import { Link, useRouterState } from "@tanstack/react-router";
-import { Bell, Search, Plus } from "lucide-react";
+import { useRouterState } from "@tanstack/react-router";
+import { Search, Plus, Clock, User, Info, MessageSquare } from "lucide-react";
 import { useState } from "react";
 import { IntakeModal } from "@/components/bids/IntakeModal";
 import { useCurrentUser } from "@/lib/auth";
 
-function useCrumbs(): { label: string; to?: string }[] {
+type PageMeta = { title: string; subtitle: string };
+
+const PAGE_META: Record<string, PageMeta> = {
+  dashboard:     { title: "Dashboard",            subtitle: "Overview of all your pursuits and tasks" },
+  pipeline:      { title: "Pursuits",             subtitle: "All active bids across pipeline stages" },
+  queue:         { title: "My Queue",             subtitle: "Your assigned questions and deliverables" },
+  analytics:     { title: "Reports & Analytics",  subtitle: "Pipeline metrics and win rate trends" },
+  docs:          { title: "Knowledge Hub",         subtitle: "Bid documents and templates" },
+  ai:            { title: "AI Command Center",     subtitle: "AI-powered pursuit assistance" },
+  calendar:      { title: "Calendar",             subtitle: "Deadlines and key dates" },
+  notifications: { title: "Notifications",        subtitle: "Activity and alerts" },
+  settings:      { title: "Settings",             subtitle: "Workspace configuration" },
+  bids:          { title: "Bid Detail",           subtitle: "Stage workspace and deliverables" },
+};
+
+function usePageMeta(): PageMeta {
   const path = useRouterState({ select: (s) => s.location.pathname });
-  const segments = path.split("/").filter(Boolean);
-  const map: Record<string, string> = {
-    dashboard: "Pipeline",
-    queue: "My queue",
-    analytics: "Analytics",
-    docs: "Documents",
-    hubspot: "HubSpot sync",
-    settings: "Settings",
-    bids: "Pipeline",
-    gonogo: "Go / No-Go",
-  };
-  const crumbs: { label: string; to?: string }[] = [{ label: "BidTrack", to: "/dashboard" }];
-  if (segments[0]) crumbs.push({ label: map[segments[0]] ?? segments[0] });
-  return crumbs;
+  const seg = path.split("/").filter(Boolean)[0] ?? "dashboard";
+  return PAGE_META[seg] ?? { title: seg, subtitle: "" };
 }
 
 export function TopBar() {
-  const crumbs = useCrumbs();
+  const { title, subtitle } = usePageMeta();
   const [open, setOpen] = useState(false);
   const { isPreSales } = useCurrentUser();
+
   return (
-    <header className="h-11 shrink-0 bg-card hairline border-b flex items-center px-4 gap-3">
-      <div className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
-        {crumbs.map((c, i) => (
-          <span key={i} className="flex items-center gap-1.5">
-            {i > 0 && <span className="text-border-strong">/</span>}
-            {c.to ? (
-              <Link to={c.to} className="hover:text-foreground">
-                {c.label}
-              </Link>
-            ) : (
-              <span className="text-foreground font-medium">{c.label}</span>
-            )}
-          </span>
-        ))}
+    <header className="h-[52px] min-h-[52px] shrink-0 bg-card border-b hairline border-border-strong flex items-center px-5 gap-3">
+      <div className="shrink-0">
+        <div className="text-[16px] font-semibold leading-tight">{title}</div>
+        {subtitle && (
+          <div className="text-[11px] text-muted-foreground leading-tight mt-px">
+            {subtitle}
+          </div>
+        )}
       </div>
+
+      <div className="ml-5 flex-1 max-w-[360px] h-[34px] bg-background border hairline border-border-strong rounded-[8px] flex items-center px-2.5 gap-1.5 text-muted-foreground text-[12px]">
+        <Search className="size-3.5 shrink-0" strokeWidth={1.75} />
+        <span>Search pursuits, clients, tasks…</span>
+      </div>
+
       <div className="flex-1" />
-      <button className="size-8 rounded-md hover:bg-muted flex items-center justify-center text-muted-foreground">
-        <Search className="size-4" strokeWidth={1.75} />
-      </button>
-      <button className="size-8 rounded-md hover:bg-muted flex items-center justify-center text-muted-foreground relative">
-        <Bell className="size-4" strokeWidth={1.75} />
-        <span className="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-accent" />
-      </button>
+
+      <div className="flex items-center gap-1.5">
+        <IconBtn icon={Clock} title="Recent activity" />
+        <IconBtn icon={User} title="Profile" badge={12} />
+        <IconBtn icon={Info} title="Help" />
+        <IconBtn icon={MessageSquare} title="Messages" badge={3} />
+      </div>
+
       {isPreSales && (
         <button
           onClick={() => setOpen(true)}
@@ -58,7 +63,32 @@ export function TopBar() {
           <Plus className="size-3.5" /> New bid
         </button>
       )}
+
       <IntakeModal open={open} onOpenChange={setOpen} />
     </header>
+  );
+}
+
+function IconBtn({
+  icon: Icon,
+  title,
+  badge,
+}: {
+  icon: React.ElementType;
+  title: string;
+  badge?: number;
+}) {
+  return (
+    <button
+      title={title}
+      className="size-[34px] rounded-[8px] border hairline border-border-strong bg-card flex items-center justify-center text-muted-foreground hover:bg-background relative"
+    >
+      <Icon className="size-4" strokeWidth={1.5} />
+      {badge !== undefined && (
+        <span className="absolute top-[5px] right-[5px] min-w-[14px] h-[14px] bg-accent text-white text-[8px] font-bold rounded-full flex items-center justify-center px-[3px] border border-white">
+          {badge}
+        </span>
+      )}
+    </button>
   );
 }

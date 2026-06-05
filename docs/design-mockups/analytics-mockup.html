@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Reports & Analytics — Layout Variations</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif; background: #f0eef8; color: #1a1528; }
+
+  /* ── Nav ── */
+  .top-nav {
+    position: sticky; top: 0; z-index: 100;
+    background: #1a1528; color: white;
+    display: flex; align-items: center; gap: 0; height: 44px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+  .top-nav .logo { padding: 0 20px; font-size: 13px; font-weight: 700; color: #a78bfa; letter-spacing: 0.02em; }
+  .top-nav .sep { width: 1px; height: 20px; background: rgba(255,255,255,0.12); }
+  .tab-btn {
+    padding: 0 20px; height: 44px; border: none; background: none;
+    color: rgba(255,255,255,0.45); font-size: 12px; font-weight: 500;
+    cursor: pointer; transition: all 0.15s; border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+  }
+  .tab-btn.active { color: #fff; border-bottom-color: #7c5af0; }
+  .tab-btn:hover:not(.active) { color: rgba(255,255,255,0.75); }
+
+  /* ── Section headers ── */
+  .variation-header {
+    padding: 28px 32px 0;
+    display: flex; align-items: baseline; gap: 12px;
+  }
+  .variation-header h2 { font-size: 15px; font-weight: 700; color: #1a1528; }
+  .variation-header p { font-size: 11px; color: #7c5af0; font-weight: 500; }
+  .variation-desc { padding: 6px 32px 16px; font-size: 11px; color: #6b6785; line-height: 1.5; }
+
+  /* ── Page chrome ── */
+  .page-frame {
+    margin: 0 32px 40px;
+    background: #f8f7fc;
+    border-radius: 12px;
+    border: 1px solid #e2dff0;
+    overflow: hidden;
+    box-shadow: 0 2px 12px rgba(73,26,235,0.06);
+  }
+  .page-topbar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 16px; height: 44px;
+    background: #fff; border-bottom: 0.5px solid #e2dff0;
+  }
+  .page-title { font-size: 13px; font-weight: 600; flex: 1; }
+  .chip-group { display: flex; gap: 4px; }
+  .chip {
+    height: 26px; padding: 0 10px; border-radius: 100px;
+    border: 0.5px solid #ddd; font-size: 10px; font-weight: 500;
+    background: #fff; cursor: pointer; color: #6b6785;
+  }
+  .chip.active { background: #491AEB; color: #fff; border-color: #491AEB; }
+  .date-picker-btn {
+    height: 26px; padding: 0 10px; border-radius: 6px;
+    border: 0.5px solid #ddd; font-size: 10px; font-weight: 500;
+    background: #fff; cursor: pointer; color: #6b6785;
+    display: flex; align-items: center; gap: 5px;
+  }
+  .date-picker-btn svg { opacity: 0.5; }
+  .admin-badge {
+    height: 20px; padding: 0 8px; border-radius: 4px;
+    background: #ede9fd; color: #491AEB; font-size: 9px; font-weight: 700;
+    display: flex; align-items: center; letter-spacing: 0.05em; text-transform: uppercase;
+  }
+
+  /* ── Cards ── */
+  .card {
+    background: #fff; border: 0.5px solid #e2dff0; border-radius: 10px; overflow: hidden;
+  }
+  .card-header {
+    padding: 10px 12px 8px;
+    border-bottom: 0.5px solid #f0eef8;
+    display: flex; align-items: flex-start; justify-content: space-between;
+  }
+  .card-title { font-size: 12px; font-weight: 600; }
+  .card-sub { font-size: 10px; color: #a09db8; margin-top: 1px; }
+  .card-body { padding: 10px 12px 12px; }
+
+  /* ── KPI strip ── */
+  .kpi-strip { display: grid; gap: 10px; padding: 12px; }
+  .kpi-card {
+    background: #fff; border: 0.5px solid #e2dff0; border-radius: 10px;
+    padding: 10px 12px; display: flex; align-items: center; gap: 10px;
+  }
+  .kpi-icon {
+    width: 34px; height: 34px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; flex-shrink: 0;
+  }
+  .kpi-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; color: #a09db8; }
+  .kpi-value { font-size: 22px; font-weight: 700; line-height: 1.1; }
+  .kpi-delta { font-size: 10px; color: #a09db8; margin-top: 1px; }
+  .kpi-delta.up { color: #27C084; }
+  .kpi-delta.down { color: #EF4444; }
+
+  /* ── Grids ── */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 0 12px 12px; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; padding: 0 12px 12px; }
+  .grid-1 { padding: 0 12px 12px; }
+  .span-2 { grid-column: span 2; }
+  .span-3 { grid-column: span 3; }
+
+  /* ── Chart placeholders ── */
+  .chart-area { width: 100%; }
+
+  /* ── Tabs inside page ── */
+  .inner-tabs {
+    display: flex; gap: 0; border-bottom: 0.5px solid #e2dff0;
+    padding: 0 12px; background: #fff;
+  }
+  .inner-tab {
+    height: 36px; padding: 0 14px; border: none; background: none;
+    font-size: 11px; font-weight: 500; color: #a09db8; cursor: pointer;
+    border-bottom: 2px solid transparent; margin-bottom: -0.5px;
+  }
+  .inner-tab.active { color: #491AEB; border-bottom-color: #491AEB; }
+
+  /* ── Team table ── */
+  .team-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  .team-table th {
+    padding: 6px 10px; text-align: left; font-size: 9px;
+    text-transform: uppercase; letter-spacing: 0.06em; color: #a09db8;
+    border-bottom: 0.5px solid #f0eef8; font-weight: 500;
+  }
+  .team-table td { padding: 7px 10px; border-bottom: 0.5px solid #f0eef8; }
+  .team-table tr:last-child td { border-bottom: none; }
+  .avatar {
+    width: 22px; height: 22px; border-radius: 50%; background: #491AEB;
+    color: white; font-size: 8px; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .win-bar-wrap { background: #f0eef8; border-radius: 100px; height: 5px; width: 80px; }
+  .win-bar { background: #491AEB; border-radius: 100px; height: 5px; }
+
+  /* ── Divider ── */
+  hr.section-divider { border: none; border-top: 1px solid #e2dff0; margin: 8px 32px; }
+
+  /* Tabs system */
+  .variation { display: none; }
+  .variation.visible { display: block; }
+</style>
+</head>
+<body>
+
+<div class="top-nav">
+  <div class="logo">Bid Compass</div>
+  <div class="sep"></div>
+  <button class="tab-btn active" onclick="showVariation('a', this)">Variation A — Grid</button>
+  <button class="tab-btn" onclick="showVariation('b', this)">Variation B — Focused</button>
+  <button class="tab-btn" onclick="showVariation('c', this)">Variation C — Tabbed</button>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ VARIATION A ══ -->
+<div class="variation visible" id="var-a">
+  <div class="variation-header">
+    <h2>Variation A — Dashboard Grid</h2>
+    <p>Recommended</p>
+  </div>
+  <div class="variation-desc">
+    KPI strip at top. All 7 charts in a responsive grid below (2-col for most, 3-col for smaller charts). Date filter in topbar. Team Performance is full-width at the bottom, admin-gated.
+  </div>
+
+  <div class="page-frame">
+    <!-- Topbar -->
+    <div class="page-topbar">
+      <div class="page-title">Reports & Analytics</div>
+      <div class="chip-group">
+        <div class="chip">30d</div>
+        <div class="chip active">90d</div>
+        <div class="chip">12m</div>
+      </div>
+      <div class="date-picker-btn">
+        <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="2" width="10" height="9" rx="1.5"/><path d="M4 1v2M8 1v2M1 5h10"/></svg>
+        Jun 1 – Jun 5
+      </div>
+    </div>
+
+    <!-- KPI strip -->
+    <div class="kpi-strip" style="grid-template-columns: repeat(5, 1fr);">
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background:#ede9fd;">📊</div>
+        <div>
+          <div class="kpi-label">Active Bids</div>
+          <div class="kpi-value">24</div>
+          <div class="kpi-delta up">↑ 3 this month</div>
+        </div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background:#fff0e8;">💰</div>
+        <div>
+          <div class="kpi-label">Pipeline Value</div>
+          <div class="kpi-value">$18.4M</div>
+          <div class="kpi-delta up">↑ $2.1M</div>
+        </div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background:#edfaf4;">🏆</div>
+        <div>
+          <div class="kpi-label">Win Rate</div>
+          <div class="kpi-value">37%</div>
+          <div class="kpi-delta up">↑ 4% vs prev</div>
+        </div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background:#fff1f1;">⏱</div>
+        <div>
+          <div class="kpi-label">Avg Cycle Time</div>
+          <div class="kpi-value">42d</div>
+          <div class="kpi-delta down">↑ 3d slower</div>
+        </div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background:#fffbeb;">📋</div>
+        <div>
+          <div class="kpi-label">Closed (Period)</div>
+          <div class="kpi-value">11</div>
+          <div class="kpi-delta">7 won · 4 lost</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Row 1: Win Rate + Stage Distribution -->
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Win Rate Trend</div>
+            <div class="card-sub">Monthly win % over period</div>
+          </div>
+        </div>
+        <div class="card-body">
+          <svg viewBox="0 0 380 130" class="chart-area">
+            <line x1="32" y1="10" x2="32" y2="105" stroke="#f0eef8" stroke-width="0.5"/>
+            <line x1="32" y1="105" x2="370" y2="105" stroke="#f0eef8" stroke-width="0.5"/>
+            <!-- Grid lines -->
+            <line x1="32" y1="105" x2="370" y2="105" stroke="#e8e6f0" stroke-width="0.5"/>
+            <line x1="32" y1="80"  x2="370" y2="80"  stroke="#e8e6f0" stroke-width="0.5"/>
+            <line x1="32" y1="55"  x2="370" y2="55"  stroke="#e8e6f0" stroke-width="0.5"/>
+            <line x1="32" y1="30"  x2="370" y2="30"  stroke="#e8e6f0" stroke-width="0.5"/>
+            <!-- Y labels -->
+            <text x="28" y="108" fill="#a09db8" font-size="8" text-anchor="end">0%</text>
+            <text x="28" y="83"  fill="#a09db8" font-size="8" text-anchor="end">25%</text>
+            <text x="28" y="58"  fill="#a09db8" font-size="8" text-anchor="end">50%</text>
+            <text x="28" y="33"  fill="#a09db8" font-size="8" text-anchor="end">75%</text>
+            <!-- X labels -->
+            <text x="66"  y="118" fill="#a09db8" font-size="8" text-anchor="middle">Jan</text>
+            <text x="122" y="118" fill="#a09db8" font-size="8" text-anchor="middle">Feb</text>
+            <text x="178" y="118" fill="#a09db8" font-size="8" text-anchor="middle">Mar</text>
+            <text x="234" y="118" fill="#a09db8" font-size="8" text-anchor="middle">Apr</text>
+            <text x="290" y="118" fill="#a09db8" font-size="8" text-anchor="middle">May</text>
+            <text x="346" y="118" fill="#a09db8" font-size="8" text-anchor="middle">Jun</text>
+            <!-- Area fill -->
+            <defs>
+              <linearGradient id="wg" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#491AEB" stop-opacity="0.15"/>
+                <stop offset="100%" stop-color="#491AEB" stop-opacity="0.01"/>
+              </linearGradient>
+            </defs>
+            <path d="M66,82 L122,68 L178,88 L234,60 L290,50 L346,38 L346,105 L66,105 Z" fill="url(#wg)"/>
+            <polyline points="66,82 122,68 178,88 234,60 290,50 346,38" fill="none" stroke="#491AEB" stroke-width="2" stroke-linejoin="round"/>
+            <circle cx="66"  cy="82" r="3" fill="#491AEB"/>
+            <circle cx="122" cy="68" r="3" fill="#491AEB"/>
+            <circle cx="178" cy="88" r="3" fill="#491AEB"/>
+            <circle cx="234" cy="60" r="3" fill="#491AEB"/>
+            <circle cx="290" cy="50" r="3" fill="#491AEB"/>
+            <circle cx="346" cy="38" r="5" fill="#491AEB"/>
+            <rect x="320" y="24" width="36" height="14" rx="4" fill="#491AEB"/>
+            <text x="338" y="34" fill="white" font-size="8.5" font-weight="700" text-anchor="middle">37%</text>
+          </svg>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Stage Distribution</div>
+            <div class="card-sub">Active bids by pipeline stage</div>
+          </div>
+        </div>
+        <div class="card-body" style="display:flex;align-items:center;gap:16px;">
+          <svg viewBox="0 0 130 130" width="130" height="130" style="flex-shrink:0;">
+            <!-- Donut segments -->
+            <circle cx="65" cy="65" r="50" fill="none" stroke="#f0eef8" stroke-width="20"/>
+            <!-- Segments using stroke-dasharray trick -->
+            <circle cx="65" cy="65" r="50" fill="none" stroke="#491AEB" stroke-width="20"
+              stroke-dasharray="69.5 244.7" stroke-dashoffset="0" transform="rotate(-90 65 65)"/>
+            <circle cx="65" cy="65" r="50" fill="none" stroke="#7c5af0" stroke-width="20"
+              stroke-dasharray="56.6 257.6" stroke-dashoffset="-69.5" transform="rotate(-90 65 65)"/>
+            <circle cx="65" cy="65" r="50" fill="none" stroke="#FD5B0E" stroke-width="20"
+              stroke-dasharray="44" stroke-dashoffset="-126.1" transform="rotate(-90 65 65)"/>
+            <circle cx="65" cy="65" r="50" fill="none" stroke="#F59E0B" stroke-width="20"
+              stroke-dasharray="37.7 276.5" stroke-dashoffset="-170.1" transform="rotate(-90 65 65)"/>
+            <circle cx="65" cy="65" r="50" fill="none" stroke="#27C084" stroke-width="20"
+              stroke-dasharray="25.1 289.1" stroke-dashoffset="-207.8" transform="rotate(-90 65 65)"/>
+            <circle cx="65" cy="65" r="50" fill="none" stroke="#0891b2" stroke-width="20"
+              stroke-dasharray="12.6 301.6" stroke-dashoffset="-232.9" transform="rotate(-90 65 65)"/>
+            <!-- Center text -->
+            <text x="65" y="60" text-anchor="middle" font-size="18" font-weight="700" fill="#1a1528">24</text>
+            <text x="65" y="73" text-anchor="middle" font-size="8" fill="#a09db8">active</text>
+          </svg>
+          <div style="flex:1;font-size:10px;display:flex;flex-direction:column;gap:5px;">
+            <div style="display:flex;align-items:center;gap:6px;"><div style="width:8px;height:8px;border-radius:2px;background:#491AEB;flex-shrink:0;"></div><span style="flex:1;color:#6b6785;">Deal Qual.</span><span style="font-weight:600;">9</span><span style="color:#a09db8;margin-left:3px;">38%</span></div>
+            <div style="display:flex;align-items:center;gap:6px;"><div style="width:8px;height:8px;border-radius:2px;background:#7c5af0;flex-shrink:0;"></div><span style="flex:1;color:#6b6785;">RFI</span><span style="font-weight:600;">7</span><span style="color:#a09db8;margin-left:3px;">29%</span></div>
+            <div style="display:flex;align-items:center;gap:6px;"><div style="width:8px;height:8px;border-radius:2px;background:#FD5B0E;flex-shrink:0;"></div><span style="flex:1;color:#6b6785;">RFP</span><span style="font-weight:600;">4</span><span style="color:#a09db8;margin-left:3px;">17%</span></div>
+            <div style="display:flex;align-items:center;gap:6px;"><div style="width:8px;height:8px;border-radius:2px;background:#F59E0B;flex-shrink:0;"></div><span style="flex:1;color:#6b6785;">Orals</span><span style="font-weight:600;">2</span><span style="color:#a09db8;margin-left:3px;">8%</span></div>
+            <div style="display:flex;align-items:center;gap:6px;"><div style="width:8px;height:8px;border-radius:2px;background:#27C084;flex-shrink:0;"></div><span style="flex:1;color:#6b6785;">Due Dil.</span><span style="font-weight:600;">1</span><span style="color:#a09db8;margin-left:3px;">4%</span></div>
+            <div style="display:flex;align-items:center;gap:6px;"><div style="width:8px;height:8px;border-radius:2px;background:#0891b2;flex-shrink:0;"></div><span style="flex:1;color:#6b6785;">BAFO+</span><span style="font-weight:600;">1</span><span style="color:#a09db8;margin-left:3px;">4%</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Row 2: Pipeline Value by Stage + Cycle Time -->
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Pipeline Value by Stage</div>
+            <div class="card-sub">Total value of active bids per stage</div>
+          </div>
+        </div>
+        <div class="card-body">
+          <svg viewBox="0 0 380 140" class="chart-area">
+            <!-- Grid -->
+            <line x1="60" y1="10" x2="60" y2="115" stroke="#e8e6f0" stroke-width="0.5"/>
+            <line x1="60" y1="115" x2="375" y2="115" stroke="#e8e6f0" stroke-width="0.5"/>
+            <line x1="60" y1="90"  x2="375" y2="90"  stroke="#e8e6f0" stroke-width="0.5" stroke-dasharray="3,3"/>
+            <line x1="60" y1="65"  x2="375" y2="65"  stroke="#e8e6f0" stroke-width="0.5" stroke-dasharray="3,3"/>
+            <line x1="60" y1="40"  x2="375" y2="40"  stroke="#e8e6f0" stroke-width="0.5" stroke-dasharray="3,3"/>
+            <!-- Y labels -->
+            <text x="56" y="118" fill="#a09db8" font-size="8" text-anchor="end">$0</text>
+            <text x="56" y="93"  fill="#a09db8" font-size="8" text-anchor="end">$2M</text>
+            <text x="56" y="68"  fill="#a09db8" font-size="8" text-anchor="end">$5M</text>
+            <text x="56" y="43"  fill="#a09db8" font-size="8" text-anchor="end">$8M</text>
+            <!-- Bars -->
+            <rect x="68"  y="42" width="28" height="73" rx="3" fill="#491AEB"/>
+            <rect x="112" y="58" width="28" height="57" rx="3" fill="#7c5af0"/>
+            <rect x="156" y="72" width="28" height="43" rx="3" fill="#FD5B0E"/>
+            <rect x="200" y="85" width="28" height="30" rx="3" fill="#F59E0B"/>
+            <rect x="244" y="93" width="28" height="22" rx="3" fill="#27C084"/>
+            <rect x="288" y="97" width="28" height="18" rx="3" fill="#0891b2"/>
+            <rect x="332" y="100" width="28" height="15" rx="3" fill="#A09DB8"/>
+            <!-- X labels -->
+            <text x="82"  y="128" fill="#a09db8" font-size="7.5" text-anchor="middle">D.Qual</text>
+            <text x="126" y="128" fill="#a09db8" font-size="7.5" text-anchor="middle">RFI</text>
+            <text x="170" y="128" fill="#a09db8" font-size="7.5" text-anchor="middle">RFP</text>
+            <text x="214" y="128" fill="#a09db8" font-size="7.5" text-anchor="middle">Orals</text>
+            <text x="258" y="128" fill="#a09db8" font-size="7.5" text-anchor="middle">Due Dil.</text>
+            <text x="302" y="128" fill="#a09db8" font-size="7.5" text-anchor="middle">BAFO</text>
+            <text x="346" y="128" fill="#a09db8" font-size="7.5" text-anchor="middle">Closure</text>
+            <!-- Value labels -->
+            <text x="82"  y="40" fill="#491AEB" font-size="7.5" font-weight="700" text-anchor="middle">$7.2M</text>
+            <text x="126" y="56" fill="#7c5af0" font-size="7.5" font-weight="700" text-anchor="middle">$5.1M</text>
+            <text x="170" y="70" fill="#FD5B0E" font-size="7.5" font-weight="700" text-anchor="middle">$3.4M</text>
+            <text x="214" y="83" fill="#F59E0B" font-size="7.5" font-weight="700" text-anchor="middle">$1.8M</text>
+            <text x="258" y="91" fill="#27C084" font-size="7.5" font-weight="700" text-anchor="middle">$0.9M</text>
+          </svg>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Cycle Time by Stage</div>
+            <div class="card-sub">Avg. days a bid spends in each stage</div>
+          </div>
+        </div>
+        <div class="card-body">
+          <svg viewBox="0 0 380 140" class="chart-area">
+            <!-- Horizontal bar chart -->
+            <!-- Stage labels -->
+            <text x="70" y="22"  fill="#6b6785" font-size="9" text-anchor="end">Deal Qual.</text>
+            <text x="70" y="42"  fill="#6b6785" font-size="9" text-anchor="end">RFI</text>
+            <text x="70" y="62"  fill="#6b6785" font-size="9" text-anchor="end">RFP</text>
+            <text x="70" y="82"  fill="#6b6785" font-size="9" text-anchor="end">Orals</text>
+            <text x="70" y="102" fill="#6b6785" font-size="9" text-anchor="end">Due Dil.</text>
+            <text x="70" y="122" fill="#6b6785" font-size="9" text-anchor="end">BAFO</text>
+            <!-- Background bars -->
+            <rect x="74" y="12"  width="285" height="12" rx="3" fill="#f0eef8"/>
+            <rect x="74" y="32"  width="285" height="12" rx="3" fill="#f0eef8"/>
+            <rect x="74" y="52"  width="285" height="12" rx="3" fill="#f0eef8"/>
+            <rect x="74" y="72"  width="285" height="12" rx="3" fill="#f0eef8"/>
+            <rect x="74" y="92"  width="285" height="12" rx="3" fill="#f0eef8"/>
+            <rect x="74" y="112" width="285" height="12" rx="3" fill="#f0eef8"/>
+            <!-- Foreground bars -->
+            <rect x="74" y="12"  width="180" height="12" rx="3" fill="#491AEB"/>
+            <rect x="74" y="32"  width="220" height="12" rx="3" fill="#7c5af0"/>
+            <rect x="74" y="52"  width="255" height="12" rx="3" fill="#FD5B0E"/>
+            <rect x="74" y="72"  width="130" height="12" rx="3" fill="#F59E0B"/>
+            <rect x="74" y="92"  width="160" height="12" rx="3" fill="#27C084"/>
+            <rect x="74" y="112" width="95"  height="12" rx="3" fill="#0891b2"/>
+            <!-- Value labels -->
+            <text x="260" y="22"  fill="#491AEB" font-size="8.5" font-weight="700">18d</text>
+            <text x="300" y="42"  fill="#7c5af0" font-size="8.5" font-weight="700">22d</text>
+            <text x="335" y="62"  fill="#FD5B0E" font-size="8.5" font-weight="700">26d avg</text>
+            <text x="210" y="82"  fill="#F59E0B" font-size="8.5" font-weight="700">13d</text>
+            <text x="240" y="102" fill="#27C084" font-size="8.5" font-weight="700">16d</text>
+            <text x="175" y="122" fill="#0891b2" font-size="8.5" font-weight="700">9d</text>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- Row 3: Won vs Lost + Monthly Intake -->
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Won vs Lost Value</div>
+            <div class="card-sub">Monthly closed deal value</div>
+          </div>
+        </div>
+        <div class="card-body">
+          <svg viewBox="0 0 380 130" class="chart-area">
+            <line x1="40" y1="105" x2="375" y2="105" stroke="#e8e6f0" stroke-width="0.5"/>
+            <line x1="40" y1="80"  x2="375" y2="80"  stroke="#e8e6f0" stroke-width="0.5" stroke-dasharray="3,3"/>
+            <line x1="40" y1="55"  x2="375" y2="55"  stroke="#e8e6f0" stroke-width="0.5" stroke-dasharray="3,3"/>
+            <line x1="40" y1="30"  x2="375" y2="30"  stroke="#e8e6f0" stroke-width="0.5" stroke-dasharray="3,3"/>
+            <text x="36" y="108" fill="#a09db8" font-size="8" text-anchor="end">$0</text>
+            <text x="36" y="83"  fill="#a09db8" font-size="8" text-anchor="end">$1M</text>
+            <text x="36" y="58"  fill="#a09db8" font-size="8" text-anchor="end">$3M</text>
+            <text x="36" y="33"  fill="#a09db8" font-size="8" text-anchor="end">$5M</text>
+            <!-- Grouped bars per month -->
+            <!-- Jan -->
+            <rect x="52"  y="60" width="16" height="45" rx="2" fill="#491AEB"/>
+            <rect x="70"  y="80" width="16" height="25" rx="2" fill="#EF4444" opacity="0.7"/>
+            <!-- Feb -->
+            <rect x="104" y="45" width="16" height="60" rx="2" fill="#491AEB"/>
+            <rect x="122" y="70" width="16" height="35" rx="2" fill="#EF4444" opacity="0.7"/>
+            <!-- Mar -->
+            <rect x="156" y="55" width="16" height="50" rx="2" fill="#491AEB"/>
+            <rect x="174" y="85" width="16" height="20" rx="2" fill="#EF4444" opacity="0.7"/>
+            <!-- Apr -->
+            <rect x="208" y="35" width="16" height="70" rx="2" fill="#491AEB"/>
+            <rect x="226" y="75" width="16" height="30" rx="2" fill="#EF4444" opacity="0.7"/>
+            <!-- May -->
+            <rect x="260" y="40" width="16" height="65" rx="2" fill="#491AEB"/>
+            <rect x="278" y="82" width="16" height="23" rx="2" fill="#EF4444" opacity="0.7"/>
+            <!-- Jun -->
+            <rect x="312" y="50" width="16" height="55" rx="2" fill="#491AEB"/>
+            <rect x="330" y="78" width="16" height="27" rx="2" fill="#EF4444" opacity="0.7"/>
+            <!-- X labels -->
+            <text x="70"  y="118" fill="#a09db8" font-size="8" text-anchor="middle">Jan</text>
+            <text x="122" y="118" fill="#a09db8" font-size="8" text-anchor="middle">Feb</text>
+            <text x="174" y="118" fill="#a09db8" font-size="8" text-anchor="middle">Mar</text>
+            <text x="226" y="118" fill="#a09db8" font-size="8" text-anchor="middle">Apr</text>
+            <text x="278" y="118" fill="#a09db8" font-size="8" text-anchor="middle">May</text>
+            <text x="330" y="118" fill="#a09db8" font-size="8" text-anchor="middle">Jun</text>
+            <!-- Legend -->
+            <rect x="42" y="10" width="8" height="8" rx="1.5" fill="#491AEB"/>
+            <text x="53" y="18" fill="#6b6785" font-size="8.5">Won</text>
+            <rect x="80" y="10" width="8" height="8" rx="1.5" fill="#EF4444" opacity="0.7"/>
+            <text x="91" y="18" fill="#6b6785" font-size="8.5">Lost</text>
+          </svg>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Monthly Intake</div>
+            <div class="card-sub">New bids created per month</div>
+          </div>
+        </div>
+        <div class="card-body">
+          <svg viewBox="0 0 380 130" class="chart-area">
+            <line x1="40" y1="105" x2="375" y2="105" stroke="#e8e6f0" stroke-width="0.5"/>
+            <line x1="40" y1="75"  x2="375" y2="75"  stroke="#e8e6f0" stroke-width="0.5" stroke-dasharray="3,3"/>
+            <line x1="40" y1="45"  x2="375" y2="45"  stroke="#e8e6f0" stroke-width="0.5" stroke-dasharray="3,3"/>
+            <text x="36" y="108" fill="#a09db8" font-size="8" text-anchor="end">0</text>
+            <text x="36" y="78"  fill="#a09db8" font-size="8" text-anchor="end">5</text>
+            <text x="36" y="48"  fill="#a09db8" font-size="8" text-anchor="end">10</text>
+            <!-- Bars -->
+            <rect x="56"  y="75" width="34" height="30" rx="3" fill="#ede9fd"/>
+            <rect x="113" y="57" width="34" height="48" rx="3" fill="#ede9fd"/>
+            <rect x="170" y="69" width="34" height="36" rx="3" fill="#ede9fd"/>
+            <rect x="227" y="51" width="34" height="54" rx="3" fill="#491AEB"/>
+            <rect x="284" y="63" width="34" height="42" rx="3" fill="#491AEB"/>
+            <rect x="341" y="45" width="34" height="60" rx="3" fill="#491AEB"/>
+            <!-- Value labels -->
+            <text x="73"  y="72"  fill="#7c5af0" font-size="8.5" text-anchor="middle" font-weight="600">5</text>
+            <text x="130" y="54"  fill="#7c5af0" font-size="8.5" text-anchor="middle" font-weight="600">8</text>
+            <text x="187" y="66"  fill="#7c5af0" font-size="8.5" text-anchor="middle" font-weight="600">6</text>
+            <text x="244" y="48"  fill="#fff" font-size="8.5" text-anchor="middle" font-weight="600">9</text>
+            <text x="301" y="60"  fill="#fff" font-size="8.5" text-anchor="middle" font-weight="600">7</text>
+            <text x="358" y="42"  fill="#fff" font-size="8.5" text-anchor="middle" font-weight="600">10</text>
+            <!-- X labels -->
+            <text x="73"  y="118" fill="#a09db8" font-size="8" text-anchor="middle">Jan</text>
+            <text x="130" y="118" fill="#a09db8" font-size="8" text-anchor="middle">Feb</text>
+            <text x="187" y="118" fill="#a09db8" font-size="8" text-anchor="middle">Mar</text>
+            <text x="244" y="118" fill="#a09db8" font-size="8" text-anchor="middle">Apr</text>
+            <text x="301" y="118" fill="#a09db8" font-size="8" text-anchor="middle">May</text>
+            <text x="358" y="118" fill="#a09db8" font-size="8" text-anchor="middle">Jun</text>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- Row 4: Team Performance (admin-gated) -->
+    <div class="grid-1">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Team Performance</div>
+            <div class="card-sub">Win rate and pipeline value by team member</div>
+          </div>
+          <div class="admin-badge">Admin Only</div>
+        </div>
+        <div class="card-body" style="padding:0;">
+          <table class="team-table">
+            <thead>
+              <tr>
+                <th>Member</th>
+                <th>Active Bids</th>
+                <th>Closed (Period)</th>
+                <th>Won</th>
+                <th>Win Rate</th>
+                <th>Pipeline Value</th>
+                <th>Avg Cycle</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><div style="display:flex;align-items:center;gap:8px;"><div class="avatar">AP</div><span style="font-size:11px;font-weight:500;">Aryan Pawar</span></div></td>
+                <td style="font-size:11px;">8</td>
+                <td style="font-size:11px;">4</td>
+                <td style="font-size:11px;color:#27C084;font-weight:600;">3</td>
+                <td><div style="display:flex;align-items:center;gap:6px;"><div class="win-bar-wrap"><div class="win-bar" style="width:75%;"></div></div><span style="font-size:10px;font-weight:600;color:#491AEB;">75%</span></div></td>
+                <td style="font-size:11px;font-weight:600;">$6.2M</td>
+                <td style="font-size:11px;color:#a09db8;">38d</td>
+              </tr>
+              <tr>
+                <td><div style="display:flex;align-items:center;gap:8px;"><div class="avatar" style="background:#FD5B0E;">RS</div><span style="font-size:11px;font-weight:500;">Rahul Singh</span></div></td>
+                <td style="font-size:11px;">6</td>
+                <td style="font-size:11px;">3</td>
+                <td style="font-size:11px;color:#27C084;font-weight:600;">2</td>
+                <td><div style="display:flex;align-items:center;gap:6px;"><div class="win-bar-wrap"><div class="win-bar" style="width:67%;"></div></div><span style="font-size:10px;font-weight:600;color:#491AEB;">67%</span></div></td>
+                <td style="font-size:11px;font-weight:600;">$4.8M</td>
+                <td style="font-size:11px;color:#a09db8;">44d</td>
+              </tr>
+              <tr>
+                <td><div style="display:flex;align-items:center;gap:8px;"><div class="avatar" style="background:#27C084;">PK</div><span style="font-size:11px;font-weight:500;">Priya Kumar</span></div></td>
+                <td style="font-size:11px;">5</td>
+                <td style="font-size:11px;">2</td>
+                <td style="font-size:11px;color:#27C084;font-weight:600;">1</td>
+                <td><div style="display:flex;align-items:center;gap:6px;"><div class="win-bar-wrap"><div class="win-bar" style="width:50%;"></div></div><span style="font-size:10px;font-weight:600;color:#491AEB;">50%</span></div></td>
+                <td style="font-size:11px;font-weight:600;">$3.4M</td>
+                <td style="font-size:11px;color:#a09db8;">41d</td>
+              </tr>
+              <tr>
+                <td><div style="display:flex;align-items:center;gap:8px;"><div class="avatar" style="background:#F59E0B;">VM</div><span style="font-size:11px;font-weight:500;">Vijay Mehta</span></div></td>
+                <td style="font-size:11px;">5</td>
+                <td style="font-size:11px;">2</td>
+                <td style="font-size:11px;color:#EF4444;font-weight:600;">0</td>
+                <td><div style="display:flex;align-items:center;gap:6px;"><div class="win-bar-wrap"><div class="win-bar" style="width:0%;"></div></div><span style="font-size:10px;font-weight:600;color:#a09db8;">0%</span></div></td>
+                <td style="font-size:11px;font-weight:600;">$4.0M</td>
+                <td style="font-size:11px;color:#a09db8;">52d</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /page-frame -->
+</div><!-- /var-a -->
+
+
+<!-- ═══════════════════════════════════════════════════════ VARIATION B ══ -->
+<div class="variation" id="var-b">
+  <div class="variation-header">
+    <h2>Variation B — Focused Single-Column</h2>
+    <p>Wider charts, more breathing room</p>
+  </div>
+  <div class="variation-desc">
+    Full-width charts stacked vertically. Each chart gets more height and detail. Better for analysis, but requires more scrolling. Date filter pinned to topbar. No KPI strip — numbers live inside chart headers.
+  </div>
+
+  <div class="page-frame">
+    <div class="page-topbar">
+      <div class="page-title">Reports & Analytics</div>
+      <div class="chip-group">
+        <div class="chip">30d</div>
+        <div class="chip active">90d</div>
+        <div class="chip">12m</div>
+      </div>
+      <div class="date-picker-btn">
+        <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="2" width="10" height="9" rx="1.5"/><path d="M4 1v2M8 1v2M1 5h10"/></svg>
+        Jun 1 – Jun 5
+      </div>
+    </div>
+
+    <div class="grid-1" style="padding-top:12px;">
+
+      <!-- Win Rate with inline KPIs -->
+      <div class="card" style="margin-bottom:10px;">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Win Rate Trend</div>
+            <div class="card-sub">Monthly win % — current period</div>
+          </div>
+          <div style="display:flex;gap:16px;align-items:center;">
+            <div style="text-align:right;">
+              <div style="font-size:9px;color:#a09db8;text-transform:uppercase;letter-spacing:0.05em;">Current</div>
+              <div style="font-size:18px;font-weight:700;color:#491AEB;">37%</div>
+            </div>
+            <div style="text-align:right;">
+              <div style="font-size:9px;color:#a09db8;text-transform:uppercase;letter-spacing:0.05em;">vs Prev</div>
+              <div style="font-size:18px;font-weight:700;color:#27C084;">↑4%</div>
+            </div>
+          </div>
+        </div>
+        <div class="card-body">
+          <svg viewBox="0 0 760 150" class="chart-area">
+            <line x1="40" y1="10" x2="40" y2="120" stroke="#e8e6f0" stroke-width="0.5"/>
+            <line x1="40" y1="120" x2="755" y2="120" stroke="#e8e6f0" stroke-width="0.5"/>
+            <line x1="40" y1="95"  x2="755" y2="95"  stroke="#e8e6f0" stroke-width="0.5" stroke-dasharray="3,3"/>
+            <line x1="40" y1="70"  x2="755" y2="70"  stroke="#e8e6f0" stroke-width="0.5" stroke-dasharray="3,3"/>
+            <line x1="40" y1="45"  x2="755" y2="45"  stroke="#e8e6f0" stroke-width="0.5" stroke-dasharray="3,3"/>
+            <line x1="40" y1="20"  x2="755" y2="20"  stroke="#e8e6f0" stroke-width="0.5" stroke-dasharray="3,3"/>
+            <text x="36" y="123" fill="#a09db8" font-size="8" text-anchor="end">0%</text>
+            <text x="36" y="98"  fill="#a09db8" font-size="8" text-anchor="end">20%</text>
+            <text x="36" y="73"  fill="#a09db8" font-size="8" text-anchor="end">40%</text>
+            <text x="36" y="48"  fill="#a09db8" font-size="8" text-anchor="end">60%</text>
+            <text x="36" y="23"  fill="#a09db8" font-size="8" text-anchor="end">80%</text>
+            <defs>
+              <linearGradient id="wg2" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#491AEB" stop-opacity="0.15"/>
+                <stop offset="100%" stop-color="#491AEB" stop-opacity="0.01"/>
+              </linearGradient>
+            </defs>
+            <path d="M100,98 L220,80 L340,105 L460,72 L580,58 L700,45 L700,120 L100,120 Z" fill="url(#wg2)"/>
+            <polyline points="100,98 220,80 340,105 460,72 580,58 700,45" fill="none" stroke="#491AEB" stroke-width="2.5" stroke-linejoin="round"/>
+            <circle cx="100" cy="98" r="4" fill="#491AEB"/>
+            <circle cx="220" cy="80" r="4" fill="#491AEB"/>
+            <circle cx="340" cy="105" r="4" fill="#491AEB"/>
+            <circle cx="460" cy="72" r="4" fill="#491AEB"/>
+            <circle cx="580" cy="58" r="4" fill="#491AEB"/>
+            <circle cx="700" cy="45" r="6" fill="#491AEB"/>
+            <text x="100" y="140" fill="#a09db8" font-size="9" text-anchor="middle">Jan</text>
+            <text x="220" y="140" fill="#a09db8" font-size="9" text-anchor="middle">Feb</text>
+            <text x="340" y="140" fill="#a09db8" font-size="9" text-anchor="middle">Mar</text>
+            <text x="460" y="140" fill="#a09db8" font-size="9" text-anchor="middle">Apr</text>
+            <text x="580" y="140" fill="#a09db8" font-size="9" text-anchor="middle">May</text>
+            <text x="700" y="140" fill="#a09db8" font-size="9" text-anchor="middle">Jun</text>
+          </svg>
+        </div>
+      </div>
+
+      <!-- Side by side: Stage dist + pipeline value -->
+      <div style="display:grid;grid-template-columns:1fr 2fr;gap:10px;margin-bottom:10px;">
+        <div class="card">
+          <div class="card-header"><div><div class="card-title">Stage Distribution</div><div class="card-sub">24 active bids</div></div></div>
+          <div class="card-body" style="display:flex;align-items:center;gap:12px;">
+            <svg viewBox="0 0 100 100" width="100" height="100" style="flex-shrink:0;">
+              <circle cx="50" cy="50" r="40" fill="none" stroke="#f0eef8" stroke-width="16"/>
+              <circle cx="50" cy="50" r="40" fill="none" stroke="#491AEB" stroke-width="16" stroke-dasharray="95 156" stroke-dashoffset="0" transform="rotate(-90 50 50)"/>
+              <circle cx="50" cy="50" r="40" fill="none" stroke="#7c5af0" stroke-width="16" stroke-dasharray="75 176" stroke-dashoffset="-95" transform="rotate(-90 50 50)"/>
+              <circle cx="50" cy="50" r="40" fill="none" stroke="#FD5B0E" stroke-width="16" stroke-dasharray="50 201" stroke-dashoffset="-170" transform="rotate(-90 50 50)"/>
+              <text x="50" y="46" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1528">24</text>
+              <text x="50" y="57" text-anchor="middle" font-size="7" fill="#a09db8">active</text>
+            </svg>
+            <div style="flex:1;font-size:10px;display:flex;flex-direction:column;gap:4px;">
+              <div style="display:flex;justify-content:space-between;"><span style="color:#6b6785;">D.Qual</span><span style="font-weight:600;">9</span></div>
+              <div style="display:flex;justify-content:space-between;"><span style="color:#6b6785;">RFI</span><span style="font-weight:600;">7</span></div>
+              <div style="display:flex;justify-content:space-between;"><span style="color:#6b6785;">RFP</span><span style="font-weight:600;">4</span></div>
+              <div style="display:flex;justify-content:space-between;"><span style="color:#6b6785;">Orals+</span><span style="font-weight:600;">4</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header"><div><div class="card-title">Pipeline Value by Stage</div><div class="card-sub">$18.4M total active pipeline</div></div></div>
+          <div class="card-body">
+            <svg viewBox="0 0 500 120" class="chart-area">
+              <line x1="40" y1="100" x2="495" y2="100" stroke="#e8e6f0" stroke-width="0.5"/>
+              <rect x="50"  y="30" width="50" height="70" rx="3" fill="#491AEB"/>
+              <rect x="120" y="42" width="50" height="58" rx="3" fill="#7c5af0"/>
+              <rect x="190" y="55" width="50" height="45" rx="3" fill="#FD5B0E"/>
+              <rect x="260" y="70" width="50" height="30" rx="3" fill="#F59E0B"/>
+              <rect x="330" y="78" width="50" height="22" rx="3" fill="#27C084"/>
+              <rect x="400" y="82" width="50" height="18" rx="3" fill="#0891b2"/>
+              <text x="75"  y="26"  fill="#491AEB" font-size="8" font-weight="700" text-anchor="middle">$7.2M</text>
+              <text x="145" y="38"  fill="#7c5af0" font-size="8" font-weight="700" text-anchor="middle">$5.1M</text>
+              <text x="215" y="51"  fill="#FD5B0E" font-size="8" font-weight="700" text-anchor="middle">$3.4M</text>
+              <text x="285" y="66"  fill="#F59E0B" font-size="8" font-weight="700" text-anchor="middle">$1.8M</text>
+              <text x="355" y="74"  fill="#27C084" font-size="8" font-weight="700" text-anchor="middle">$0.9M</text>
+              <text x="425" y="78"  fill="#0891b2" font-size="8" font-weight="700" text-anchor="middle">$0.8M</text>
+              <text x="75"  y="113" fill="#a09db8" font-size="8" text-anchor="middle">D.Qual</text>
+              <text x="145" y="113" fill="#a09db8" font-size="8" text-anchor="middle">RFI</text>
+              <text x="215" y="113" fill="#a09db8" font-size="8" text-anchor="middle">RFP</text>
+              <text x="285" y="113" fill="#a09db8" font-size="8" text-anchor="middle">Orals</text>
+              <text x="355" y="113" fill="#a09db8" font-size="8" text-anchor="middle">Due Dil.</text>
+              <text x="425" y="113" fill="#a09db8" font-size="8" text-anchor="middle">BAFO</text>
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- Team performance note -->
+      <div class="card">
+        <div class="card-header">
+          <div><div class="card-title">Team Performance</div><div class="card-sub">All 7 members · sorted by win rate</div></div>
+          <div class="admin-badge">Admin Only</div>
+        </div>
+        <div class="card-body" style="padding:0;">
+          <table class="team-table">
+            <thead><tr><th>Member</th><th>Active</th><th>Closed</th><th>Won</th><th>Win Rate</th><th>Value</th><th>Avg Cycle</th></tr></thead>
+            <tbody>
+              <tr><td><div style="display:flex;align-items:center;gap:8px;"><div class="avatar">AP</div><span style="font-size:11px;font-weight:500;">Aryan Pawar</span></div></td><td style="font-size:11px;">8</td><td style="font-size:11px;">4</td><td style="font-size:11px;color:#27C084;font-weight:600;">3</td><td><div style="display:flex;align-items:center;gap:6px;"><div class="win-bar-wrap"><div class="win-bar" style="width:75%;"></div></div><span style="font-size:10px;font-weight:600;color:#491AEB;">75%</span></div></td><td style="font-size:11px;font-weight:600;">$6.2M</td><td style="font-size:11px;color:#a09db8;">38d</td></tr>
+              <tr><td><div style="display:flex;align-items:center;gap:8px;"><div class="avatar" style="background:#FD5B0E;">RS</div><span style="font-size:11px;font-weight:500;">Rahul Singh</span></div></td><td style="font-size:11px;">6</td><td style="font-size:11px;">3</td><td style="font-size:11px;color:#27C084;font-weight:600;">2</td><td><div style="display:flex;align-items:center;gap:6px;"><div class="win-bar-wrap"><div class="win-bar" style="width:67%;"></div></div><span style="font-size:10px;font-weight:600;color:#491AEB;">67%</span></div></td><td style="font-size:11px;font-weight:600;">$4.8M</td><td style="font-size:11px;color:#a09db8;">44d</td></tr>
+            </tbody>
+          </table>
+          <div style="padding:8px 12px;font-size:10px;color:#a09db8;border-top:0.5px solid #f0eef8;">+ 2 more members…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════ VARIATION C ══ -->
+<div class="variation" id="var-c">
+  <div class="variation-header">
+    <h2>Variation C — Tabbed Sections</h2>
+    <p>Organised by theme</p>
+  </div>
+  <div class="variation-desc">
+    Charts split across 3 tabs: <strong>Overview</strong> (KPIs + intake + win rate), <strong>Pipeline</strong> (stage distribution + value + cycle time), <strong>Team</strong> (admin-only performance table + won/lost). Date filter global in topbar. Less scrolling but more tab-switching.
+  </div>
+
+  <div class="page-frame">
+    <div class="page-topbar">
+      <div class="page-title">Reports & Analytics</div>
+      <div class="chip-group">
+        <div class="chip">30d</div>
+        <div class="chip active">90d</div>
+        <div class="chip">12m</div>
+      </div>
+      <div class="date-picker-btn">
+        <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="2" width="10" height="9" rx="1.5"/><path d="M4 1v2M8 1v2M1 5h10"/></svg>
+        Jun 1 – Jun 5
+      </div>
+    </div>
+
+    <div class="inner-tabs">
+      <button class="inner-tab active">Overview</button>
+      <button class="inner-tab">Pipeline</button>
+      <button class="inner-tab">Team <span style="font-size:8px;background:#ede9fd;color:#491AEB;padding:1px 5px;border-radius:3px;margin-left:4px;font-weight:700;">ADMIN</span></button>
+    </div>
+
+    <!-- KPI strip -->
+    <div class="kpi-strip" style="grid-template-columns: repeat(5, 1fr);">
+      <div class="kpi-card"><div class="kpi-icon" style="background:#ede9fd;">📊</div><div><div class="kpi-label">Active Bids</div><div class="kpi-value">24</div><div class="kpi-delta up">↑ 3 this month</div></div></div>
+      <div class="kpi-card"><div class="kpi-icon" style="background:#fff0e8;">💰</div><div><div class="kpi-label">Pipeline Value</div><div class="kpi-value">$18.4M</div><div class="kpi-delta up">↑ $2.1M</div></div></div>
+      <div class="kpi-card"><div class="kpi-icon" style="background:#edfaf4;">🏆</div><div><div class="kpi-label">Win Rate</div><div class="kpi-value">37%</div><div class="kpi-delta up">↑ 4% vs prev</div></div></div>
+      <div class="kpi-card"><div class="kpi-icon" style="background:#fff1f1;">⏱</div><div><div class="kpi-label">Avg Cycle Time</div><div class="kpi-value">42d</div><div class="kpi-delta down">↑ 3d slower</div></div></div>
+      <div class="kpi-card"><div class="kpi-icon" style="background:#fffbeb;">📋</div><div><div class="kpi-label">Closed (Period)</div><div class="kpi-value">11</div><div class="kpi-delta">7 won · 4 lost</div></div></div>
+    </div>
+
+    <!-- Overview tab: Win Rate + Monthly Intake side by side -->
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-header"><div><div class="card-title">Win Rate Trend</div><div class="card-sub">Monthly win % over period</div></div></div>
+        <div class="card-body">
+          <svg viewBox="0 0 380 130" class="chart-area">
+            <line x1="32" y1="105" x2="370" y2="105" stroke="#e8e6f0" stroke-width="0.5"/>
+            <line x1="32" y1="80"  x2="370" y2="80"  stroke="#e8e6f0" stroke-width="0.5" stroke-dasharray="3,3"/>
+            <line x1="32" y1="55"  x2="370" y2="55"  stroke="#e8e6f0" stroke-width="0.5" stroke-dasharray="3,3"/>
+            <line x1="32" y1="30"  x2="370" y2="30"  stroke="#e8e6f0" stroke-width="0.5" stroke-dasharray="3,3"/>
+            <defs><linearGradient id="wg3" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#491AEB" stop-opacity="0.15"/><stop offset="100%" stop-color="#491AEB" stop-opacity="0.01"/></linearGradient></defs>
+            <path d="M66,82 L122,68 L178,88 L234,60 L290,50 L346,38 L346,105 L66,105 Z" fill="url(#wg3)"/>
+            <polyline points="66,82 122,68 178,88 234,60 290,50 346,38" fill="none" stroke="#491AEB" stroke-width="2" stroke-linejoin="round"/>
+            <circle cx="66"  cy="82" r="3" fill="#491AEB"/>
+            <circle cx="122" cy="68" r="3" fill="#491AEB"/>
+            <circle cx="178" cy="88" r="3" fill="#491AEB"/>
+            <circle cx="234" cy="60" r="3" fill="#491AEB"/>
+            <circle cx="290" cy="50" r="3" fill="#491AEB"/>
+            <circle cx="346" cy="38" r="5" fill="#491AEB"/>
+            <text x="66"  y="118" fill="#a09db8" font-size="8" text-anchor="middle">Jan</text>
+            <text x="122" y="118" fill="#a09db8" font-size="8" text-anchor="middle">Feb</text>
+            <text x="178" y="118" fill="#a09db8" font-size="8" text-anchor="middle">Mar</text>
+            <text x="234" y="118" fill="#a09db8" font-size="8" text-anchor="middle">Apr</text>
+            <text x="290" y="118" fill="#a09db8" font-size="8" text-anchor="middle">May</text>
+            <text x="346" y="118" fill="#a09db8" font-size="8" text-anchor="middle">Jun</text>
+          </svg>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div><div class="card-title">Monthly Intake</div><div class="card-sub">New bids per month</div></div></div>
+        <div class="card-body">
+          <svg viewBox="0 0 380 130" class="chart-area">
+            <line x1="40" y1="105" x2="375" y2="105" stroke="#e8e6f0" stroke-width="0.5"/>
+            <rect x="56"  y="75" width="34" height="30" rx="3" fill="#ede9fd"/>
+            <rect x="113" y="57" width="34" height="48" rx="3" fill="#ede9fd"/>
+            <rect x="170" y="69" width="34" height="36" rx="3" fill="#ede9fd"/>
+            <rect x="227" y="51" width="34" height="54" rx="3" fill="#491AEB"/>
+            <rect x="284" y="63" width="34" height="42" rx="3" fill="#491AEB"/>
+            <rect x="341" y="45" width="34" height="60" rx="3" fill="#491AEB"/>
+            <text x="73"  y="72"  fill="#7c5af0" font-size="8.5" text-anchor="middle" font-weight="600">5</text>
+            <text x="130" y="54"  fill="#7c5af0" font-size="8.5" text-anchor="middle" font-weight="600">8</text>
+            <text x="187" y="66"  fill="#7c5af0" font-size="8.5" text-anchor="middle" font-weight="600">6</text>
+            <text x="244" y="48"  fill="#fff" font-size="8.5" text-anchor="middle" font-weight="600">9</text>
+            <text x="301" y="60"  fill="#fff" font-size="8.5" text-anchor="middle" font-weight="600">7</text>
+            <text x="358" y="42"  fill="#fff" font-size="8.5" text-anchor="middle" font-weight="600">10</text>
+            <text x="73"  y="118" fill="#a09db8" font-size="8" text-anchor="middle">Jan</text>
+            <text x="130" y="118" fill="#a09db8" font-size="8" text-anchor="middle">Feb</text>
+            <text x="187" y="118" fill="#a09db8" font-size="8" text-anchor="middle">Mar</text>
+            <text x="244" y="118" fill="#a09db8" font-size="8" text-anchor="middle">Apr</text>
+            <text x="301" y="118" fill="#a09db8" font-size="8" text-anchor="middle">May</text>
+            <text x="358" y="118" fill="#a09db8" font-size="8" text-anchor="middle">Jun</text>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    <div style="padding:0 12px 12px;font-size:11px;color:#a09db8;text-align:center;">
+      ↓ Switch to <strong>Pipeline</strong> tab for Stage Distribution, Pipeline Value, Cycle Time — and <strong>Team</strong> for performance breakdowns (admin only)
+    </div>
+  </div>
+</div>
+
+<script>
+function showVariation(name, btn) {
+  document.querySelectorAll('.variation').forEach(v => v.classList.remove('visible'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('var-' + name).classList.add('visible');
+  btn.classList.add('active');
+}
+</script>
+
+</body>
+</html>

@@ -43,7 +43,14 @@ export function useCurrentUser() {
   const rolesQuery = useQuery({
     queryKey: ["roles", user?.id],
     enabled: !!user,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
     queryFn: async () => {
+      // Double-check the session is live before hitting the DB,
+      // guarding against the brief window where useSession's local
+      // state has user but the Supabase client hasn't yet attached its JWT.
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return [] as AppRole[];
       const { data, error } = await supabase
         .from("user_roles")
         .select("role")
