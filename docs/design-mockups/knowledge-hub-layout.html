@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Knowledge Hub — Layout Variations</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f4fa; padding: 24px; color: #1a1523; }
+  h1 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+  .meta { font-size: 12px; color: #7c7a8e; margin-bottom: 24px; }
+  .variants { display: flex; flex-direction: column; gap: 28px; }
+  .variant { background: #fff; border-radius: 12px; border: 2px solid #e8e6f0; overflow: hidden; }
+  .variant-label { padding: 12px 16px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; background: #f5f4fa; border-bottom: 1px solid #e8e6f0; color: #491aeb; }
+
+  /* ── Shared shell ── */
+  .shell { display: flex; height: 540px; }
+
+  /* New 220px labeled sidebar */
+  .sidebar { width: 200px; background: #220032; display: flex; flex-direction: column; flex-shrink: 0; padding: 0; }
+  .sidebar-brand { padding: 14px 14px 10px; border-bottom: 1px solid #ffffff18; }
+  .sidebar-brand-name { font-size: 13px; font-weight: 700; color: #fff; letter-spacing: -0.02em; }
+  .sidebar-brand-sub { font-size: 9px; color: #ffffff55; text-transform: uppercase; letter-spacing: .08em; margin-top: 1px; }
+  .sidebar-section { padding: 10px 10px 4px; font-size: 9px; text-transform: uppercase; letter-spacing: .08em; color: #ffffff40; font-weight: 600; }
+  .nav-item { display: flex; align-items: center; gap: 8px; padding: 7px 12px; font-size: 12px; color: #ffffff88; cursor: pointer; border-radius: 6px; margin: 1px 6px; }
+  .nav-item.active { background: #491aeb; color: #fff; }
+  .nav-item.active .nav-icon { color: #fff; }
+  .nav-item:hover:not(.active) { background: #ffffff12; color: #ffffffcc; }
+  .nav-icon { width: 14px; text-align: center; font-size: 13px; flex-shrink: 0; }
+  .nav-label { flex: 1; }
+  .nav-badge { font-size: 9px; background: #491aeb; color: #fff; border-radius: 99px; padding: 1px 5px; font-weight: 700; }
+  .nav-badge.green { background: #22c55e; }
+  .sidebar-footer { margin-top: auto; border-top: 1px solid #ffffff18; padding: 10px 12px; display: flex; align-items: center; gap: 8px; }
+  .avatar-sm { width: 24px; height: 24px; border-radius: 6px; background: #491aeb; color: #fff; font-size: 9px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .footer-name { font-size: 11px; color: #ffffffcc; font-weight: 500; }
+  .footer-role { font-size: 9px; color: #ffffff55; }
+
+  /* App area */
+  .app { flex: 1; display: flex; flex-direction: column; min-width: 0; background: #f5f4fa; }
+  .topbar { height: 48px; border-bottom: 1px solid #e8e6f0; display: flex; align-items: center; padding: 0 16px; gap: 10px; background: #fff; flex-shrink: 0; }
+  .topbar-left { display: flex; flex-direction: column; }
+  .topbar-title { font-size: 14px; font-weight: 600; }
+  .topbar-sub { font-size: 10px; color: #7c7a8e; }
+  .spacer { flex: 1; }
+  .search-bar { background: #f5f4fa; border: 1px solid #e8e6f0; border-radius: 6px; padding: 5px 10px; font-size: 11px; color: #7c7a8e; width: 220px; }
+  .upload-btn { font-size: 11px; font-weight: 600; padding: 5px 12px; border-radius: 6px; background: #491aeb; color: #fff; border: none; cursor: pointer; white-space: nowrap; }
+  .content { flex: 1; overflow: hidden; display: flex; }
+
+  /* ── VARIANT A — Master / Detail ── */
+  .doc-list-panel { width: 272px; border-right: 1px solid #e8e6f0; background: #fff; display: flex; flex-direction: column; flex-shrink: 0; }
+  .panel-tabs { display: flex; border-bottom: 1px solid #e8e6f0; }
+  .panel-tab { flex: 1; text-align: center; font-size: 11px; padding: 8px 4px; color: #7c7a8e; cursor: pointer; border-bottom: 2px solid transparent; }
+  .panel-tab.active { color: #491aeb; border-bottom-color: #491aeb; font-weight: 600; }
+  .panel-filters { padding: 8px 10px; display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid #e8e6f0; }
+  .chip { font-size: 10px; padding: 2px 8px; border-radius: 99px; border: 1px solid #e8e6f0; color: #7c7a8e; background: #fff; cursor: pointer; }
+  .chip.active { background: #491aeb; color: #fff; border-color: #491aeb; }
+  .doc-list { flex: 1; overflow: hidden; padding: 4px 6px; display: flex; flex-direction: column; gap: 2px; }
+  .doc-row { display: flex; align-items: center; gap: 9px; padding: 8px 8px; border-radius: 7px; cursor: pointer; }
+  .doc-row.active { background: #f0eeff; }
+  .doc-row:hover:not(.active) { background: #f9f8ff; }
+  .file-icon { width: 30px; height: 36px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; flex-shrink: 0; letter-spacing: -0.02em; }
+  .file-icon.pdf { background: #fff1f1; color: #e53e3e; }
+  .file-icon.docx { background: #ebf5ff; color: #2563eb; }
+  .file-icon.xlsx { background: #edfaf4; color: #16a34a; }
+  .doc-info { flex: 1; min-width: 0; }
+  .doc-name { font-size: 11px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .doc-meta { display: flex; align-items: center; gap: 5px; margin-top: 2px; }
+  .type-badge { font-size: 9px; padding: 1px 5px; border-radius: 4px; font-weight: 600; }
+  .type-rfp { background: #fff1f1; color: #e53e3e; }
+  .type-template { background: #ede9fd; color: #491aeb; }
+  .type-proposal { background: #fff0e8; color: #fd5b0e; }
+  .type-legal { background: #edfaf4; color: #16a34a; }
+  .type-reference { background: #f5f4fa; color: #7c7a8e; }
+  .doc-size { font-size: 9px; color: #a09db8; }
+
+  /* Preview pane */
+  .preview-pane { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .preview-header { padding: 12px 16px; border-bottom: 1px solid #e8e6f0; background: #fff; display: flex; align-items: flex-start; gap: 10px; }
+  .preview-file-icon { width: 36px; height: 44px; border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800; flex-shrink: 0; }
+  .preview-title { font-size: 14px; font-weight: 600; line-height: 1.3; }
+  .preview-badges { display: flex; gap: 5px; margin-top: 4px; flex-wrap: wrap; }
+  .preview-badge { font-size: 9px; padding: 2px 7px; border-radius: 4px; font-weight: 600; }
+  .ai-badge { background: #ede9fd; color: #491aeb; display: flex; align-items: center; gap: 3px; }
+  .preview-actions { margin-left: auto; display: flex; gap: 6px; flex-shrink: 0; }
+  .action-btn { font-size: 10px; padding: 4px 10px; border-radius: 5px; border: 1px solid #e8e6f0; background: #fff; cursor: pointer; color: #491aeb; font-weight: 500; }
+  .action-btn.danger { color: #e53e3e; }
+  .preview-body { flex: 1; background: #f5f4fa; display: flex; align-items: center; justify-content: center; position: relative; }
+  .pdf-preview-mock { width: 360px; height: 320px; background: #fff; border-radius: 6px; border: 1px solid #e8e6f0; box-shadow: 0 2px 12px #0000001a; display: flex; flex-direction: column; overflow: hidden; }
+  .pdf-toolbar { height: 32px; background: #f5f4fa; border-bottom: 1px solid #e8e6f0; display: flex; align-items: center; padding: 0 10px; gap: 8px; font-size: 10px; color: #7c7a8e; }
+  .pdf-content { flex: 1; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+  .pdf-line { height: 8px; background: #e8e6f0; border-radius: 4px; }
+  .pdf-line.short { width: 60%; }
+  .pdf-line.med { width: 80%; }
+  .pdf-line.long { width: 95%; }
+  .pdf-heading { height: 12px; background: #d4caff; border-radius: 4px; width: 40%; margin-bottom: 4px; }
+  .preview-footer { padding: 10px 16px; border-top: 1px solid #e8e6f0; background: #fff; display: flex; gap: 12px; }
+  .meta-item { display: flex; flex-direction: column; gap: 2px; }
+  .meta-label { font-size: 9px; text-transform: uppercase; letter-spacing: .06em; color: #a09db8; font-weight: 600; }
+  .meta-value { font-size: 11px; color: #1a1523; font-weight: 500; }
+  .meta-link { color: #491aeb; }
+
+  /* ── VARIANT B — Grid + Modal ── */
+  .grid-area { flex: 1; overflow: hidden; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .grid-top { display: flex; align-items: center; gap: 8px; }
+  .grid-chips { display: flex; gap: 4px; }
+  .section-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #7c7a8e; }
+  .doc-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .doc-card { background: #fff; border: 1px solid #e8e6f0; border-radius: 8px; padding: 12px 10px; cursor: pointer; position: relative; transition: border-color 0.15s; }
+  .doc-card:hover { border-color: #c4b8f8; }
+  .doc-card.selected { border-color: #491aeb; box-shadow: 0 0 0 2px #491aeb22; }
+  .card-icon { width: 40px; height: 48px; border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 800; margin-bottom: 8px; }
+  .card-name { font-size: 11px; font-weight: 500; line-height: 1.3; margin-bottom: 4px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .card-badges { display: flex; gap: 3px; flex-wrap: wrap; margin-bottom: 4px; }
+  .card-size { font-size: 9px; color: #a09db8; }
+  .card-bid { font-size: 9px; color: #7c7a8e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card-ai { position: absolute; top: 8px; right: 8px; width: 16px; height: 16px; background: #ede9fd; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 9px; }
+
+  /* Modal overlay */
+  .modal-overlay { position: absolute; inset: 0; background: #00000055; display: flex; align-items: center; justify-content: center; z-index: 10; }
+  .modal { width: 520px; background: #fff; border-radius: 10px; overflow: hidden; border: 1px solid #e8e6f0; box-shadow: 0 8px 32px #0000002a; }
+  .modal-header { padding: 14px 16px; border-bottom: 1px solid #e8e6f0; display: flex; align-items: center; gap: 10px; }
+  .modal-title { font-size: 13px; font-weight: 600; flex: 1; }
+  .modal-close { font-size: 16px; color: #a09db8; cursor: pointer; line-height: 1; }
+  .modal-body { height: 260px; background: #f5f4fa; display: flex; align-items: center; justify-content: center; }
+  .modal-pdf { width: 280px; height: 220px; background: #fff; border-radius: 6px; border: 1px solid #e8e6f0; box-shadow: 0 2px 8px #0000001a; display: flex; flex-direction: column; overflow: hidden; }
+  .modal-footer { padding: 10px 16px; border-top: 1px solid #e8e6f0; display: flex; align-items: center; gap: 6px; }
+  .modal-meta { flex: 1; font-size: 10px; color: #7c7a8e; }
+  .mention-btn { font-size: 10px; padding: 4px 10px; border-radius: 5px; background: #ede9fd; color: #491aeb; font-weight: 600; border: none; cursor: pointer; }
+  .mention-btn::before { content: '@'; }
+
+  /* ── VARIANT C — Upload + Replace Confirmation ── */
+  .upload-area { flex: 1; overflow: hidden; padding: 14px; display: flex; gap: 14px; }
+  .upload-left { flex: 1; display: flex; flex-direction: column; gap: 10px; }
+  .dropzone { border: 2px dashed #c4b8f8; border-radius: 10px; background: #f9f8ff; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 28px; }
+  .dz-icon { font-size: 28px; }
+  .dz-title { font-size: 13px; font-weight: 600; color: #491aeb; }
+  .dz-sub { font-size: 11px; color: #7c7a8e; text-align: center; }
+  .dz-limit { font-size: 9px; color: #a09db8; }
+  .progress-list { display: flex; flex-direction: column; gap: 6px; }
+  .progress-item { background: #fff; border: 1px solid #e8e6f0; border-radius: 8px; padding: 8px 10px; display: flex; align-items: center; gap: 10px; }
+  .prog-icon { width: 28px; height: 32px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 800; flex-shrink: 0; }
+  .prog-info { flex: 1; }
+  .prog-name { font-size: 11px; font-weight: 500; }
+  .prog-bar-wrap { height: 4px; background: #e8e6f0; border-radius: 99px; margin-top: 5px; overflow: hidden; }
+  .prog-bar { height: 100%; border-radius: 99px; background: #491aeb; }
+  .prog-status { font-size: 10px; font-weight: 600; }
+  .prog-status.done { color: #16a34a; }
+  .prog-status.progress { color: #491aeb; }
+  .upload-right { width: 240px; }
+  .upload-form { background: #fff; border: 1px solid #e8e6f0; border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+  .form-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: #7c7a8e; margin-bottom: 3px; }
+  .form-select { width: 100%; font-size: 11px; background: #f5f4fa; border: 1px solid #e8e6f0; border-radius: 6px; padding: 5px 8px; color: #1a1523; }
+  .form-submit { background: #491aeb; color: #fff; font-size: 11px; font-weight: 600; padding: 7px; border-radius: 6px; border: none; cursor: pointer; width: 100%; }
+
+  /* Replace confirm modal */
+  .replace-modal { width: 320px; background: #fff; border-radius: 10px; border: 1px solid #e8e6f0; box-shadow: 0 8px 32px #0000002a; overflow: hidden; }
+  .replace-header { padding: 14px 16px; border-bottom: 1px solid #e8e6f0; }
+  .replace-title { font-size: 13px; font-weight: 600; }
+  .replace-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+  .replace-icon { width: 36px; height: 36px; border-radius: 8px; background: #fff0e8; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+  .replace-text { font-size: 12px; color: #4a4760; line-height: 1.6; }
+  .replace-text strong { color: #1a1523; }
+  .replace-diff { background: #f5f4fa; border-radius: 6px; padding: 8px 10px; font-size: 10px; color: #7c7a8e; display: flex; flex-direction: column; gap: 3px; }
+  .diff-row { display: flex; align-items: center; gap: 6px; }
+  .diff-old { text-decoration: line-through; color: #a09db8; }
+  .diff-arrow { color: #491aeb; font-weight: 700; }
+  .diff-new { color: #1a1523; font-weight: 500; }
+  .replace-actions { display: flex; gap: 6px; padding: 10px 16px; border-top: 1px solid #e8e6f0; }
+  .replace-btn { flex: 1; font-size: 11px; font-weight: 600; padding: 7px; border-radius: 6px; border: 1px solid #e8e6f0; cursor: pointer; }
+  .replace-btn.confirm { background: #fd5b0e; color: #fff; border-color: #fd5b0e; }
+  .replace-btn.cancel { background: #fff; color: #7c7a8e; }
+</style>
+</head>
+<body>
+<h1>Knowledge Hub — Layout Variations</h1>
+<p class="meta">Three layout approaches for /docs — open this file in a browser to compare</p>
+
+<div class="variants">
+
+  <!-- ═══════════════════════════════════════════
+       VARIANT A — Master / Detail (Recommended)
+  ════════════════════════════════════════════ -->
+  <div class="variant">
+    <div class="variant-label">A — Master / Detail split (Recommended) · Document list + live preview</div>
+    <div class="shell">
+
+      <!-- Sidebar -->
+      <div class="sidebar">
+        <div class="sidebar-brand">
+          <div class="sidebar-brand-name">Bid Compass</div>
+          <div class="sidebar-brand-sub">Pursuit Management</div>
+        </div>
+        <div style="padding: 6px 0;">
+          <div class="nav-item"><span class="nav-icon">📊</span><span class="nav-label">Dashboard</span></div>
+          <div class="nav-item"><span class="nav-icon">🎯</span><span class="nav-label">Pursuits</span><span class="nav-badge">48</span></div>
+          <div class="sidebar-section">Tools</div>
+          <div class="nav-item"><span class="nav-icon">☑️</span><span class="nav-label">My Queue</span><span class="nav-badge">5</span></div>
+          <div class="nav-item"><span class="nav-icon">✨</span><span class="nav-label">AI Cmd Ctr</span><span class="nav-badge green">New</span></div>
+          <div class="nav-item active"><span class="nav-icon">📁</span><span class="nav-label">Knowledge Hub</span></div>
+          <div class="nav-item"><span class="nav-icon">📈</span><span class="nav-label">Reports</span></div>
+          <div class="nav-item"><span class="nav-icon">📅</span><span class="nav-label">Calendar</span></div>
+          <div class="sidebar-section">System</div>
+          <div class="nav-item"><span class="nav-icon">🔔</span><span class="nav-label">Notifications</span><span class="nav-badge">3</span></div>
+        </div>
+        <div class="sidebar-footer">
+          <div class="avatar-sm">AP</div>
+          <div>
+            <div class="footer-name">Aryan Pawar</div>
+            <div class="footer-role">Bid Manager</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="app">
+        <!-- TopBar -->
+        <div class="topbar">
+          <div class="topbar-left">
+            <div class="topbar-title">Knowledge Hub</div>
+            <div class="topbar-sub">Bid documents and templates</div>
+          </div>
+          <div class="spacer"></div>
+          <input class="search-bar" placeholder="Search documents…" readonly />
+          <button class="upload-btn">+ Upload</button>
+        </div>
+
+        <div class="content">
+          <!-- Left: Document list -->
+          <div class="doc-list-panel">
+            <div class="panel-tabs">
+              <div class="panel-tab active">All Docs</div>
+              <div class="panel-tab">Templates</div>
+              <div class="panel-tab">By Bid</div>
+            </div>
+            <div class="panel-filters">
+              <div class="chip active">All</div>
+              <div class="chip">RFP</div>
+              <div class="chip">Proposal</div>
+              <div class="chip">Legal</div>
+              <div class="chip">Reference</div>
+            </div>
+            <div class="doc-list">
+              <!-- Active doc -->
+              <div class="doc-row active">
+                <div class="file-icon pdf">PDF</div>
+                <div class="doc-info">
+                  <div class="doc-name">iMocha Security Policy v3.pdf</div>
+                  <div class="doc-meta">
+                    <span class="type-badge type-template">Template</span>
+                    <span class="doc-size">1.2 MB</span>
+                  </div>
+                </div>
+              </div>
+              <div class="doc-row">
+                <div class="file-icon pdf">PDF</div>
+                <div class="doc-info">
+                  <div class="doc-name">Acme Corp — RFP Document.pdf</div>
+                  <div class="doc-meta">
+                    <span class="type-badge type-rfp">RFP</span>
+                    <span class="doc-size">4.8 MB</span>
+                  </div>
+                </div>
+              </div>
+              <div class="doc-row">
+                <div class="file-icon docx">DOC</div>
+                <div class="doc-info">
+                  <div class="doc-name">GlobalTech Proposal Draft v2.docx</div>
+                  <div class="doc-meta">
+                    <span class="type-badge type-proposal">Proposal</span>
+                    <span class="doc-size">890 KB</span>
+                  </div>
+                </div>
+              </div>
+              <div class="doc-row">
+                <div class="file-icon docx">DOC</div>
+                <div class="doc-info">
+                  <div class="doc-name">Standard MSA Template.docx</div>
+                  <div class="doc-meta">
+                    <span class="type-badge type-legal">Legal</span>
+                    <span class="doc-size">220 KB</span>
+                  </div>
+                </div>
+              </div>
+              <div class="doc-row">
+                <div class="file-icon xlsx">XLS</div>
+                <div class="doc-info">
+                  <div class="doc-name">Condor Systems Pricing Matrix.xlsx</div>
+                  <div class="doc-meta">
+                    <span class="type-badge type-reference">Reference</span>
+                    <span class="doc-size">340 KB</span>
+                  </div>
+                </div>
+              </div>
+              <div class="doc-row">
+                <div class="file-icon pdf">PDF</div>
+                <div class="doc-info">
+                  <div class="doc-name">Zenith Industries — NDA Signed.pdf</div>
+                  <div class="doc-meta">
+                    <span class="type-badge type-legal">Legal</span>
+                    <span class="doc-size">180 KB</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: Preview pane -->
+          <div class="preview-pane">
+            <div class="preview-header">
+              <div class="file-icon pdf preview-file-icon">PDF</div>
+              <div style="flex:1; min-width:0;">
+                <div class="preview-title">iMocha Security Policy v3.pdf</div>
+                <div class="preview-badges">
+                  <span class="type-badge type-template">Template</span>
+                  <span class="type-badge" style="background:#f5f4fa;color:#7c7a8e;">Global</span>
+                  <span class="type-badge ai-badge">✦ AI-indexed</span>
+                </div>
+              </div>
+              <div class="preview-actions">
+                <button class="action-btn">⬇ Download</button>
+                <button class="action-btn" style="background:#ede9fd;border-color:#d4caff;color:#491aeb;">@ Mention</button>
+                <button class="action-btn">↑ Replace</button>
+                <button class="action-btn danger">✕</button>
+              </div>
+            </div>
+            <div class="preview-body">
+              <div class="pdf-preview-mock">
+                <div class="pdf-toolbar">
+                  <span>◀</span><span>1 / 6</span><span>▶</span>
+                  <span style="flex:1"></span>
+                  <span>⤢ Expand</span>
+                </div>
+                <div class="pdf-content">
+                  <div class="pdf-heading"></div>
+                  <div class="pdf-line long"></div>
+                  <div class="pdf-line med"></div>
+                  <div class="pdf-line long"></div>
+                  <div class="pdf-line short"></div>
+                  <div style="height:6px;"></div>
+                  <div class="pdf-heading"></div>
+                  <div class="pdf-line long"></div>
+                  <div class="pdf-line long"></div>
+                  <div class="pdf-line med"></div>
+                  <div class="pdf-line long"></div>
+                  <div class="pdf-line short"></div>
+                  <div style="height:6px;"></div>
+                  <div class="pdf-line long"></div>
+                  <div class="pdf-line med"></div>
+                  <div class="pdf-line long"></div>
+                </div>
+              </div>
+            </div>
+            <div class="preview-footer">
+              <div class="meta-item">
+                <div class="meta-label">Linked Bid</div>
+                <div class="meta-value" style="color:#7c7a8e">— (Global Template)</div>
+              </div>
+              <div class="meta-item">
+                <div class="meta-label">Stage</div>
+                <div class="meta-value" style="color:#7c7a8e">—</div>
+              </div>
+              <div class="meta-item">
+                <div class="meta-label">Uploaded by</div>
+                <div class="meta-value">Aryan Pawar</div>
+              </div>
+              <div class="meta-item">
+                <div class="meta-label">Date</div>
+                <div class="meta-value">Jun 2, 2026</div>
+              </div>
+              <div class="meta-item">
+                <div class="meta-label">Size</div>
+                <div class="meta-value">1.2 MB</div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       VARIANT B — Grid View + Preview Modal
+  ════════════════════════════════════════════ -->
+  <div class="variant">
+    <div class="variant-label">B — Grid View + Preview Modal · Card-per-document with click-to-preview</div>
+    <div class="shell">
+
+      <!-- Sidebar (same) -->
+      <div class="sidebar">
+        <div class="sidebar-brand">
+          <div class="sidebar-brand-name">Bid Compass</div>
+          <div class="sidebar-brand-sub">Pursuit Management</div>
+        </div>
+        <div style="padding: 6px 0;">
+          <div class="nav-item"><span class="nav-icon">📊</span><span class="nav-label">Dashboard</span></div>
+          <div class="nav-item"><span class="nav-icon">🎯</span><span class="nav-label">Pursuits</span><span class="nav-badge">48</span></div>
+          <div class="sidebar-section">Tools</div>
+          <div class="nav-item"><span class="nav-icon">☑️</span><span class="nav-label">My Queue</span><span class="nav-badge">5</span></div>
+          <div class="nav-item"><span class="nav-icon">✨</span><span class="nav-label">AI Cmd Ctr</span><span class="nav-badge green">New</span></div>
+          <div class="nav-item active"><span class="nav-icon">📁</span><span class="nav-label">Knowledge Hub</span></div>
+          <div class="nav-item"><span class="nav-icon">📈</span><span class="nav-label">Reports</span></div>
+          <div class="nav-item"><span class="nav-icon">📅</span><span class="nav-label">Calendar</span></div>
+          <div class="sidebar-section">System</div>
+          <div class="nav-item"><span class="nav-icon">🔔</span><span class="nav-label">Notifications</span><span class="nav-badge">3</span></div>
+        </div>
+        <div class="sidebar-footer">
+          <div class="avatar-sm">AP</div>
+          <div>
+            <div class="footer-name">Aryan Pawar</div>
+            <div class="footer-role">Bid Manager</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="app">
+        <div class="topbar">
+          <div class="topbar-left">
+            <div class="topbar-title">Knowledge Hub</div>
+            <div class="topbar-sub">Bid documents and templates</div>
+          </div>
+          <div class="spacer"></div>
+          <input class="search-bar" placeholder="Search documents…" readonly />
+          <button class="upload-btn">+ Upload</button>
+        </div>
+
+        <div class="content" style="position:relative;">
+          <div class="grid-area">
+            <div class="grid-top">
+              <div class="grid-chips">
+                <div class="chip active">All</div>
+                <div class="chip">Templates</div>
+                <div class="chip">RFP</div>
+                <div class="chip">Proposal</div>
+                <div class="chip">Legal</div>
+              </div>
+              <div class="spacer"></div>
+              <span style="font-size:10px;color:#7c7a8e;">8 documents</span>
+            </div>
+
+            <div class="section-label" style="margin-top:2px;">Global Templates</div>
+            <div class="doc-grid">
+              <div class="doc-card selected">
+                <div class="card-ai">✦</div>
+                <div class="card-icon pdf">PDF</div>
+                <div class="card-name">iMocha Security Policy v3.pdf</div>
+                <div class="card-badges"><span class="type-badge type-template">Template</span></div>
+                <div class="card-size">1.2 MB · Jun 2</div>
+              </div>
+              <div class="doc-card">
+                <div class="card-ai">✦</div>
+                <div class="card-icon docx">DOC</div>
+                <div class="card-name">Standard MSA Template.docx</div>
+                <div class="card-badges"><span class="type-badge type-legal">Legal</span></div>
+                <div class="card-size">220 KB · May 28</div>
+              </div>
+              <div class="doc-card">
+                <div class="card-icon docx">DOC</div>
+                <div class="card-name">Company Overview Deck.docx</div>
+                <div class="card-badges"><span class="type-badge type-template">Template</span></div>
+                <div class="card-size">880 KB · May 15</div>
+              </div>
+            </div>
+
+            <div class="section-label" style="margin-top:6px;">Bid Documents</div>
+            <div class="doc-grid">
+              <div class="doc-card">
+                <div class="card-ai">✦</div>
+                <div class="card-icon pdf">PDF</div>
+                <div class="card-name">Acme Corp — RFP Document.pdf</div>
+                <div class="card-badges"><span class="type-badge type-rfp">RFP</span></div>
+                <div class="card-size">4.8 MB · Jun 1</div>
+                <div class="card-bid">Acme Corp</div>
+              </div>
+              <div class="doc-card">
+                <div class="card-ai">✦</div>
+                <div class="card-icon docx">DOC</div>
+                <div class="card-name">GlobalTech Proposal Draft v2.docx</div>
+                <div class="card-badges"><span class="type-badge type-proposal">Proposal</span></div>
+                <div class="card-size">890 KB · Jun 3</div>
+                <div class="card-bid">GlobalTech RFQ</div>
+              </div>
+              <div class="doc-card">
+                <div class="card-icon xlsx">XLS</div>
+                <div class="card-name">Condor Pricing Matrix.xlsx</div>
+                <div class="card-badges"><span class="type-badge type-reference">Reference</span></div>
+                <div class="card-size">340 KB · Jun 4</div>
+                <div class="card-bid">Condor Systems</div>
+              </div>
+              <div class="doc-card">
+                <div class="card-ai">✦</div>
+                <div class="card-icon pdf">PDF</div>
+                <div class="card-name">Zenith Industries NDA Signed.pdf</div>
+                <div class="card-badges"><span class="type-badge type-legal">Legal</span></div>
+                <div class="card-size">180 KB · May 30</div>
+                <div class="card-bid">Zenith Industries</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Preview Modal (open state) -->
+          <div class="modal-overlay">
+            <div class="modal">
+              <div class="modal-header">
+                <div class="file-icon pdf" style="width:28px;height:32px;font-size:10px;border-radius:4px;flex-shrink:0;">PDF</div>
+                <div style="flex:1;min-width:0;">
+                  <div class="modal-title">iMocha Security Policy v3.pdf</div>
+                  <div style="display:flex;gap:5px;margin-top:3px;">
+                    <span class="type-badge type-template">Template</span>
+                    <span class="type-badge" style="background:#f5f4fa;color:#7c7a8e;">Global</span>
+                    <span class="type-badge ai-badge">✦ AI-indexed</span>
+                  </div>
+                </div>
+                <div class="modal-close">✕</div>
+              </div>
+              <div class="modal-body">
+                <div class="modal-pdf">
+                  <div class="pdf-toolbar">
+                    <span>◀</span><span>1 / 6</span><span>▶</span>
+                    <span style="flex:1"></span>
+                    <span>⤢</span>
+                  </div>
+                  <div class="pdf-content">
+                    <div class="pdf-heading"></div>
+                    <div class="pdf-line long"></div>
+                    <div class="pdf-line med"></div>
+                    <div class="pdf-line long"></div>
+                    <div class="pdf-line short"></div>
+                    <div style="height:5px;"></div>
+                    <div class="pdf-line long"></div>
+                    <div class="pdf-line med"></div>
+                    <div class="pdf-line short"></div>
+                  </div>
+                </div>
+              </div>
+              <div class="modal-footer">
+                <div class="modal-meta">1.2 MB · Uploaded by Aryan Pawar · Jun 2, 2026</div>
+                <button class="mention-btn">Mention in AI</button>
+                <button class="action-btn">⬇ Download</button>
+                <button class="action-btn">↑ Replace</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       VARIANT C — Upload flow + Replace confirmation
+  ════════════════════════════════════════════ -->
+  <div class="variant">
+    <div class="variant-label">C — Upload flow + Replace confirmation dialog (applies to both A and B)</div>
+    <div class="shell">
+
+      <!-- Sidebar (abbreviated) -->
+      <div class="sidebar">
+        <div class="sidebar-brand">
+          <div class="sidebar-brand-name">Bid Compass</div>
+          <div class="sidebar-brand-sub">Pursuit Management</div>
+        </div>
+        <div style="padding: 6px 0;">
+          <div class="nav-item active"><span class="nav-icon">📁</span><span class="nav-label">Knowledge Hub</span></div>
+        </div>
+      </div>
+
+      <div class="app">
+        <div class="topbar">
+          <div class="topbar-left">
+            <div class="topbar-title">Knowledge Hub</div>
+            <div class="topbar-sub">Bid documents and templates</div>
+          </div>
+          <div class="spacer"></div>
+          <button class="upload-btn">+ Upload</button>
+        </div>
+
+        <div class="content" style="position: relative;">
+          <div class="upload-area">
+            <!-- Left: dropzone + progress -->
+            <div class="upload-left">
+              <div class="dropzone">
+                <div class="dz-icon">📂</div>
+                <div class="dz-title">Drop files to upload</div>
+                <div class="dz-sub">PDF, DOCX, XLSX · or <span style="color:#491aeb;font-weight:600;cursor:pointer;">browse files</span></div>
+                <div class="dz-limit">Max 25 MB per file</div>
+              </div>
+              <div class="progress-list">
+                <div class="progress-item">
+                  <div class="prog-icon pdf">PDF</div>
+                  <div class="prog-info">
+                    <div class="prog-name">iMocha Security Policy v4.pdf</div>
+                    <div class="prog-bar-wrap"><div class="prog-bar" style="width:100%"></div></div>
+                  </div>
+                  <div class="prog-status done">Uploaded</div>
+                </div>
+                <div class="progress-item">
+                  <div class="prog-icon docx">DOC</div>
+                  <div class="prog-info">
+                    <div class="prog-name">Acme Corp Proposal Final.docx</div>
+                    <div class="prog-bar-wrap"><div class="prog-bar" style="width:60%"></div></div>
+                  </div>
+                  <div class="prog-status progress">Indexing…</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Right: metadata form -->
+            <div class="upload-right">
+              <div class="upload-form">
+                <div>
+                  <div class="form-label">Document Type</div>
+                  <select class="form-select">
+                    <option>Template</option>
+                    <option>RFP</option>
+                    <option>Proposal</option>
+                    <option>Legal</option>
+                    <option>Reference</option>
+                  </select>
+                </div>
+                <div>
+                  <div class="form-label">Link to Bid (optional)</div>
+                  <select class="form-select">
+                    <option>— Global Template —</option>
+                    <option>Acme Corp</option>
+                    <option>GlobalTech RFQ</option>
+                    <option>Condor Systems</option>
+                  </select>
+                </div>
+                <div>
+                  <div class="form-label">Stage (optional)</div>
+                  <select class="form-select">
+                    <option>— Any stage —</option>
+                    <option>RFP</option>
+                    <option>Due Diligence</option>
+                    <option>Contract & Closure</option>
+                  </select>
+                </div>
+                <button class="form-submit">Upload & Index</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Replace Confirmation Modal (shown when duplicate detected) -->
+          <div class="modal-overlay">
+            <div class="replace-modal">
+              <div class="replace-header">
+                <div class="replace-title">Replace existing document?</div>
+              </div>
+              <div class="replace-body">
+                <div style="display:flex;gap:10px;align-items:flex-start;">
+                  <div class="replace-icon">⚠️</div>
+                  <div class="replace-text">
+                    A document named <strong>iMocha Security Policy v3.pdf</strong> already exists in the global templates library.
+                  </div>
+                </div>
+                <div class="replace-diff">
+                  <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#7c7a8e;margin-bottom:4px;">What changes</div>
+                  <div class="diff-row">
+                    <span style="color:#7c7a8e;font-size:9px;">File</span>
+                    <span class="diff-old">v3.pdf (1.2 MB)</span>
+                    <span class="diff-arrow">→</span>
+                    <span class="diff-new">v4.pdf (1.4 MB)</span>
+                  </div>
+                  <div class="diff-row">
+                    <span style="color:#7c7a8e;font-size:9px;">AI index</span>
+                    <span class="diff-old">Old embeddings</span>
+                    <span class="diff-arrow">→</span>
+                    <span class="diff-new">Re-indexed</span>
+                  </div>
+                </div>
+              </div>
+              <div class="replace-actions">
+                <button class="replace-btn confirm">Replace & Re-index</button>
+                <button class="replace-btn cancel">Keep existing</button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
