@@ -95,26 +95,17 @@ _Route: `/analytics` (placeholder exists)_
 ---
 
 ### 2.5 — AI Command Center
-_Route: `/ai` (placeholder exists)_
+_Route: `/ai`_
 
-**Stub:** [`plans/stubs/ai-command-center.md`](plans/stubs/ai-command-center.md)
+| Spec | Plan | Status |
+|---|---|---|
+| [spec](specs/2026-06-05-ai-command-center-design.md) | [plan](plans/2026-06-05-ai-command-center.md) | ✅ Implemented |
 
-**To make the plan, answer these in a brainstorm session:**
-- [ ] Streaming responses, or single-shot?
-- [ ] Per-bid sessions (context = that bid's data) or global assistant?
-- [ ] Should AI context include uploaded documents (Knowledge Hub), or just structured bid fields?
-- [ ] Persist chat history in DB, or session-only?
-- [ ] Quick actions in the widget (Summarise RFP, Generate win themes, Identify risks, Draft exec summary) — which Claude model for each?
-- [ ] Rate limiting / cost guardrails per user or org?
+**Key decisions:** Streaming via `createServerFn` returning `Response` (TanStack Start `x-tss-raw` passthrough) · Bid + Global modes · pgvector doc chunk retrieval via Voyage AI (top 8 chunks) · `claude-sonnet-4-6` default · Model persisted in `localStorage` under `bid-compass:ai-model` · Quick-action chips (Summarise RFP, Win themes, Identify risks, Draft exec summary) · Informational usage counter (sessions created today), no hard rate limit in v1
 
-**New tables needed:**
-```sql
-ai_sessions (id, bid_id, user_id, messages jsonb, created_at)
-```
-**New server function:** TanStack Start server function to proxy Anthropic API calls (keeps API key server-side).
-**Env var needed:** `ANTHROPIC_API_KEY`
+**New table:** `ai_sessions (id, bid_id, user_id, model, messages jsonb, created_at)` with RLS · **New RPC:** `match_bid_document_chunks` (pgvector, 1024-dim) · **Env vars:** `ANTHROPIC_API_KEY` + `VOYAGE_API_KEY` (already set from 2.3)
 
-**Blocked by:** Nothing — Knowledge Hub (2.3) ✅ is complete. Documents are AI-indexed and `@mention` copies are ready for the AI chat to consume.
+**Pending:** Apply `supabase/migrations/20260605160000_ai_sessions.sql` in Supabase SQL Editor.
 
 ---
 
