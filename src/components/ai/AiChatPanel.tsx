@@ -1,16 +1,19 @@
-import { useEffect, useRef } from "react";
-import { Send, Loader2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Send, Loader2, Copy, Check } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { Message } from "@/lib/ai-queries";
 import type { Bid } from "@/lib/bid-queries";
 import { stageLabel } from "@/lib/bid-constants";
 
 const MODELS = [
-  { id: "claude-opus-4-8",           label: "Claude Opus" },
-  { id: "claude-sonnet-4-6",         label: "Claude Sonnet" },
-  { id: "claude-haiku-4-5-20251001", label: "Claude Haiku" },
+  { id: "claude-opus-4-8",            label: "Claude Opus" },
+  { id: "claude-sonnet-4-6",          label: "Claude Sonnet" },
+  { id: "claude-haiku-4-5-20251001",  label: "Claude Haiku" },
+  { id: "azure-gpt-5.4",              label: "GPT-5.4 (Azure)" },
 ] as const;
 
-const QUICK_ACTIONS = [
+const QUICK_ACTIONS_GENERIC = [
   {
     label: "Summarise RFP",
     prompt:
@@ -30,6 +33,29 @@ const QUICK_ACTIONS = [
     label: "Draft exec summary",
     prompt:
       "Draft a compelling executive summary for our proposal response to this RFP. Focus on our understanding of their needs, our solution approach, and key differentiators.",
+  },
+] as const;
+
+const QUICK_ACTIONS_RFI_RFP = [
+  {
+    label: "Analyse requirements",
+    prompt:
+      "Please analyse the client requirements in the uploaded documents and map each one to iMocha's capabilities. Output format: Requirement | Status | iMocha Capability | Source.",
+  },
+  {
+    label: "Map to KB",
+    prompt:
+      "Review all requirements in this RFP/RFI and classify each as SUPPORTED or NOT SUPPORTED based strictly on iMocha's knowledge base. Do not infer or assume capabilities not explicitly documented.",
+  },
+  {
+    label: "Security & compliance",
+    prompt:
+      "What are iMocha's security certifications, data protection measures, and compliance posture relevant to this RFP? Include applicable policy references.",
+  },
+  {
+    label: "Draft response section",
+    prompt:
+      "Based on the RFP requirements in the uploaded documents, draft a structured response section addressing iMocha's capabilities. Cite the source document for each claim.",
   },
 ] as const;
 
@@ -68,6 +94,8 @@ export function AiChatPanel({
 
   const canSend = !isStreaming && !!sessionId && inputValue.trim().length > 0;
   const showQuickActions = !isGlobal && !!activeBid && messages.length === 0 && !!sessionId;
+  const isRfiRfpStage = activeBid?.stage === "rfi" || activeBid?.stage === "rfp";
+  const quickActions = isRfiRfpStage ? QUICK_ACTIONS_RFI_RFP : QUICK_ACTIONS_GENERIC;
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -121,7 +149,7 @@ export function AiChatPanel({
       {/* Quick action chips — bid mode only, empty session only */}
       {showQuickActions && (
         <div className="flex gap-2 px-4 py-2.5 border-b hairline border-border bg-card shrink-0 flex-wrap">
-          {QUICK_ACTIONS.map((action) => (
+          {quickActions.map((action) => (
             <button
               key={action.label}
               onClick={() => onSend(action.prompt)}
@@ -213,6 +241,14 @@ function MessageBubble({
   isStreaming: boolean;
 }) {
   const isUser = message.role === "user";
+  const [copied, setCopied] = useState(false);
+
+  function handleCopy() {
+    navigator.clipboard.writeText(message.content).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
 
   return (
     <div className={["flex gap-3", isUser ? "flex-row-reverse" : "flex-row"].join(" ")}>
@@ -225,19 +261,51 @@ function MessageBubble({
         {isUser ? "You" : "AI"}
       </div>
 
-      <div
-        className={[
-          "max-w-[75%] rounded-xl px-3 py-2.5 text-[12px] leading-relaxed",
-          isUser
-            ? "bg-primary text-white rounded-tr-sm"
-            : "bg-card border hairline border-border text-foreground rounded-tl-sm",
-        ].join(" ")}
-      >
-        {message.content ? (
-          <div className="whitespace-pre-wrap">{message.content}</div>
-        ) : isStreaming ? (
-          <TypingIndicator />
-        ) : null}
+      <div className="max-w-[75%] flex flex-col gap-1">
+        <div
+          className={[
+            "rounded-xl px-3 py-2.5 text-[12px] leading-relaxed",
+            isUser
+              ? "bg-primary text-white rounded-tr-sm"
+              : "bg-card border hairline border-border text-foreground rounded-tl-sm",
+          ].join(" ")}
+        >
+          {message.content ? (
+            isUser ? (
+              <div className="whitespace-pre-wrap">{message.content}</div>
+            ) : (
+              <div className="prose prose-sm max-w-none prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-ol:my-1 prose-li:my-0 prose-table:text-[11px] prose-th:py-1 prose-td:py-1 prose-hr:my-2 prose-pre:bg-muted prose-pre:text-[11px] prose-code:text-[11px] prose-code:bg-muted prose-code:px-1 prose-code:rounded dark:prose-invert">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {message.content}
+                </ReactMarkdown>
+              </div>
+            )
+          ) : isStreaming ? (
+            <TypingIndicator />
+          ) : null}
+        </div>
+
+        {/* Copy button — assistant only, shown after streaming completes */}
+        {!isUser && message.content && !isStreaming && (
+          <div className="flex items-center">
+            <button
+              onClick={handleCopy}
+              className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors px-1 py-0.5 rounded"
+            >
+              {copied ? (
+                <>
+                  <Check className="size-3 text-green-500" />
+                  <span className="text-green-500">Copied</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="size-3" />
+                  <span>Copy</span>
+                </>
+              )}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
