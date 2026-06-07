@@ -237,7 +237,7 @@ async function buildSystemBlocks(
   return [{ type: "text", text: parts.join("\n"), cache_control: { type: "ephemeral" } }];
 }
 
-// ── tool definition ────────────────────────────────────────────────────────────
+// ── tool definitions ───────────────────────────────────────────────────────────
 
 const SEARCH_TOOL: Anthropic.Messages.Tool = {
   name: "search_knowledge_base",
@@ -260,6 +260,151 @@ const SEARCH_TOOL: Anthropic.Messages.Tool = {
   },
 };
 
+const AZURE_SEARCH_TOOL: OpenAI.Chat.ChatCompletionTool = {
+  type: "function",
+  function: {
+    name: "search_knowledge_base",
+    description: SEARCH_TOOL.description,
+    parameters: SEARCH_TOOL.input_schema as Record<string, unknown>,
+  },
+};
+
+// ── provider loops ─────────────────────────────────────────────────────────────
+
+async function runAnthropicLoop(
+  data: z.infer<typeof InputSchema>,
+  systemBlocks: Anthropic.Messages.TextBlockParam[],
+  controller: ReadableStreamDefaultController
+) {
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  const MAX_ROUNDS = 3;
+
+  type AnthropicMsg = Anthropic.Messages.MessageParam;
+  const messages: AnthropicMsg[] = data.messages.map((m) => ({
+    role: m.role,
+    content: m.content,
+  }));
+
+  let rounds = 0;
+
+  while (true) {
+    const isLastRound = rounds >= MAX_ROUNDS;
+
+    const apiStream = anthropic.messages.stream({
+      model: data.model,
+      max_tokens: 4096,
+      thinking: { type: "adaptive" },
+      system: systemBlocks,
+      tools: isLastRound ? undefined : [SEARCH_TOOL],
+      messages,
+    });
+
+    for await (const event of apiStream) {
+      if (
+        event.type === "content_block_delta" &&
+        event.delta.type === "text_delta"
+      ) {
+        controller.enqueue(new TextEncoder().encode(event.delta.text));
+      }
+    }
+
+    const final = await apiStream.finalMessage();
+
+    if (final.stop_reason !== "tool_use" || isLastRound) break;
+
+    messages.push({ role: "assistant", content: final.content });
+    const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
+
+    for (const block of final.content) {
+      if (block.type !== "tool_use" || block.name !== "search_knowledge_base") continue;
+      const query = (block.input as { query: string }).query;
+      controller.enqueue(statusLine("search", query));
+      const chunks = await runSearch(query, data.bidId);
+      toolResults.push({
+        type: "tool_result",
+        tool_use_id: block.id,
+        content: formatChunks(chunks),
+      });
+    }
+
+    messages.push({ role: "user", content: toolResults });
+    rounds++;
+  }
+}
+
+async function runAzureLoop(
+  data: z.infer<typeof InputSchema>,
+  systemBlocks: Anthropic.Messages.TextBlockParam[],
+  controller: ReadableStreamDefaultController
+) {
+  const deploymentName = process.env.AZURE_OPENAI_DEPLOYMENT_GPT54 ?? "";
+  const azureClient = new AzureOpenAI({
+    endpoint: process.env.AZURE_OPENAI_ENDPOINT ?? "",
+    apiKey: process.env.AZURE_OPENAI_API_KEY ?? "",
+    apiVersion: process.env.AZURE_OPENAI_API_VERSION ?? "2024-02-01",
+    deployment: deploymentName,
+  });
+
+  const systemText = systemBlocks.map((b) => b.text).join("\n");
+
+  type AzureMsg = OpenAI.Chat.ChatCompletionMessageParam;
+  const messages: AzureMsg[] = [
+    { role: "system", content: systemText },
+    ...data.messages.map((m) => ({
+      role: m.role as "user" | "assistant",
+      content: m.content,
+    })),
+  ];
+
+  const MAX_ROUNDS = 3;
+  let rounds = 0;
+
+  while (true) {
+    const isLastRound = rounds >= MAX_ROUNDS;
+
+    const stream = azureClient.chat.completions.stream({
+      model: deploymentName,
+      max_completion_tokens: 4096,
+      messages,
+      tools: isLastRound ? undefined : [AZURE_SEARCH_TOOL],
+    });
+
+    for await (const chunk of stream) {
+      const content = chunk.choices[0]?.delta?.content;
+      if (content) {
+        controller.enqueue(new TextEncoder().encode(content));
+      }
+    }
+
+    const final = await stream.finalChatCompletion();
+    const finishReason = final.choices[0]?.finish_reason;
+
+    if (finishReason !== "tool_calls" || isLastRound) break;
+
+    const assistantMessage = final.choices[0].message;
+    messages.push({
+      role: "assistant",
+      content: assistantMessage.content ?? null,
+      tool_calls: assistantMessage.tool_calls,
+    });
+
+    const toolCalls = assistantMessage.tool_calls ?? [];
+    for (const toolCall of toolCalls) {
+      if (toolCall.function.name !== "search_knowledge_base") continue;
+      const { query } = JSON.parse(toolCall.function.arguments) as { query: string };
+      controller.enqueue(statusLine("search", query));
+      const chunks = await runSearch(query, data.bidId);
+      messages.push({
+        role: "tool",
+        tool_call_id: toolCall.id,
+        content: formatChunks(chunks),
+      });
+    }
+
+    rounds++;
+  }
+}
+
 // ── server function ────────────────────────────────────────────────────────────
 
 export const streamChatFn = createServerFn({ method: "POST" })
@@ -276,67 +421,13 @@ export const streamChatFn = createServerFn({ method: "POST" })
 
     const systemBlocks = await buildSystemBlocks(data.bidId);
 
-    type AnthropicMsg = Anthropic.Messages.MessageParam;
-    const messages: AnthropicMsg[] = data.messages.map((m) => ({
-      role: m.role,
-      content: m.content,
-    }));
-
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-    const MAX_ROUNDS = 3;
-
     const stream = new ReadableStream({
       async start(controller) {
-        let rounds = 0;
-
         try {
-          while (true) {
-            const isLastRound = rounds >= MAX_ROUNDS;
-
-            const apiStream = anthropic.messages.stream({
-              model: data.model,
-              max_tokens: 4096,
-              thinking: { type: "adaptive" },
-              system: systemBlocks,
-              tools: isLastRound ? undefined : [SEARCH_TOOL],
-              tool_choice: isLastRound ? undefined : undefined,
-              messages,
-            });
-
-            // Stream text deltas immediately as they arrive
-            for await (const event of apiStream) {
-              if (
-                event.type === "content_block_delta" &&
-                event.delta.type === "text_delta"
-              ) {
-                controller.enqueue(new TextEncoder().encode(event.delta.text));
-              }
-            }
-
-            const final = await apiStream.finalMessage();
-
-            if (final.stop_reason !== "tool_use" || isLastRound) {
-              break;
-            }
-
-            // Handle tool calls
-            messages.push({ role: "assistant", content: final.content });
-            const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
-
-            for (const block of final.content) {
-              if (block.type !== "tool_use" || block.name !== "search_knowledge_base") continue;
-              const query = (block.input as { query: string }).query;
-              controller.enqueue(statusLine("search", query));
-              const chunks = await runSearch(query, data.bidId);
-              toolResults.push({
-                type: "tool_result",
-                tool_use_id: block.id,
-                content: formatChunks(chunks),
-              });
-            }
-
-            messages.push({ role: "user", content: toolResults });
-            rounds++;
+          if (isAzureModel(data.model)) {
+            await runAzureLoop(data, systemBlocks, controller);
+          } else {
+            await runAnthropicLoop(data, systemBlocks, controller);
           }
         } catch (err) {
           controller.error(err);
