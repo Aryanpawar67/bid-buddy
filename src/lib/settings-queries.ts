@@ -2,6 +2,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { AppRole } from "@/lib/auth";
 import { useCurrentUser } from "@/lib/auth";
+import {
+  saveHubSpotTokenFn,
+  saveStageMapFn,
+  syncFromHubSpotFn,
+} from "@/lib/api/hubspot-sync";
 
 export type RolePermission = {
   id: string;
@@ -207,4 +212,54 @@ export function useHasPermission(resourceKey: string): boolean {
   if (isAdmin) return true;
   const match = perms.find((p) => p.role === primaryRole && p.resource_key === resourceKey);
   return match?.allowed ?? false;
+}
+
+// ── useHubSpotStatus ──────────────────────────────────────────────────────────
+export function useHubSpotStatus() {
+  return useQuery({
+    queryKey: ["hubspot-status"],
+    queryFn: async () => {
+      const [tokenRes, syncRes, mapRes] = await Promise.all([
+        (supabase as any).from("org_settings").select("value").eq("key", "hubspot_token").maybeSingle(),
+        (supabase as any).from("org_settings").select("value").eq("key", "hubspot_last_synced").maybeSingle(),
+        (supabase as any).from("org_settings").select("value").eq("key", "hubspot_stage_map").maybeSingle(),
+      ]);
+      return {
+        connected: !!((tokenRes.data?.value as any)?.token),
+        lastSynced: (syncRes.data?.value as any) ?? { at: null, created: 0, updated: 0, errors: 0 },
+        mappings: ((mapRes.data?.value as any)?.mappings ?? []) as { hubspot: string; bidcompass: string }[],
+      };
+    },
+  });
+}
+
+// ── useSaveHubSpotToken ───────────────────────────────────────────────────────
+export function useSaveHubSpotToken() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (token: string) => saveHubSpotTokenFn({ data: { token } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["hubspot-status"] }),
+  });
+}
+
+// ── useSaveStageMap ───────────────────────────────────────────────────────────
+export function useSaveStageMap() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (mappings: { hubspot: string; bidcompass: string }[]) =>
+      saveStageMapFn({ data: { mappings } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["hubspot-status"] }),
+  });
+}
+
+// ── useSyncFromHubSpot ────────────────────────────────────────────────────────
+export function useSyncFromHubSpot() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => syncFromHubSpotFn({ data: {} }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["hubspot-status"] });
+      qc.invalidateQueries({ queryKey: ["bids"] });
+    },
+  });
 }
