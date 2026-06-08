@@ -21,11 +21,11 @@ create table if not exists public.role_permissions (
 alter table public.role_permissions enable row level security;
 create policy "admins_all_role_permissions" on public.role_permissions
   for all using (
-    exists (select 1 from public.user_roles where user_id = auth.uid() and role = 'admin')
+    exists (select 1 from public.user_roles where user_id = auth.uid() and role = 'admin'::public.app_role)
   );
 create policy "users_read_own_role_permissions" on public.role_permissions
   for select using (
-    role = (select r.role from public.user_roles r where r.user_id = auth.uid() limit 1)
+    role = (select r.role::text from public.user_roles r where r.user_id = auth.uid() limit 1)
   );
 
 -- Seed defaults
@@ -90,7 +90,7 @@ create table if not exists public.bid_assignments (
 alter table public.bid_assignments enable row level security;
 create policy "admins_manage_bid_assignments" on public.bid_assignments
   for all using (
-    exists (select 1 from public.user_roles where user_id = auth.uid() and role = 'admin')
+    exists (select 1 from public.user_roles where user_id = auth.uid() and role = 'admin'::public.app_role)
   );
 create policy "users_read_bid_assignments" on public.bid_assignments
   for select using (auth.uid() is not null);
@@ -106,7 +106,7 @@ create table if not exists public.org_settings (
 alter table public.org_settings enable row level security;
 create policy "admins_all_org_settings" on public.org_settings
   for all using (
-    exists (select 1 from public.user_roles where user_id = auth.uid() and role = 'admin')
+    exists (select 1 from public.user_roles where user_id = auth.uid() and role = 'admin'::public.app_role)
   );
 
 insert into public.org_settings (key, value) values
