@@ -2,8 +2,6 @@ import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 import Anthropic from "@anthropic-ai/sdk";
 import JSZip from "jszip";
-import { readFileSync } from "fs";
-import { join } from "path";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
@@ -15,8 +13,10 @@ const InputSchema = z.object({
 // ── Template cache ─────────────────────────────────────────────────────────────
 const templateCache: Record<string, Buffer> = {};
 
-function getTemplateBuffer(filename: string): Buffer {
+async function getTemplateBuffer(filename: string): Promise<Buffer> {
   if (!templateCache[filename]) {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
     const p = join(process.cwd(), "src", "assets", filename);
     templateCache[filename] = readFileSync(p);
   }
@@ -218,7 +218,7 @@ Output a single valid JSON object with this exact schema (no markdown, no code b
 
     // ── Phase 2: Assemble DOCX ────────────────────────────────────────────────
     const templateFilename = intake.product === "TM" ? TM_TEMPLATE : TA_TEMPLATE;
-    const templateBuffer = getTemplateBuffer(templateFilename);
+    const templateBuffer = await getTemplateBuffer(templateFilename);
 
     const zip = await JSZip.loadAsync(templateBuffer);
 
