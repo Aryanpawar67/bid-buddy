@@ -337,11 +337,11 @@ async function runAzureLoop(
   systemBlocks: Anthropic.Messages.TextBlockParam[],
   controller: ReadableStreamDefaultController
 ) {
-  const deploymentName = process.env.AZURE_OPENAI_DEPLOYMENT_GPT54 ?? "";
+  const deploymentName = process.env.AZURE_GPT54_DEPLOYMENT ?? "";
   const azureClient = new AzureOpenAI({
-    endpoint: process.env.AZURE_OPENAI_ENDPOINT ?? "",
-    apiKey: process.env.AZURE_OPENAI_API_KEY ?? "",
-    apiVersion: process.env.AZURE_OPENAI_API_VERSION ?? "2024-02-01",
+    endpoint: process.env.AZURE_ENDPOINT ?? "",
+    apiKey: process.env.AZURE_API_KEY ?? "",
+    apiVersion: process.env.AZURE_API_VERSION ?? "2024-12-01-preview",
     deployment: deploymentName,
   });
 
