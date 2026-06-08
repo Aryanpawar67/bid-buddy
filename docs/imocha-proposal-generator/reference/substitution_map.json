@@ -1,0 +1,110 @@
+{
+  "_comment": "Intake schema and TA placeholder catalog. The model authors variable content from the user's brief, assembles it into this JSON shape, then calls generate_proposal.py.",
+
+  "intake_schema": {
+    "product": "TA | TM",
+    "rfp_name": "string — Opportunity / RFP name. Appears on cover and header.",
+    "customer_display_name": "string — Customer name as it should appear throughout the proposal. Used in cover, body, headers, footers.",
+    "prepared_for": "string — Contact name & title, or '[TO PROVIDE: contact name & title]' if unknown.",
+    "spoc_name": "string — Sales SPOC name, or null (will become '[TO PROVIDE: Sales SPOC name]').",
+    "spoc_email": "string — Sales SPOC email, or null (will become '[TO PROVIDE: Sales SPOC email]').",
+    "exec_summary": {
+      "pleased": "string — Paragraph 1: introduce iMocha's product as recommended platform.",
+      "aligned": "string — Paragraph 2: restate customer requirements; surface explicit out-of-scope exclusions.",
+      "confident": "string — Paragraph 3: proof points (hosting, integrations, certifications, commercial model)."
+    },
+    "scope_intro": "string — One paragraph stating in-scope work + closing sentence restating exclusions.",
+    "deliverables": [
+      "string — 8 to 12 bullet items mapping customer requirements to iMocha capabilities.",
+      "Include integrations the customer named, compliance, hosting/security, implementation, commercial model.",
+      "End with a final bullet restating explicit out-of-scope exclusions if any."
+    ],
+    "extra_substitutions": {
+      "_comment": "Optional. Any extra token→value pairs the model wants to substitute. Useful if the master template has additional placeholders not in the standard catalog below."
+    }
+  },
+
+  "ta_placeholder_catalog": {
+    "_note": "These are the literal tokens present in the TA master (Skills-First_TA_Proposal_Template_v1_0.docx). Angle brackets are XML-escaped as &lt; and &gt; inside document.xml. The script handles substitution automatically; this catalog is for reference and debugging.",
+
+    "Customer Name (CUSTOMER NAME)": {
+      "kind": "COMPOSITE",
+      "where": "Section 3 intro: 'outlined by Customer Name (CUSTOMER NAME)'",
+      "substitute_with": "customer_display_name",
+      "ordering": "MUST be substituted before the individual tokens it contains, otherwise the output reads 'NFCU (NFCU)'."
+    },
+    "&lt;RFP Name&gt;": {
+      "where": "Cover page, page header",
+      "substitute_with": "rfp_name"
+    },
+    "&lt;Customer Name&gt;": {
+      "where": "Cover page, body intros, multiple sections",
+      "substitute_with": "customer_display_name"
+    },
+    "CUSTOMER NAME": {
+      "where": "Section 3 sub-sections (assessment customization, branding, etc.) — 10 occurrences in TA master",
+      "substitute_with": "customer_display_name"
+    },
+    "&lt;Sales spoc name&gt;": {
+      "where": "Cover page, Prepared By block",
+      "substitute_with": "spoc_name"
+    },
+    "Sales email id": {
+      "where": "Cover page, Prepared By block",
+      "substitute_with": "spoc_email"
+    },
+    "&lt;How we are pleased to provide the solution&gt;": {
+      "where": "Executive Summary, paragraph 1",
+      "substitute_with": "exec_summary.pleased"
+    },
+    "&lt;How we are aligned with customer goals and their requirement&gt;": {
+      "where": "Executive Summary, paragraph 2",
+      "substitute_with": "exec_summary.aligned",
+      "must_include": "Out-of-scope exclusions if any."
+    },
+    "&lt;How confident we are to deliver value&gt;": {
+      "where": "Executive Summary, paragraph 3",
+      "substitute_with": "exec_summary.confident"
+    },
+    "&lt;How scope is aligned to what iMocha can deliver&gt;": {
+      "where": "Section 2 Scope of Work, intro paragraph",
+      "substitute_with": "scope_intro",
+      "must_include": "Closing sentence with explicit exclusions."
+    }
+  },
+
+  "injection_points": {
+    "2.1 In scope Key Deliverables": {
+      "where": "Section 2.1 heading. In the master, this heading has no body content beneath it — section 3 follows directly.",
+      "inject": "8-12 bullet paragraphs using the template's discovered bullet pattern (numId, font, size detected at runtime).",
+      "from": "intake.deliverables array"
+    }
+  },
+
+  "example_intake": {
+    "product": "TA",
+    "rfp_name": "Example Corp Skills Assessment Platform RFP",
+    "customer_display_name": "Example Corp",
+    "prepared_for": "Jane Doe, Chief Talent Officer",
+    "spoc_name": "Aryan Pawar",
+    "spoc_email": "aryan@imocha.io",
+    "exec_summary": {
+      "pleased": "We are pleased to present iMocha's Skills-First Cloud for Talent Acquisition to Example Corp as the recommended platform for enterprise-grade candidate skills assessment across multiple job families, fully aligned to the requirements outlined in the RFP.",
+      "aligned": "This proposal addresses Example Corp's core requirement — a secure, scalable assessment solution focused on cognitive ability, technical, and role-specific testing. Conversational AI Interview, Live Interview, and Asynchronous Pre-recorded Interview modules are not in core scope and may be evaluated as future add-ons. iMocha brings 3,000+ ready assessments and 35+ coding languages.",
+      "confident": "iMocha is positioned to deliver measurable hiring outcomes through SaaS deployment on Microsoft Azure, native integration with Workday HCM, EEOC/ADA-aligned validity, WCAG 2.1 Level AA accessibility, ISO 27001 and SOC 2 Type II assurance, and a flexible annual subscription model with test-credit pricing."
+    },
+    "scope_intro": "The scope of this engagement is the deployment, configuration, and rollout of iMocha's Skills Assessment platform for Example Corp. The engagement covers assessment library access, configurable design, candidate experience, anti-fraud controls, reporting and analytics, integration with Workday HCM, security and compliance posture, and onboarding, training, and ongoing support. Conversational AI Interview, Live Interview, and Asynchronous Pre-recorded Interview modules are explicitly out of scope for this engagement.",
+    "deliverables": [
+      "Access to iMocha's assessment library covering cognitive, technical, and role-specific simulations — 3,000+ ready assessments and 35+ coding languages.",
+      "Configurable assessment creation, editing, packaging, and branding; assignment by role and requisition.",
+      "Anti-fraud and proctoring controls: ID verification, AI/video/image proctoring, Safe Assessment Browser, copy-paste restriction.",
+      "Reporting and analytics: dashboards, scoring, benchmarking, custom reporting.",
+      "Integration with Workday HCM via REST APIs.",
+      "Compliance and accessibility: EEOC/ADA, GDPR/CCPA, WCAG 2.1 Level AA.",
+      "Hosting and security: Microsoft Azure SaaS, TLS 1.2, 99.9% availability, RTO 1 hour, RPO 5 minutes, SSO, RBAC.",
+      "Implementation: onboarding, configuration, UAT, training, dedicated Customer Success Manager, 24x7 support.",
+      "Commercial: annual SaaS subscription with test-credit pricing and true-up.",
+      "Explicitly excluded: Conversational AI, Live, and Asynchronous Pre-recorded Interview modules."
+    ]
+  }
+}
