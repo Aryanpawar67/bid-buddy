@@ -25,7 +25,7 @@ export function useSession() {
 }
 
 export function useCurrentUser() {
-  const { user } = useSession();
+  const { user, loading: sessionLoading } = useSession();
   const profileQuery = useQuery({
     queryKey: ["profile", user?.id],
     enabled: !!user,
@@ -75,7 +75,7 @@ export function useCurrentUser() {
     primaryRole,
     isAdmin: roles.includes("admin"),
     isPreSales: roles.includes("pre_sales") || roles.includes("admin"),
-    loading: profileQuery.isLoading || rolesQuery.isLoading,
+    loading: sessionLoading || profileQuery.isLoading || rolesQuery.isLoading,
   };
 }
 
