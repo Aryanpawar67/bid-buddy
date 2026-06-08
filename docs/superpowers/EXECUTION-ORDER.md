@@ -1,10 +1,12 @@
 # Bid Compass — Feature Execution Order
-_Last updated: 2026-06-05_
+
+*Last updated: 2026-06-08*
 
 This document tracks the order in which all features are designed, planned, and implemented.
 Each feature must have a ✅ **Spec** and ✅ **Plan** before execution can begin.
 
 Legend:
+
 - ✅ Ready — spec + full implementation plan exist, can execute now
 - 🔶 Stub — goal and backend requirements documented, needs brainstorm → spec → plan session
 - ⬜ Not started — nothing exists yet
@@ -13,19 +15,24 @@ Legend:
 
 ## Phase 0 — Foundation (Done)
 
-| # | Feature | Spec | Plan | Status |
-|---|---|---|---|---|
+
+| #   | Feature                                  | Spec                                                  | Plan                                           | Status        |
+| --- | ---------------------------------------- | ----------------------------------------------------- | ---------------------------------------------- | ------------- |
 | 0.1 | Dashboard overview + Pipeline split-pane | [spec](specs/2026-06-04-dashboard-overview-design.md) | [plan](plans/2026-06-04-dashboard-overview.md) | ✅ Implemented |
+
 
 ---
 
 ## Phase 1 — V1 Shell Redesign (Done)
 
-| # | Feature | Spec | Plan | Status |
-|---|---|---|---|---|
+
+| #   | Feature                                                                             | Spec                                                 | Plan                                          | Status        |
+| --- | ----------------------------------------------------------------------------------- | ---------------------------------------------------- | --------------------------------------------- | ------------- |
 | 1.1 | Sidebar (220px labels + sub-nav) + TopBar + Dashboard redesign + placeholder routes | [spec](specs/2026-06-05-v1-shell-redesign-design.md) | [plan](plans/2026-06-05-v1-shell-redesign.md) | ✅ Implemented |
 
+
 **Execution order within 1.1:**
+
 1. Task 1 — Foundation (`useRecentActivity` hook + 3 placeholder routes)
 2. Task 2 — Sidebar rewrite
 3. Task 3 — TopBar rewrite
@@ -39,11 +46,14 @@ Legend:
 ---
 
 ### 2.1 — Notifications
-_Route: `/notifications` (placeholder exists)_
 
-| Spec | Plan | Status |
-|---|---|---|
+*Route: `/notifications` (placeholder exists)*
+
+
+| Spec                                             | Plan                                      | Status        |
+| ------------------------------------------------ | ----------------------------------------- | ------------- |
 | [spec](specs/2026-06-05-notifications-design.md) | [plan](plans/2026-06-05-notifications.md) | ✅ Implemented |
+
 
 **Key decisions:** All pre_sales + admin notified · In-app only · 5 event types (stage change, deadline, Go/No-Go, bid created, task done) · Forever retention · Master/Detail UI · Approach A (Postgres triggers + client-side deadline check)
 
@@ -52,11 +62,14 @@ _Route: `/notifications` (placeholder exists)_
 ---
 
 ### 2.2 — Calendar
-_Route: `/calendar` (placeholder exists)_
 
-| Spec | Plan | Status |
-|---|---|---|
+*Route: `/calendar` (placeholder exists)*
+
+
+| Spec                                        | Plan                                 | Status        |
+| ------------------------------------------- | ------------------------------------ | ------------- |
 | [spec](specs/2026-06-05-calendar-design.md) | [plan](plans/2026-06-05-calendar.md) | ✅ Implemented |
+
 
 **Key decisions:** Week view only · `bids.deadline` markers (all-day strip) + ad-hoc free-standing events · Team/Personal toggle · `react-big-calendar` with date-fns localizer · No iCal export · No drag-to-reschedule in v1
 
@@ -67,11 +80,14 @@ _Route: `/calendar` (placeholder exists)_
 ---
 
 ### 2.3 — Knowledge Hub (Documents)
-_Route: `/docs` (placeholder exists)_
 
-| Spec | Plan | Status |
-|---|---|---|
+*Route: `/docs` (placeholder exists)*
+
+
+| Spec                                             | Plan                                      | Status        |
+| ------------------------------------------------ | ----------------------------------------- | ------------- |
 | [spec](specs/2026-06-05-knowledge-hub-design.md) | [plan](plans/2026-06-05-knowledge-hub.md) | ✅ Implemented |
+
 
 **Key decisions:** Both global templates + bid-scoped (bid_id nullable) · PDF/DOCX/XLSX · In-app preview for all (PDF via iframe, DOCX/XLSX via server-generated HTML) · Replace with confirmation dialog · pgvector embeddings (voyage-3, 1024-dim) · @mention copies slug to clipboard · 25 MB limit · Grid view + preview modal
 
@@ -82,11 +98,14 @@ _Route: `/docs` (placeholder exists)_
 ---
 
 ### 2.4 — Reports & Analytics
-_Route: `/analytics` (placeholder exists)_
 
-| Spec | Plan | Status |
-|---|---|---|
-| — | — | ✅ Implemented |
+*Route: `/analytics` (placeholder exists)*
+
+
+| Spec | Plan | Status        |
+| ---- | ---- | ------------- |
+| —    | —    | ✅ Implemented |
+
 
 **Key decisions:** Win Rate Trend + Stage Distribution + Won vs Lost + Monthly Intake charts · Last 30d/90d/12m toggle · No export in v1 · Team-wide view · `closed_at` added to bids · `bid_stage_transitions` table via Postgres trigger
 
@@ -95,17 +114,74 @@ _Route: `/analytics` (placeholder exists)_
 ---
 
 ### 2.5 — AI Command Center
-_Route: `/ai`_
 
-| Spec | Plan | Status |
-|---|---|---|
-| [spec](specs/2026-06-05-ai-command-center-design.md) | [plan](plans/2026-06-05-ai-command-center.md) | ✅ Implemented |
+*Route: `/ai`*
+
+
+| Spec                                                                                                                                                                                                            | Plan                                                                                                                                                                                       | Status        |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------- |
+| [spec(](specs/2026-06-05-ai-command-center-design.md)/Users/aryan/Desktop/Bid Compass/bid-buddy/docs/superpowers/specs/[2026-06-05-ai-command-center-design.md)](http://2026-06-05-ai-command-center-design.md) | [plan(](plans/2026-06-05-ai-command-center.md)/Users/aryan/Desktop/Bid Compass/bid-buddy/docs/superpowers/plans/[2026-06-05-ai-command-center.md)](http://2026-06-05-ai-command-center.md) | ✅ Implemented |
+
 
 **Key decisions:** Streaming via `createServerFn` returning `Response` (TanStack Start `x-tss-raw` passthrough) · Bid + Global modes · pgvector doc chunk retrieval via Voyage AI (top 8 chunks) · `claude-sonnet-4-6` default · Model persisted in `localStorage` under `bid-compass:ai-model` · Quick-action chips (Summarise RFP, Win themes, Identify risks, Draft exec summary) · Informational usage counter (sessions created today), no hard rate limit in v1
 
 **New table:** `ai_sessions (id, bid_id, user_id, model, messages jsonb, created_at)` with RLS · **New RPC:** `match_bid_document_chunks` (pgvector, 1024-dim) · **Env vars:** `ANTHROPIC_API_KEY` + `VOYAGE_API_KEY` (already set from 2.3)
 
-**Pending:** Apply `supabase/migrations/20260605160000_ai_sessions.sql` in Supabase SQL Editor.
+**Pending:** Apply `supabase/migrations/20260605160000_ai_sessions.sql` in Supabase SQL Editor. Applied already now.
+
+---
+
+### 2.6 — Agentic RAG
+
+*Route: `/ai` (upgrade to 2.5)*
+
+
+| Spec                                                          | Plan                                       | Status      |
+| ------------------------------------------------------------- | ------------------------------------------ | ----------- |
+| [spec](specs/2026-06-06-agentic-rag-design.md) | [plan](plans/2026-06-06-agentic-rag.md) | ✅ Ready |
+
+
+**Key decisions:** Single-agent tool-use loop (max 3 rounds) · `search_knowledge_base` tool with prescriptive description · Hybrid search RPC (`hybrid_search_chunks`: pgvector HNSW + Postgres FTS + RRF fusion) · Global/template docs now retrievable in both modes · Voyage `rerank-2.5` post-fusion · Anthropic Contextual Retrieval at ingest (Haiku + prompt caching, ~$1/1M doc tokens) · Sentence-aware chunking · `\x1f`-sentinel status line protocol (stripped client-side) · Prompt caching on stable system prefix · Adaptive thinking on all models
+
+**Phases:** A (hybrid RPC + HNSW migration) → B (agentic loop + client stripping) → C (chunking + contextual retrieval + reindex) → D (reranking) → E (optional eval harness)
+
+**Migration:** `supabase/migrations/20260606120000_hybrid_search.sql` · No new env vars (uses existing `ANTHROPIC_API_KEY` + `VOYAGE_API_KEY`)
+
+**Pending:** Execute phases A–D in order; run `reindexAll` after Phase C; drop `match_bid_document_chunks` RPC after Phase B browser-verified.
+
+---
+
+## Phase 3 — Settings & Integrations
+
+### 3.1 — Settings: User Management & RBAC
+
+*Route: `/settings` (placeholder exists) + new `/pending` route*
+
+| Spec | Plan | Status |
+|---|---|---|
+| [spec](specs/2026-06-08-settings-milestone3-design.md) | [plan](plans/2026-06-08-settings-user-rbac.md) | ✅ Implemented |
+
+**Key decisions:** Self-signup with admin approval gate · `profiles.status` (pending/active/suspended) · Approval notifications to admins via existing notification system · `role_permissions` table — per-role page + feature toggles (admin always bypasses) · `bid_assignments` table — many-to-many bid↔member · Permission matrix in Team tab (admin only) + read-only member list for non-admins · Tab layout on `/settings` (Team | Integrations)
+
+**New tables:** `role_permissions`, `bid_assignments`, `org_settings` · **New column:** `profiles.status` · **New route:** `/pending`
+
+**Pending:** Apply `20260608180000_settings_rbac.sql` in Supabase SQL Editor (note: RLS policies use `'admin'::public.app_role` cast — fixed from original plan).
+
+---
+
+### 3.2 — Settings: HubSpot Integration
+
+*Route: `/settings` > Integrations tab (retires `/hubspot` placeholder)*
+
+| Spec | Plan | Status |
+|---|---|---|
+| [spec](specs/2026-06-08-settings-milestone3-design.md) | [plan](plans/2026-06-08-settings-hubspot.md) | ✅ Ready to execute |
+
+**Key decisions:** HubSpot private app token — stored in `org_settings` (admin RLS), read server-side only via `supabaseAdmin`, never sent to browser · Stage mapping stored in `org_settings.hubspot_stage_map` · Inbound: manual "Sync from HubSpot" button (no scheduled cron in v1) · Outbound: fire-and-forget push on `useUpdateBid` stage change · `/hubspot` placeholder route retired
+
+**New table:** `org_settings` ✅ already created by 3.1 migration · **New server fns:** `testHubSpotToken`, `syncFromHubSpot`, `pushBidStageToHubSpot`, `saveHubSpotToken`, `saveStageMap` · **Env var (optional):** HubSpot base URL hardcoded
+
+**Prerequisite:** 3.1 ✅ complete — `org_settings` table exists.
 
 ---
 
@@ -118,6 +194,8 @@ Phase 2b: 2.2  Calendar                    ← no deps, no new tables for v1 (~2
 Phase 2c: 2.3  Knowledge Hub               ← enables AI context
 Phase 2d: 2.4  Reports & Analytics         ← needs schema additions
 Phase 2e: 2.5  AI Command Center           ← best after Knowledge Hub
+Phase 3a: 3.1  Settings: User Management & RBAC   ← execute after Phase 2
+Phase 3b: 3.2  Settings: HubSpot Integration       ← requires 3.1 (org_settings)
 ```
 
 ---
@@ -132,3 +210,4 @@ For each 🔶 item above:
 4. Spec gets written to `docs/superpowers/specs/YYYY-MM-DD-<feature>-design.md`
 5. Plan gets written to `docs/superpowers/plans/YYYY-MM-DD-<feature>.md`
 6. Update this file: change 🔶 to ✅ and add links
+
