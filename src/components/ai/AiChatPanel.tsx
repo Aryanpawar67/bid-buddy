@@ -11,6 +11,7 @@ const MODELS = [
   { id: "claude-sonnet-4-6",          label: "Claude Sonnet" },
   { id: "claude-haiku-4-5-20251001",  label: "Claude Haiku" },
   { id: "azure-gpt-5.4",              label: "GPT-5.4 (Azure)" },
+  { id: "azure-oss-120b",             label: "OSS 120B (Azure)" },
 ] as const;
 
 const QUICK_ACTIONS_GENERIC = [

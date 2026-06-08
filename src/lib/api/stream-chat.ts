@@ -11,6 +11,7 @@ const ALLOWED_MODELS = [
   "claude-sonnet-4-6",
   "claude-haiku-4-5-20251001",
   "azure-gpt-5.4",
+  "azure-oss-120b",
 ] as const;
 
 type AllowedModel = (typeof ALLOWED_MODELS)[number];
@@ -337,7 +338,10 @@ async function runAzureLoop(
   systemBlocks: Anthropic.Messages.TextBlockParam[],
   controller: ReadableStreamDefaultController
 ) {
-  const deploymentName = process.env.AZURE_GPT54_DEPLOYMENT ?? "";
+  const deploymentName =
+    data.model === "azure-oss-120b"
+      ? (process.env.AZURE_OSS120B_DEPLOYMENT ?? "")
+      : (process.env.AZURE_GPT54_DEPLOYMENT ?? "");
   const azureClient = new AzureOpenAI({
     endpoint: process.env.AZURE_ENDPOINT ?? "",
     apiKey: process.env.AZURE_API_KEY ?? "",
