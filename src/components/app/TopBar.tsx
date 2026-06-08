@@ -12,7 +12,7 @@ const PAGE_META: Record<string, PageMeta> = {
   queue:         { title: "My Queue",             subtitle: "Your assigned questions and deliverables" },
   analytics:     { title: "Reports & Analytics",  subtitle: "Pipeline metrics and win rate trends" },
   docs:          { title: "Knowledge Hub",         subtitle: "Bid documents and templates" },
-  ai:            { title: "AI Command Center",     subtitle: "AI-powered pursuit assistance" },
+  ai:            { title: "RFx Generator",          subtitle: "AI-powered pursuit assistance" },
   calendar:      { title: "Calendar",             subtitle: "Deadlines and key dates" },
   notifications: { title: "Notifications",        subtitle: "Activity and alerts" },
   settings:      { title: "Settings",             subtitle: "Workspace configuration" },
