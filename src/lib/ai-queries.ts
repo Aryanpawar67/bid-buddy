@@ -7,6 +7,7 @@ export type Message = {
   role: "user" | "assistant";
   content: string;
   created_at: string;
+  exportMeta?: { format: string; filename: string };
 };
 
 export type AiSession = {
@@ -16,6 +17,7 @@ export type AiSession = {
   model: string;
   messages: Message[];
   created_at: string;
+  title: string | null;
 };
 
 // ── useAiSessions ─────────────────────────────────────────────────────────────
@@ -110,6 +112,41 @@ export function useUpdateAiSession() {
   });
 }
 
+// ── useRenameSession ──────────────────────────────────────────────────────────
+export function useRenameSession() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { sessionId: string; title: string; bidId: string | null }) => {
+      const { error } = await supabase
+        .from("ai_sessions")
+        .update({ title: input.title.trim() || null })
+        .eq("id", input.sessionId);
+      if (error) throw error;
+    },
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ["ai-sessions", vars.bidId ?? "global"] });
+      qc.invalidateQueries({ queryKey: ["ai-session", vars.sessionId] });
+    },
+  });
+}
+
+// ── useDeleteSession ──────────────────────────────────────────────────────────
+export function useDeleteSession() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { sessionId: string; bidId: string | null }) => {
+      const { error } = await supabase
+        .from("ai_sessions")
+        .delete()
+        .eq("id", input.sessionId);
+      if (error) throw error;
+    },
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ["ai-sessions", vars.bidId ?? "global"] });
+    },
+  });
+}
+
 // ── useAiRequestCount ─────────────────────────────────────────────────────────
 export function useAiRequestCount(userId: string | undefined) {
   return useQuery({
@@ -161,7 +198,7 @@ export function useAiChat(
   }, [sessionId]);
 
   const send = useCallback(
-    async (overrideText?: string) => {
+    async (overrideText?: string, mentionedDocIds?: string[]) => {
       const text = (overrideText ?? inputValue).trim();
       if (!text || isStreaming || !sessionId) return;
 
@@ -187,28 +224,73 @@ export function useAiChat(
           bidId,
           messages: updatedWithUser,
           model,
+          mentionedDocIds,
         });
 
         const reader = stream.getReader();
         let assistantContent = "";
+        let exportMeta: { format: string; filename: string } | undefined;
+
+        let lineBuffer = "";
 
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          assistantContent += value;
-          setMessages((prev) => {
-            const next = [...prev];
-            next[next.length - 1] = {
-              ...next[next.length - 1],
-              content: assistantContent,
-            };
-            return next;
-          });
+
+          lineBuffer += value;
+
+          // Capture \x1eEXPORT\x1e...\n sentinels before stripping
+          const exportMatch = lineBuffer.match(/\x1eEXPORT\x1e([^\n]*)\n/);
+          if (exportMatch) {
+            try { exportMeta = JSON.parse(exportMatch[1]); } catch {}
+          }
+
+          // Strip both STATUS (\x1f) and EXPORT (\x1e) sentinels
+          let processed = lineBuffer;
+          const stripped = processed
+            .replace(/\x1f[^\x1f]*\x1f[^\n]*\n/g, "")
+            .replace(/\x1eEXPORT\x1e[^\n]*\n/g, "");
+
+          // Hold back an incomplete sentinel at the tail of the buffer
+          const lastSentinel = Math.max(
+            processed.lastIndexOf("\x1f"),
+            processed.lastIndexOf("\x1e")
+          );
+          if (lastSentinel !== -1) {
+            const tail = processed.slice(lastSentinel);
+            if (!tail.includes("\n")) {
+              lineBuffer = tail;
+              processed = processed.slice(0, lastSentinel);
+            } else {
+              lineBuffer = "";
+              processed = stripped;
+            }
+          } else {
+            lineBuffer = "";
+            processed = stripped;
+          }
+
+          if (processed) {
+            assistantContent += processed;
+            setMessages((prev) => {
+              const next = [...prev];
+              next[next.length - 1] = {
+                ...next[next.length - 1],
+                content: assistantContent,
+              };
+              return next;
+            });
+          }
         }
 
         const finalMessages: Message[] = [
           ...updatedWithUser,
-          { role: "assistant", content: assistantContent, created_at: assistantCreatedAt },
+          {
+            role: "assistant",
+            content: assistantContent,
+            created_at: assistantCreatedAt,
+            ...(exportMeta ? { exportMeta } : {}),
+          },
         ];
         setMessages(finalMessages);
 
@@ -231,4 +313,16 @@ export function useAiChat(
   );
 
   return { messages, isStreaming, inputValue, setInputValue, send };
+}
+
+// ── useGenerateProposal ───────────────────────────────────────────────────────
+export function useGenerateProposal() {
+  return useMutation({
+    mutationFn: async (input: { bidId: string; sessionId: string }) => {
+      const { generateProposal } = await import("@/lib/api/ai-functions");
+      const res = await generateProposal(input);
+      if (!res.ok) throw new Error("Proposal generation failed");
+      return res;
+    },
+  });
 }

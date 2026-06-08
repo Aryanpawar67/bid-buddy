@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { Send, Loader2, Copy, Check } from "lucide-react";
+import { Send, Loader2, Copy, Check, Download, FileText } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Message } from "@/lib/ai-queries";
+import { useGenerateProposal } from "@/lib/ai-queries";
 import type { Bid } from "@/lib/bid-queries";
+import type { BidDocument } from "@/lib/doc-queries";
 import { stageLabel } from "@/lib/bid-constants";
 
 const MODELS = [
@@ -68,10 +70,11 @@ type Props = {
   isStreaming: boolean;
   inputValue: string;
   onInputChange: (v: string) => void;
-  onSend: (text?: string) => void;
+  onSend: (text?: string, mentionedDocIds?: string[]) => void;
   model: string;
   onModelChange: (model: string) => void;
   requestCount: number;
+  bidDocs?: BidDocument[];
 };
 
 export function AiChatPanel({
@@ -86,24 +89,160 @@ export function AiChatPanel({
   model,
   onModelChange,
   requestCount,
+  bidDocs = [],
 }: Props) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // @ mention state
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null); // null = closed
+  const [mentionIndex, setMentionIndex] = useState(0);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // Filtered doc list for the @ dropdown
+  const mentionDocs = mentionQuery !== null
+    ? bidDocs.filter((d) =>
+        d.name.toLowerCase().includes(mentionQuery.toLowerCase())
+      )
+    : [];
+
+  function resolveMentionedDocIds(text: string): string[] {
+    const refs = text.match(/@([^\s@]+)/g) ?? [];
+    const ids: string[] = [];
+    for (const ref of refs) {
+      const name = ref.slice(1);
+      const doc = bidDocs.find((d) => d.name === name);
+      if (doc) ids.push(doc.id);
+    }
+    return [...new Set(ids)];
+  }
+
+  function handleInputChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    const val = e.target.value;
+    onInputChange(val);
+
+    // Detect @ trigger: find last @ before cursor that isn't followed by a space
+    const cursor = e.target.selectionStart ?? val.length;
+    const textUpToCursor = val.slice(0, cursor);
+    const atIdx = textUpToCursor.lastIndexOf("@");
+    if (atIdx !== -1 && !textUpToCursor.slice(atIdx + 1).includes(" ") && !isGlobal && bidDocs.length > 0) {
+      setMentionQuery(textUpToCursor.slice(atIdx + 1));
+      setMentionIndex(0);
+    } else {
+      setMentionQuery(null);
+    }
+  }
+
+  function selectDoc(doc: BidDocument) {
+    const cursor = textareaRef.current?.selectionStart ?? inputValue.length;
+    const textUpToCursor = inputValue.slice(0, cursor);
+    const atIdx = textUpToCursor.lastIndexOf("@");
+    const before = inputValue.slice(0, atIdx);
+    const after = inputValue.slice(cursor);
+    const newVal = `${before}@${doc.name} ${after}`;
+    onInputChange(newVal);
+    setMentionQuery(null);
+    // Restore focus and move cursor after the inserted mention
+    setTimeout(() => {
+      if (textareaRef.current) {
+        const pos = before.length + doc.name.length + 2; // "@" + name + " "
+        textareaRef.current.focus();
+        textareaRef.current.setSelectionRange(pos, pos);
+      }
+    }, 0);
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (mentionQuery !== null && mentionDocs.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setMentionIndex((i) => (i + 1) % mentionDocs.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setMentionIndex((i) => (i - 1 + mentionDocs.length) % mentionDocs.length);
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        selectDoc(mentionDocs[mentionIndex]);
+        return;
+      }
+      if (e.key === "Escape") {
+        setMentionQuery(null);
+        return;
+      }
+    }
+
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      if (canSend) handleSend();
+    }
+  }
+
+  function handleSend(overrideText?: string) {
+    const text = overrideText ?? inputValue;
+    const mentionedDocIds = resolveMentionedDocIds(text);
+    onSend(text || undefined, mentionedDocIds.length ? mentionedDocIds : undefined);
+  }
+
   const canSend = !isStreaming && !!sessionId && inputValue.trim().length > 0;
   const showQuickActions = !isGlobal && !!activeBid && messages.length === 0 && !!sessionId;
   const isRfiRfpStage = activeBid?.stage === "rfi" || activeBid?.stage === "rfp";
   const quickActions = isRfiRfpStage ? QUICK_ACTIONS_RFI_RFP : QUICK_ACTIONS_GENERIC;
+  const generateProposal = useGenerateProposal();
+  const [proposalError, setProposalError] = useState<string | null>(null);
 
-  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      if (canSend) onSend();
+  async function handleGenerateProposal() {
+    if (!activeBid || !sessionId) return;
+    setProposalError(null);
+    onSend("Generating branded proposal — analysing bid requirements…", undefined);
+    try {
+      const res = await generateProposal.mutateAsync({
+        bidId: activeBid.id,
+        sessionId,
+      });
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const contentDisposition = res.headers.get("Content-Disposition") ?? "";
+      const filenameMatch = contentDisposition.match(/filename="([^"]+)"/);
+      const filename = filenameMatch?.[1] ?? "proposal.docx";
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      const openItemsRaw = res.headers.get("X-Open-Items");
+      const openItems: string[] = openItemsRaw ? JSON.parse(openItemsRaw) : [];
+      const openItemsText = openItems.length
+        ? `\n\n**Open items to complete in the DOCX:**\n${openItems.map((i) => `- ${i}`).join("\n")}`
+        : "";
+
+      onSend(
+        `Proposal generated and saved to Knowledge Hub. Download started.${openItemsText}`,
+        undefined
+      );
+    } catch {
+      setProposalError("Proposal generation failed — please try again.");
     }
   }
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setMentionQuery(null);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
 
   return (
     <div className="flex-1 flex flex-col h-full min-w-0">
@@ -153,13 +292,33 @@ export function AiChatPanel({
           {quickActions.map((action) => (
             <button
               key={action.label}
-              onClick={() => onSend(action.prompt)}
+              onClick={() => handleSend(action.prompt)}
               disabled={isStreaming}
               className="text-[10px] px-3 py-1.5 rounded-full border hairline border-border text-foreground hover:bg-primary hover:text-white hover:border-primary disabled:opacity-40 transition-colors"
             >
               {action.label}
             </button>
           ))}
+          {isRfiRfpStage && (
+            <>
+              <button
+                onClick={handleGenerateProposal}
+                disabled={isStreaming || generateProposal.isPending}
+                className="text-[10px] px-3 py-1.5 rounded-full border hairline border-orange-400/60 text-orange-600 bg-orange-50/50 hover:bg-orange-500 hover:text-white hover:border-orange-500 disabled:opacity-40 transition-colors dark:text-orange-400 dark:bg-orange-950/20"
+              >
+                {generateProposal.isPending ? (
+                  <span className="flex items-center gap-1">
+                    <Loader2 className="size-3 animate-spin inline" /> Generating…
+                  </span>
+                ) : (
+                  "Generate Proposal"
+                )}
+              </button>
+              {proposalError && (
+                <span className="text-[10px] text-destructive">{proposalError}</span>
+              )}
+            </>
+          )}
         </div>
       )}
 
@@ -186,6 +345,8 @@ export function AiChatPanel({
             <MessageBubble
               key={i}
               message={msg}
+              messageIndex={i}
+              sessionId={sessionId!}
               isStreaming={
                 isStreaming && i === messages.length - 1 && msg.role === "assistant"
               }
@@ -198,15 +359,58 @@ export function AiChatPanel({
       {/* Input bar */}
       {sessionId && (
         <div className="shrink-0 px-4 py-3 border-t hairline border-border bg-card">
-          <div className="flex gap-2 items-end">
+          <div className="relative flex gap-2 items-end">
+            {/* @ mention dropdown */}
+            {mentionQuery !== null && mentionDocs.length > 0 && (
+              <div
+                ref={dropdownRef}
+                className="absolute bottom-full left-0 mb-1.5 w-72 bg-card border hairline border-border rounded-lg shadow-lg overflow-hidden z-50"
+              >
+                <div className="px-2.5 py-1.5 border-b hairline border-border">
+                  <span className="text-[9px] uppercase tracking-wider font-semibold text-muted-foreground">
+                    Documents — press Enter to insert
+                  </span>
+                </div>
+                {mentionDocs.map((doc, i) => {
+                  const ext = doc.name.split(".").pop()?.toLowerCase() ?? "";
+                  const extLabel = ext === "pdf" ? "PDF" : ext === "docx" ? "DOC" : "XLS";
+                  const extBg = ext === "pdf" ? "#fff1f1" : ext === "docx" ? "#ebf5ff" : "#edfaf4";
+                  const extColor = ext === "pdf" ? "#e53e3e" : ext === "docx" ? "#2563eb" : "#16a34a";
+                  return (
+                    <button
+                      key={doc.id}
+                      onMouseDown={(e) => { e.preventDefault(); selectDoc(doc); }}
+                      onMouseEnter={() => setMentionIndex(i)}
+                      className={[
+                        "w-full flex items-center gap-2.5 px-2.5 py-2 text-left transition-colors",
+                        i === mentionIndex ? "bg-primary/10" : "hover:bg-background",
+                      ].join(" ")}
+                    >
+                      <div
+                        className="w-7 h-8 rounded flex items-center justify-center text-[9px] font-black shrink-0"
+                        style={{ background: extBg, color: extColor }}
+                      >
+                        {extLabel}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[11px] font-medium truncate">{doc.name}</div>
+                        <div className="text-[10px] text-muted-foreground">{doc.type}</div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
             <textarea
+              ref={textareaRef}
               value={inputValue}
-              onChange={(e) => onInputChange(e.target.value)}
+              onChange={handleInputChange}
               onKeyDown={handleKeyDown}
               placeholder={
                 isGlobal
                   ? "Ask anything…"
-                  : `Ask about ${activeBid?.client_name ?? "this bid"}…`
+                  : `Ask about ${activeBid?.client_name ?? "this bid"}… (type @ to reference a document)`
               }
               rows={1}
               disabled={isStreaming}
@@ -214,7 +418,7 @@ export function AiChatPanel({
               style={{ minHeight: "36px" }}
             />
             <button
-              onClick={() => onSend()}
+              onClick={() => handleSend()}
               disabled={!canSend}
               className="h-9 w-9 flex items-center justify-center rounded-lg bg-primary text-white disabled:opacity-40 hover:opacity-90 transition-opacity shrink-0"
             >
@@ -237,18 +441,54 @@ export function AiChatPanel({
 function MessageBubble({
   message,
   isStreaming,
+  messageIndex,
+  sessionId,
 }: {
   message: Message;
   isStreaming: boolean;
+  messageIndex: number;
+  sessionId: string;
 }) {
   const isUser = message.role === "user";
   const [copied, setCopied] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   function handleCopy() {
     navigator.clipboard.writeText(message.content).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
+  }
+
+  async function handleDownloadDocx() {
+    setExporting(true);
+    try {
+      const { exportMessage } = await import("@/lib/api/ai-functions");
+      const res = await exportMessage({ sessionId, messageIndex });
+      if (!res.ok) throw new Error("Export failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = message.exportMeta?.filename ?? "export.docx";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  function handleDownloadPdf() {
+    const iframe = document.createElement("iframe");
+    iframe.style.cssText = "position:fixed;top:-9999px;left:-9999px;width:800px;height:1100px";
+    iframe.srcdoc = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:system-ui,sans-serif;font-size:13px;line-height:1.6;max-width:750px;margin:40px auto;padding:0 20px;color:#111}pre{background:#f5f5f5;padding:12px;border-radius:4px;overflow-x:auto}code{background:#f5f5f5;padding:1px 4px;border-radius:2px}</style></head><body><pre style="white-space:pre-wrap">${message.content.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</pre></body></html>`;
+    document.body.appendChild(iframe);
+    iframe.onload = () => {
+      iframe.contentWindow?.print();
+      setTimeout(() => document.body.removeChild(iframe), 2000);
+    };
   }
 
   return (
@@ -286,9 +526,9 @@ function MessageBubble({
           ) : null}
         </div>
 
-        {/* Copy button — assistant only, shown after streaming completes */}
+        {/* Assistant action row — copy + export chips */}
         {!isUser && message.content && !isStreaming && (
-          <div className="flex items-center">
+          <div className="flex items-center gap-1.5 flex-wrap">
             <button
               onClick={handleCopy}
               className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors px-1 py-0.5 rounded"
@@ -305,6 +545,30 @@ function MessageBubble({
                 </>
               )}
             </button>
+
+            {message.exportMeta && (
+              <>
+                <button
+                  onClick={handleDownloadDocx}
+                  disabled={exporting}
+                  className="flex items-center gap-1 text-[10px] text-primary hover:text-primary/80 transition-colors px-2 py-0.5 rounded-full border hairline border-primary/30 bg-primary/5 disabled:opacity-50"
+                >
+                  {exporting ? (
+                    <Loader2 className="size-3 animate-spin" />
+                  ) : (
+                    <Download className="size-3" />
+                  )}
+                  <span>Download DOCX</span>
+                </button>
+                <button
+                  onClick={handleDownloadPdf}
+                  className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors px-2 py-0.5 rounded-full border hairline border-border"
+                >
+                  <FileText className="size-3" />
+                  <span>Save as PDF</span>
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>

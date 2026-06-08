@@ -15,6 +15,7 @@ export type BidDocument = {
   uploaded_by: string;
   embedding: number[] | null;
   created_at: string;
+  source: "uploaded" | "generated";
 };
 
 export type DocFilters = {
@@ -79,6 +80,7 @@ export function useUploadDocument() {
           storage_path: path,
           size_bytes: input.file.size,
           uploaded_by: user.id,
+          source: "uploaded",
         })
         .select()
         .single();

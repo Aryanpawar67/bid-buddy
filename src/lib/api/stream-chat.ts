@@ -31,6 +31,7 @@ const InputSchema = z.object({
     })
   ),
   model: z.enum(ALLOWED_MODELS),
+  mentionedDocIds: z.array(z.string().uuid()).optional(),
 });
 
 // ── helpers ────────────────────────────────────────────────────────────────────
@@ -73,6 +74,23 @@ async function rerank(query: string, chunks: ChunkRow[]): Promise<ChunkRow[]> {
   } catch {
     // Rerank failure → fall back to RRF order, slice top-8
     return chunks.slice(0, 8);
+  }
+}
+
+async function fetchPinnedChunks(docIds: string[]): Promise<ChunkRow[]> {
+  if (!docIds.length) return [];
+  try {
+    const { data } = await (supabaseAdmin
+      .from("bid_document_chunks") as any)
+      .select("chunk_text, document_id, bid_documents(name)")
+      .in("document_id", docIds)
+      .order("chunk_index", { ascending: true });
+    return (data ?? []).map((r: any) => ({
+      doc_name: r.bid_documents?.name ?? "Unknown",
+      chunk_text: r.chunk_text,
+    })) as ChunkRow[];
+  } catch {
+    return [];
   }
 }
 
@@ -177,7 +195,13 @@ async function buildSystemBlocks(
       "When you use a document passage, name its source document.",
       "",
     ].join("\n");
-    return [{ type: "text", text: persona, cache_control: { type: "ephemeral" } }];
+    return [
+      { type: "text", text: persona, cache_control: { type: "ephemeral" } },
+      {
+        type: "text",
+        text: 'When the user explicitly asks to export, download, or save the current response as a document, prepend your entire response with this exact line (replacing <suggested-name> with a descriptive filename, no spaces, no extension): \x1eEXPORT\x1e{"format":"docx","filename":"<suggested-name>.docx"}\n',
+      } as Anthropic.Messages.TextBlockParam,
+    ];
   }
 
   const { data: bid } = await supabaseAdmin
@@ -235,7 +259,13 @@ async function buildSystemBlocks(
   }
 
   // cache_control on the last block caches tools + system together
-  return [{ type: "text", text: parts.join("\n"), cache_control: { type: "ephemeral" } }];
+  return [
+    { type: "text", text: parts.join("\n"), cache_control: { type: "ephemeral" } },
+    {
+      type: "text",
+      text: 'When the user explicitly asks to export, download, or save the current response as a document, prepend your entire response with this exact line (replacing <suggested-name> with a descriptive filename, no spaces, no extension): \x1eEXPORT\x1e{"format":"docx","filename":"<suggested-name>.docx"}\n',
+    } as Anthropic.Messages.TextBlockParam,
+  ];
 }
 
 // ── tool definitions ───────────────────────────────────────────────────────────
@@ -434,6 +464,18 @@ export const streamChatFn = createServerFn({ method: "POST" })
     } catch (err) {
       console.error("[stream-chat] buildSystemBlocks failed:", err);
       return new Response("Internal Server Error", { status: 500 });
+    }
+    if (data.mentionedDocIds?.length) {
+      const pinned = await fetchPinnedChunks(data.mentionedDocIds);
+      if (pinned.length) {
+        systemBlocks = [
+          ...systemBlocks,
+          {
+            type: "text" as const,
+            text: `## Pinned Documents (user referenced with @)\n\nThe user has explicitly referenced these documents. Their full indexed content is provided below:\n\n${formatChunks(pinned)}`,
+          },
+        ];
+      }
     }
     console.log("[stream-chat] system blocks built, starting stream");
 

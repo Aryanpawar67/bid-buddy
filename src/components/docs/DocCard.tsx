@@ -64,9 +64,16 @@ export function DocCard({ doc, bidName, onPreview }: Props) {
 
       {/* Badges + meta */}
       <div className="flex flex-col gap-1 mt-auto">
-        <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded self-start ${TYPE_STYLES[doc.type]}`}>
-          {doc.type.charAt(0).toUpperCase() + doc.type.slice(1)}
-        </span>
+        <div className="flex items-center gap-1 flex-wrap">
+          <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${TYPE_STYLES[doc.type]}`}>
+            {doc.type.charAt(0).toUpperCase() + doc.type.slice(1)}
+          </span>
+          {doc.source === "generated" && (
+            <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#fff7ed] text-orange-600 font-semibold border hairline border-orange-200">
+              Generated
+            </span>
+          )}
+        </div>
         <div className="text-[9px] text-muted-foreground">
           {fmtBytes(doc.size_bytes)} · {fmtDate(doc.created_at)}
         </div>

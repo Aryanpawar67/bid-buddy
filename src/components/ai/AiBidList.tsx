@@ -1,8 +1,9 @@
-import { useState } from "react";
-import { Plus, Loader2 } from "lucide-react";
+import { useState, useRef } from "react";
+import { Plus, Loader2, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import type { Bid } from "@/lib/bid-queries";
 import { urgencyClass, stageLabel } from "@/lib/bid-constants";
 import type { AiSession } from "@/lib/ai-queries";
+import { useRenameSession, useDeleteSession } from "@/lib/ai-queries";
 
 export type AiMode = "bid" | "global";
 
@@ -122,24 +123,13 @@ function GlobalSessionList({
         <div className="text-[10px] text-muted-foreground px-1 py-2">No sessions yet</div>
       )}
       {sessions.map((s) => (
-        <button
+        <SessionRow
           key={s.id}
-          onClick={() => onSelectSession(s.id)}
-          className={[
-            "w-full text-left rounded-md px-2 py-1.5 transition-colors",
-            selectedSessionId === s.id
-              ? "bg-primary/10 text-primary"
-              : "text-muted-foreground hover:bg-background",
-          ].join(" ")}
-        >
-          <div className="text-[11px] font-medium truncate">{sessionLabel(s)}</div>
-          <div className="text-[9px] opacity-60 mt-0.5">
-            {new Date(s.created_at).toLocaleDateString("en-US", {
-              month: "short",
-              day: "numeric",
-            })}
-          </div>
-        </button>
+          session={s}
+          bidId={null}
+          isSelected={selectedSessionId === s.id}
+          onSelect={() => onSelectSession(s.id)}
+        />
       ))}
     </div>
   );
@@ -230,24 +220,13 @@ function BidSessionList({
                   </div>
                 )}
                 {bidSessions.map((s) => (
-                  <button
+                  <SessionRow
                     key={s.id}
-                    onClick={() => onSelectSession(bid.id, s.id)}
-                    className={[
-                      "w-full text-left rounded-md px-2 py-1 transition-colors",
-                      selectedSessionId === s.id
-                        ? "bg-primary/10 text-primary"
-                        : "text-muted-foreground hover:bg-background",
-                    ].join(" ")}
-                  >
-                    <div className="text-[10px] truncate">{sessionLabel(s)}</div>
-                    <div className="text-[9px] opacity-60">
-                      {new Date(s.created_at).toLocaleDateString("en-US", {
-                        month: "short",
-                        day: "numeric",
-                      })}
-                    </div>
-                  </button>
+                    session={s}
+                    bidId={bid.id}
+                    isSelected={selectedSessionId === s.id}
+                    onSelect={() => onSelectSession(bid.id, s.id)}
+                  />
                 ))}
               </div>
             )}
@@ -258,7 +237,136 @@ function BidSessionList({
   );
 }
 
+function SessionRow({
+  session,
+  bidId,
+  isSelected,
+  onSelect,
+}: {
+  session: AiSession;
+  bidId: string | null;
+  isSelected: boolean;
+  onSelect: () => void;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const renameRef = useRef<HTMLInputElement>(null);
+  const rename = useRenameSession();
+  const del = useDeleteSession();
+
+  function startRename() {
+    setMenuOpen(false);
+    setRenameValue(sessionLabel(session));
+    setRenaming(true);
+    setTimeout(() => renameRef.current?.select(), 0);
+  }
+
+  function commitRename() {
+    if (renameValue.trim() !== sessionLabel(session)) {
+      rename.mutate({ sessionId: session.id, title: renameValue, bidId });
+    }
+    setRenaming(false);
+  }
+
+  function handleRenameKey(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") commitRename();
+    if (e.key === "Escape") setRenaming(false);
+  }
+
+  function handleDelete() {
+    del.mutate({ sessionId: session.id, bidId });
+    setConfirmDelete(false);
+  }
+
+  return (
+    <div className="relative group">
+      {renaming ? (
+        <input
+          ref={renameRef}
+          value={renameValue}
+          onChange={(e) => setRenameValue(e.target.value)}
+          onBlur={commitRename}
+          onKeyDown={handleRenameKey}
+          className="w-full text-[10px] rounded-md px-2 py-1 bg-background border hairline border-primary/50 text-foreground outline-none"
+          autoFocus
+        />
+      ) : (
+        <button
+          onClick={onSelect}
+          className={[
+            "w-full text-left rounded-md px-2 py-1.5 transition-colors pr-7",
+            isSelected
+              ? "bg-primary/10 text-primary"
+              : "text-muted-foreground hover:bg-background",
+          ].join(" ")}
+        >
+          <div className="text-[10px] truncate">{sessionLabel(session)}</div>
+          <div className="text-[9px] opacity-60">
+            {new Date(session.created_at).toLocaleDateString("en-US", {
+              month: "short",
+              day: "numeric",
+            })}
+          </div>
+        </button>
+      )}
+
+      {/* … menu trigger — hidden until hover */}
+      {!renaming && (
+        <button
+          onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); setConfirmDelete(false); }}
+          className="absolute right-1 top-1.5 h-5 w-5 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground hover:bg-background transition-opacity"
+        >
+          <MoreHorizontal className="size-3" />
+        </button>
+      )}
+
+      {/* Inline menu */}
+      {menuOpen && !confirmDelete && (
+        <div className="absolute right-0 top-6 z-50 w-28 bg-card border hairline border-border rounded-lg shadow-lg overflow-hidden">
+          <button
+            onClick={(e) => { e.stopPropagation(); startRename(); }}
+            className="w-full flex items-center gap-2 px-2.5 py-1.5 text-[11px] text-foreground hover:bg-background"
+          >
+            <Pencil className="size-3" /> Rename
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); setMenuOpen(false); setConfirmDelete(true); }}
+            className="w-full flex items-center gap-2 px-2.5 py-1.5 text-[11px] text-destructive hover:bg-background"
+          >
+            <Trash2 className="size-3" /> Delete
+          </button>
+        </div>
+      )}
+
+      {/* Delete confirm popover */}
+      {confirmDelete && (
+        <div className="absolute right-0 top-6 z-50 w-44 bg-card border hairline border-border rounded-lg shadow-lg p-2.5 flex flex-col gap-2">
+          <div className="text-[10px] text-foreground">Delete this session?</div>
+          <div className="flex gap-1.5">
+            <button
+              onClick={(e) => { e.stopPropagation(); handleDelete(); }}
+              disabled={del.isPending}
+              className="flex-1 text-[10px] py-1 rounded-md bg-destructive text-white disabled:opacity-50"
+            >
+              {del.isPending ? "…" : "Delete"}
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); setConfirmDelete(false); }}
+              className="flex-1 text-[10px] py-1 rounded-md border hairline border-border text-muted-foreground hover:bg-background"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function sessionLabel(s: AiSession): string {
+  if (s.title) return s.title;
   const firstUser = (s.messages as { role: string; content: string }[]).find(
     (m) => m.role === "user"
   );
