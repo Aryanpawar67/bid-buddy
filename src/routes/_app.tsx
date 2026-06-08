@@ -2,7 +2,7 @@ import { createFileRoute, Outlet, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { Sidebar } from "@/components/app/Sidebar";
 import { TopBar } from "@/components/app/TopBar";
-import { useSession } from "@/lib/auth";
+import { useCurrentUser } from "@/lib/auth";
 import { useDeadlineNotifier } from "@/lib/notification-queries";
 
 function DeadlineNotifier() {
@@ -15,13 +15,16 @@ export const Route = createFileRoute("/_app")({
 });
 
 function AppLayout() {
-  const { session, loading } = useSession();
+  const { user, profile, loading } = useCurrentUser();
   const navigate = useNavigate();
   useEffect(() => {
-    if (!loading && !session) navigate({ to: "/auth", replace: true });
-  }, [loading, session, navigate]);
+    if (!loading && !user) navigate({ to: "/auth", replace: true });
+    if (!loading && (profile?.status === "pending" || profile?.status === "suspended")) {
+      navigate({ to: "/pending", replace: true });
+    }
+  }, [loading, user, profile, navigate]);
 
-  if (loading || !session) {
+  if (loading || !user) {
     return (
       <div className="h-screen flex items-center justify-center text-muted-foreground text-sm">
         Loading…

@@ -32,11 +32,11 @@ export function useCurrentUser() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("profiles")
-        .select("id, full_name, email, avatar_url")
+        .select("id, full_name, email, avatar_url, status")
         .eq("id", user!.id)
         .maybeSingle();
       if (error) throw error;
-      return data;
+      return data as typeof data & { status: "pending" | "active" | "suspended" };
     },
   });
 
