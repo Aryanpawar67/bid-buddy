@@ -83,6 +83,9 @@ export function useUpdateBid() {
           from_stage: currentStage,
           to_stage: patch.stage,
         });
+        import("@/lib/api/hubspot-sync").then(({ pushBidStageToHubSpotFn }) => {
+          pushBidStageToHubSpotFn({ data: { bidId: id, newStage: patch.stage! } }).catch(console.error);
+        });
       }
     },
     onSuccess: (_d, v) => {
