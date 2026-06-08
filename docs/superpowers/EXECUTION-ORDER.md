@@ -175,11 +175,11 @@ Legend:
 
 | Spec | Plan | Status |
 |---|---|---|
-| [spec](specs/2026-06-08-settings-milestone3-design.md) | [plan](plans/2026-06-08-settings-hubspot.md) | ✅ Ready to execute |
+| [spec](specs/2026-06-08-settings-milestone3-design.md) | [plan](plans/2026-06-08-settings-hubspot.md) | ✅ Implemented |
 
 **Key decisions:** HubSpot private app token — stored in `org_settings` (admin RLS), read server-side only via `supabaseAdmin`, never sent to browser · Stage mapping stored in `org_settings.hubspot_stage_map` · Inbound: manual "Sync from HubSpot" button (no scheduled cron in v1) · Outbound: fire-and-forget push on `useUpdateBid` stage change · `/hubspot` placeholder route retired
 
-**New table:** `org_settings` ✅ already created by 3.1 migration · **New server fns:** `testHubSpotToken`, `syncFromHubSpot`, `pushBidStageToHubSpot`, `saveHubSpotToken`, `saveStageMap` · **Env var (optional):** HubSpot base URL hardcoded
+**New server fns:** `testHubSpotTokenFn`, `syncFromHubSpotFn`, `pushBidStageToHubSpotFn`, `saveHubSpotTokenFn`, `saveStageMapFn` (all in `src/lib/api/hubspot-sync.ts`) · HubSpot base URL hardcoded · Static imports used in hooks (not `require()`)
 
 **Prerequisite:** 3.1 ✅ complete — `org_settings` table exists.
 
