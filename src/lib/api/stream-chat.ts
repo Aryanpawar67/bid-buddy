@@ -291,10 +291,13 @@ async function runAnthropicLoop(
   while (true) {
     const isLastRound = rounds >= MAX_ROUNDS;
 
+    const supportsThinking =
+      data.model === "claude-opus-4-8" || data.model === "claude-sonnet-4-6";
+
     const apiStream = anthropic.messages.stream({
       model: data.model,
       max_tokens: 4096,
-      thinking: { type: "adaptive" },
+      ...(supportsThinking ? { thinking: { type: "adaptive" } } : {}),
       system: systemBlocks,
       tools: isLastRound ? undefined : [SEARCH_TOOL],
       messages,
@@ -414,16 +417,25 @@ async function runAzureLoop(
 export const streamChatFn = createServerFn({ method: "POST" })
   .inputValidator(InputSchema)
   .handler(async ({ data }) => {
+    console.log("[stream-chat] handler called, model:", data.model, "bidId:", data.bidId);
     const authHeader = getRequest().headers.get("authorization");
     const token = authHeader?.replace("Bearer ", "");
-    if (!token) return new Response("Unauthorized", { status: 401 });
+    if (!token) { console.error("[stream-chat] no auth token"); return new Response("Unauthorized", { status: 401 }); }
     const {
       data: { user },
       error: authErr,
     } = await supabaseAdmin.auth.getUser(token);
-    if (authErr || !user) return new Response("Unauthorized", { status: 401 });
+    if (authErr || !user) { console.error("[stream-chat] auth failed:", authErr); return new Response("Unauthorized", { status: 401 }); }
+    console.log("[stream-chat] auth ok, building system blocks");
 
-    const systemBlocks = await buildSystemBlocks(data.bidId);
+    let systemBlocks;
+    try {
+      systemBlocks = await buildSystemBlocks(data.bidId);
+    } catch (err) {
+      console.error("[stream-chat] buildSystemBlocks failed:", err);
+      return new Response("Internal Server Error", { status: 500 });
+    }
+    console.log("[stream-chat] system blocks built, starting stream");
 
     const stream = new ReadableStream({
       async start(controller) {
@@ -434,6 +446,7 @@ export const streamChatFn = createServerFn({ method: "POST" })
             await runAnthropicLoop(data, systemBlocks, controller);
           }
         } catch (err) {
+          console.error("[stream-chat] stream error:", err);
           controller.error(err);
         } finally {
           controller.close();
