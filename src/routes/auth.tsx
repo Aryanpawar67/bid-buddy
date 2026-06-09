@@ -43,6 +43,7 @@ function AuthPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
+  const [role, setRole] = useState<"pre_sales" | "legal" | "finance">("pre_sales");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -59,7 +60,7 @@ function AuthPage() {
     setBusy(true);
     try {
       if (mode === "signup") {
-        const { error } = await supabase.auth.signUp({
+        const { data: signUpData, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
@@ -68,6 +69,11 @@ function AuthPage() {
           },
         });
         if (error) throw error;
+        if (signUpData.user) {
+          await supabase.from("user_roles")
+            .update({ role } as never)
+            .eq("user_id", signUpData.user.id);
+        }
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
@@ -206,6 +212,19 @@ function AuthPage() {
               />
             </FormField>
 
+            {mode === "signup" && (
+              <FormField label="Your role">
+                <select
+                  value={role}
+                  onChange={(e) => setRole(e.target.value as typeof role)}
+                  className="w-full h-11 px-3.5 rounded-lg border border-gray-200 bg-gray-50 text-[13px] text-gray-900 focus:outline-none focus:border-[#491AEB] focus:bg-white transition-colors"
+                >
+                  <option value="pre_sales">Pre-Sales</option>
+                  <option value="legal">Legal</option>
+                  <option value="finance">Finance</option>
+                </select>
+              </FormField>
+            )}
             <FormField label="Password">
               <div className="relative">
                 <input
