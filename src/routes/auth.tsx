@@ -110,7 +110,7 @@ function AuthPage() {
         <div className="relative z-10 flex flex-col h-full p-12">
           {/* Logo */}
           <div className="flex items-center gap-2.5 mb-auto">
-            <img src="/imocha-logo.png" alt="iMocha" className="h-8 w-auto brightness-0 invert" />
+            <img src="/favicon.jpg" alt="iMocha" className="h-9 w-9 rounded-lg object-cover" />
             <div>
               <div className="text-white text-[15px] font-semibold leading-none">Bid Compass</div>
               <div className="text-white/40 text-[10px] uppercase tracking-widest mt-0.5">by iMocha</div>

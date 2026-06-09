@@ -44,11 +44,8 @@ export function Sidebar() {
     <aside className="w-[220px] min-w-[220px] shrink-0 bg-sidebar flex flex-col overflow-y-auto overflow-x-hidden">
       {/* Header */}
       <div className="flex items-center gap-2.5 px-3.5 py-4 border-b border-white/[0.08]">
-        <Link
-          to="/dashboard"
-          className="size-8 rounded-[8px] bg-primary flex items-center justify-center text-white text-[14px] font-bold shrink-0"
-        >
-          B
+        <Link to="/dashboard" className="size-8 rounded-[8px] shrink-0 overflow-hidden">
+          <img src="/favicon.jpg" alt="Bid Compass" className="size-full object-cover" />
         </Link>
         <div>
           <div className="text-[13px] font-semibold text-white leading-tight">
