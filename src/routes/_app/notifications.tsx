@@ -1,6 +1,6 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
-import { Bell } from "lucide-react";
+import { Bell, UserPlus } from "lucide-react";
 import {
   useNotifications,
   useMarkRead,
@@ -12,7 +12,7 @@ export const Route = createFileRoute("/_app/notifications")({
   component: NotificationsPage,
 });
 
-type FilterType = "all" | "unread" | "stage_change" | "deadline" | "task_done" | "gonogo" | "bid_created";
+type FilterType = "all" | "unread" | "stage_change" | "deadline" | "task_done" | "gonogo" | "bid_created" | "new_user_signup";
 
 const FILTERS: { key: FilterType; label: string }[] = [
   { key: "all",          label: "All" },
@@ -22,22 +22,25 @@ const FILTERS: { key: FilterType; label: string }[] = [
   { key: "task_done",    label: "Tasks" },
   { key: "gonogo",       label: "Go/No-Go" },
   { key: "bid_created",  label: "New Bids" },
+  { key: "new_user_signup", label: "Signups" },
 ];
 
 const TYPE_ICON: Record<string, string> = {
-  stage_change: "🔄",
-  deadline:     "⚠️",
-  gonogo:       "✅",
-  bid_created:  "📄",
-  task_done:    "☑️",
+  stage_change:    "🔄",
+  deadline:        "⚠️",
+  gonogo:          "✅",
+  bid_created:     "📄",
+  task_done:       "☑️",
+  new_user_signup: "👤",
 };
 
 const TYPE_BG: Record<string, string> = {
-  stage_change: "#ede9fd",
-  deadline:     "#fff1f1",
-  gonogo:       "#edfaf4",
-  bid_created:  "#fff0e8",
-  task_done:    "#f0eeff",
+  stage_change:    "#ede9fd",
+  deadline:        "#fff1f1",
+  gonogo:          "#edfaf4",
+  bid_created:     "#fff0e8",
+  task_done:       "#f0eeff",
+  new_user_signup: "#edf4ff",
 };
 
 function relativeTime(dateStr: string): string {
@@ -193,7 +196,15 @@ function NotificationsPage() {
               </div>
 
               <div className="px-6 py-4 border-t hairline border-border flex items-center gap-3">
-                {selected.bid_id && (
+                {selected.type === "new_user_signup" && (
+                  <Link
+                    to="/settings"
+                    className="h-8 px-4 rounded-md bg-primary text-primary-foreground text-[12px] font-medium inline-flex items-center gap-1.5 hover:opacity-90"
+                  >
+                    Review in Settings →
+                  </Link>
+                )}
+                {selected.bid_id && selected.type !== "new_user_signup" && (
                   <Link
                     to="/bids/$id"
                     params={{ id: selected.bid_id }}

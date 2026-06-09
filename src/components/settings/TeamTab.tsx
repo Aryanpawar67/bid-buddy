@@ -1,6 +1,7 @@
 import { useTeamMembers, useRolePermissions, useBidAssignments } from "@/lib/settings-queries";
 import { PermissionMatrix } from "./PermissionMatrix";
 import { MemberList } from "./MemberList";
+import { PendingApprovals } from "./PendingApprovals";
 
 type Props = { isAdmin: boolean };
 
@@ -19,6 +20,7 @@ export function TeamTab({ isAdmin }: Props) {
 
   return (
     <div className="flex flex-col gap-5 p-5">
+      {isAdmin && <PendingApprovals />}
       {isAdmin && (
         <section>
           <h2 className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2">

@@ -17,6 +17,7 @@ import { useCurrentUser } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
 import { initials, STAGES } from "@/lib/bid-constants";
 import { useBids, useMyQueue } from "@/lib/bid-queries";
+import { useQuery } from "@tanstack/react-query";
 import { useNotificationCount } from "@/lib/notification-queries";
 
 export function Sidebar() {
@@ -36,6 +37,18 @@ export function Sidebar() {
   ].filter((i) => i.status !== "done").length;
 
   const isAdmin = primaryRole === "admin";
+
+  const { data: pendingCount = 0 } = useQuery({
+    queryKey: ["pending-members-count"],
+    enabled: isAdmin,
+    queryFn: async () => {
+      const { count } = await (supabase as any)
+        .from("profiles")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "pending");
+      return count ?? 0;
+    },
+  });
   const isPreSales = primaryRole === "pre_sales";
   const canSeePipeline = isAdmin || isPreSales;
   const canSeeAnalytics = isAdmin || isPreSales;
@@ -150,6 +163,8 @@ export function Sidebar() {
             icon={Settings}
             label="Settings"
             active={path.startsWith("/settings")}
+            badge={pendingCount > 0 ? pendingCount : undefined}
+            badgeVariant="accent"
           />
         )}
         <NavLink

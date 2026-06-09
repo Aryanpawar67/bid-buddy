@@ -8,7 +8,7 @@ export type Notification = {
   id: string;
   user_id: string;
   bid_id: string | null;
-  type: "stage_change" | "deadline" | "gonogo" | "bid_created" | "task_done";
+  type: "stage_change" | "deadline" | "gonogo" | "bid_created" | "task_done" | "new_user_signup";
   title: string;
   body: string;
   read: boolean;

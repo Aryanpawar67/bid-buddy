@@ -30,13 +30,13 @@ export function useCurrentUser() {
     queryKey: ["profile", user?.id],
     enabled: !!user,
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from("profiles")
         .select("id, full_name, email, avatar_url, status")
         .eq("id", user!.id)
         .maybeSingle();
       if (error) throw error;
-      return data as typeof data & { status: "pending" | "active" | "suspended" };
+      return data as { id: string; full_name: string | null; email: string; avatar_url: string | null; status: "pending" | "active" | "suspended" } | null;
     },
   });
 

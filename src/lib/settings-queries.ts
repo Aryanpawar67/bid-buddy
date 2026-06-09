@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { AppRole } from "@/lib/auth";
 import { useCurrentUser } from "@/lib/auth";
+import { rejectUserFn } from "@/lib/api/reject-user";
 import {
   saveHubSpotTokenFn,
   saveStageMapFn,
@@ -260,6 +261,21 @@ export function useSyncFromHubSpot() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["hubspot-status"] });
       qc.invalidateQueries({ queryKey: ["bids"] });
+    },
+  });
+}
+
+// ── useRejectUser ─────────────────────────────────────────────────────────────
+export function useRejectUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (userId: string) => {
+      const res = await rejectUserFn({ data: { userId } });
+      if (res instanceof Response && !res.ok) throw new Error("Reject failed");
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["pending-members"] });
+      qc.invalidateQueries({ queryKey: ["notifications"] });
     },
   });
 }
