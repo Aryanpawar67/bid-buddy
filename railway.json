@@ -5,7 +5,7 @@
   },
   "deploy": {
     "releaseCommand": "bun scripts/migrate.ts",
-    "startCommand": "bun dist/server/server.js",
+    "startCommand": "bun serve.ts",
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 3
   }
