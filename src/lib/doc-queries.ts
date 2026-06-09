@@ -29,7 +29,7 @@ export function useDocuments(filters?: DocFilters) {
   return useQuery({
     queryKey: ["documents", filters],
     queryFn: async () => {
-      let q = supabase
+      let q = (supabase as any)
         .from("bid_documents")
         .select("*")
         .order("created_at", { ascending: false });
@@ -69,7 +69,7 @@ export function useUploadDocument() {
       if (!user) throw new Error("Not authenticated");
 
       // 3. Insert bid_documents record
-      const { data: doc, error: insertErr } = await supabase
+      const { data: doc, error: insertErr } = await (supabase as any)
         .from("bid_documents")
         .insert({
           id: docId,
@@ -87,7 +87,7 @@ export function useUploadDocument() {
       if (insertErr) throw insertErr;
 
       // 4. Trigger server-side indexing (async — badge appears when embedding populates)
-      indexDocument({ data: { documentId: doc.id } }).catch(console.error);
+      indexDocument({ data: { documentId: (doc as BidDocument).id } }).catch(console.error);
 
       return doc as BidDocument;
     },
@@ -113,7 +113,7 @@ export function useReplaceDocument() {
       if (storageErr) throw storageErr;
 
       // 2. Update size, clear stale embedding so badge shows "indexing"
-      const { error: updateErr } = await supabase
+      const { error: updateErr } = await (supabase as any)
         .from("bid_documents")
         .update({ size_bytes: input.file.size, embedding: null })
         .eq("id", input.documentId);
@@ -184,7 +184,7 @@ export function useDeleteDocument() {
     mutationFn: async (input: { documentId: string; storagePath: string }) => {
       // Delete storage object first (chunks + record deleted via DB cascade)
       await supabase.storage.from("bid-documents").remove([input.storagePath]);
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from("bid_documents")
         .delete()
         .eq("id", input.documentId);
