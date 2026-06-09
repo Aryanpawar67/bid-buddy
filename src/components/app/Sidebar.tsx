@@ -45,7 +45,7 @@ export function Sidebar() {
       {/* Header */}
       <Link to="/dashboard" className="flex items-center gap-3 px-4 py-4 border-b border-white/[0.08] hover:opacity-90 transition-opacity">
         <img
-          src="/Imocha symbol.png"
+          src="/imocha-symbol.png"
           alt="iMocha"
           className="size-8 shrink-0 object-contain"
         />
