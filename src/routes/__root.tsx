@@ -52,7 +52,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { title: "iMocha Pursuit Compass — iMocha" },
       { name: "description", content: "Internal bid management workspace for iMocha revenue teams." },
     ],
-    links: [{ rel: "stylesheet", href: appCss }],
+    links: [
+      { rel: "stylesheet", href: appCss },
+      { rel: "icon", type: "image/png", href: "/imocha-logo.png" },
+    ],
   }),
   shellComponent: RootShell,
   component: RootComponent,
