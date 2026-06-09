@@ -2,7 +2,7 @@
   "_comment": "Intake schema and TA placeholder catalog. The model authors variable content from the user's brief, assembles it into this JSON shape, then calls generate_proposal.py.",
 
   "intake_schema": {
-    "product": "TA | TM",
+    "product": "TA | TM  — TA = Talent Acquisition / Skills Assessment (SA); TM = Talent Management / Skills Intelligence (SI). Always normalise to 'TA' or 'TM' regardless of which alias the user or RFP uses.",
     "rfp_name": "string — Opportunity / RFP name. Appears on cover and header.",
     "customer_display_name": "string — Customer name as it should appear throughout the proposal. Used in cover, body, headers, footers.",
     "prepared_for": "string — Contact name & title, or '[TO PROVIDE: contact name & title]' if unknown.",
@@ -25,7 +25,7 @@
   },
 
   "ta_placeholder_catalog": {
-    "_note": "These are the literal tokens present in the TA master (Skills-First_TA_Proposal_Template_v1_0.docx). Angle brackets are XML-escaped as &lt; and &gt; inside document.xml. The script handles substitution automatically; this catalog is for reference and debugging.",
+    "_note": "Literal tokens in TA_Proposal_template.docx. Angle brackets are XML-escaped as &lt; and &gt; inside document.xml. Script handles substitution automatically; catalog is for reference and debugging. TM_Proposal_template.docx tokens are discovered at runtime — use extra_substitutions for any TM-specific tokens that differ.",
 
     "Customer Name (CUSTOMER NAME)": {
       "kind": "COMPOSITE",

@@ -21,7 +21,9 @@ Match the master template's tone — professional enterprise B2B. Confident, spe
 ## Executive Summary structure (three paragraphs)
 
 **Paragraph 1 — Pleased.** One paragraph. Pattern:
-> "We are pleased to present iMocha's [Skills-First Cloud for TA | Skills-First Cloud for TM] to [Customer] as the recommended platform for [customer's stated objective], fully aligned to the requirements outlined in the RFP."
+> "We are pleased to present iMocha's [Skills-First Cloud for Talent Acquisition | Skills-First Cloud for Talent Management] to [Customer] as the recommended platform for [customer's stated objective], fully aligned to the requirements outlined in the RFP."
+
+Use the full product name in the proposal body. TA (also called Skills Assessment / SA) and TM (also called Skills Intelligence / SI) are the same products — match whichever name the customer's RFP uses.
 
 **Paragraph 2 — Aligned.** Two to four sentences. Pattern:
 > Restate the customer's core requirements in their own framing. If there are explicit out-of-scope items, surface them here. Include iMocha's specific proof points that map to the customer's stated needs (assessment count, languages, integration support, etc.).

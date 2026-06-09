@@ -73,9 +73,11 @@ exportMessageFn({ sessionId, messageIndex }) → Response (DOCX blob)
 A **"Generate Proposal"** quick-action chip (bid mode only, alongside existing chips) triggers a two-phase server function that: authors variable content via Claude → assembles into the branded iMocha DOCX template → saves to Knowledge Hub + returns download.
 
 ### Master Template Storage
-- File: `src/assets/imocha-proposal-template.docx` (user provides; committed to repo)
-- Server reads it once; module-level `Buffer` cache so subsequent calls skip disk I/O
-- Template XML is never sent to the client
+Two templates committed to `src/assets/`:
+- **TA** (Talent Acquisition / Skills Assessment): `TA_Proposal_template.docx`
+- **TM** (Talent Management / Skills Intelligence): `TM_Proposal_template.docx`
+
+Template is selected based on the detected product (see TA vs SI Detection below). Server reads each template once; module-level `Buffer` cache keyed by filename so subsequent calls skip disk I/O. Template XML is never sent to the client.
 
 ### Phase 1 — Author (Claude)
 Server function `generateProposalFn` calls Claude with:
@@ -115,8 +117,8 @@ alter table public.bid_documents add column if not exists source text not null d
 3. On completion: assistant message "Proposal generated — [Open Items list]" + **Download DOCX** chip
 4. DOCX also appears in bid Documents tab with `Generated` badge
 
-### TA vs TM Detection
-Inferred from: bid `type` field (`rfp`/`rfi`/`rfq`) + first-pass doc scan for TA/TM keywords. If ambiguous after inference, AI asks one question before generating.
+### TA vs SI Detection
+Inferred from: bid `type` field + first-pass doc scan for TA keywords (hiring, recruitment, candidate, screening, proctoring) vs SI keywords (skills, competency, workforce, upskilling, internal mobility). If ambiguous after inference, defaults to TA. Template selected accordingly.
 
 ---
 
@@ -135,7 +137,8 @@ Inferred from: bid `type` field (`rfp`/`rfi`/`rfq`) + first-pass doc scan for TA
 | `src/lib/ai-queries.ts` | Add `useGenerateProposal` mutation |
 | `src/components/ai/AiChatPanel.tsx` | Add "Generate Proposal" quick-action chip |
 | `src/lib/doc-queries.ts` | Show `source` badge in doc list; filter in upload modal |
-| `src/assets/imocha-proposal-template.docx` | New — master template (user provides) |
+| `src/assets/TA_Proposal_template.docx` | Existing — TA (Talent Acquisition / Skills Assessment) master |
+| `src/assets/TM_Proposal_template.docx` | Existing — TM (Talent Management / Skills Intelligence) master |
 
 ---
 
@@ -161,7 +164,7 @@ The author phase deliberately uses Haiku (not Sonnet/Opus) since the task is str
 
 ## Out of Scope
 
-- TM-specific master template (uses TA master as design carrier per skill.md instructions until dedicated TM master exists)
+- SI template token catalog (tokens are discovered at runtime from template XML; the explicit catalog in `substitution_map.json` covers TA only)
 - Scheduled / auto-generation (manual trigger only)
 - Proposal editing within the app (DOCX is for external editing)
 - Export of full session history (single message only for Feature B)

@@ -115,13 +115,13 @@ function AuthPage() {
         </svg>
 
         {/* Content */}
-        <div className="relative z-10 flex flex-col h-full p-12">
+        <div className="relative z-10 flex flex-col h-full px-10 pt-8 pb-10">
           {/* Logo */}
-          <div className="flex items-center gap-2.5 mb-auto">
-            <img src="/imocha-logo.png" alt="iMocha" className="h-8 w-auto brightness-0 invert" />
-            <div>
-              <div className="text-white text-[15px] font-semibold leading-none">Bid Compass</div>
-              <div className="text-white/40 text-[10px] uppercase tracking-widest mt-0.5">by iMocha</div>
+          <div className="flex flex-col mb-auto">
+            <img src="/imocha-logo.png" alt="iMocha" className="h-9 w-auto brightness-0 invert self-start" />
+            <div className="mt-10">
+              <div className="text-[33px] font-bold text-white leading-tight tracking-[-0.01em]">Bid Compass</div>
+              <div className="text-[13.5px] text-white/35 mt-1 uppercase tracking-[0.1em]">Pursuit Management</div>
             </div>
           </div>
 

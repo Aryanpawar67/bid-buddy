@@ -37,12 +37,13 @@ type Props = {
   open: boolean;
   onClose: () => void;
   bids: Bid[];
+  prefilledBidId?: string;
 };
 
-export function UploadModal({ open, onClose, bids }: Props) {
+export function UploadModal({ open, onClose, bids, prefilledBidId }: Props) {
   const [files, setFiles] = useState<FileEntry[]>([]);
-  const [docType, setDocType] = useState<DocType>("template");
-  const [bidId, setBidId] = useState<string>("");
+  const [docType, setDocType] = useState<DocType>(prefilledBidId ? "rfp" : "template");
+  const [bidId, setBidId] = useState<string>(prefilledBidId ?? "");
   const [stage, setStage] = useState<string>("");
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -118,7 +119,7 @@ export function UploadModal({ open, onClose, bids }: Props) {
   function handleClose() {
     setFiles([]);
     setDocType("template");
-    setBidId("");
+    setBidId(prefilledBidId ?? "");
     setStage("");
     onClose();
   }
@@ -228,6 +229,7 @@ export function UploadModal({ open, onClose, bids }: Props) {
 
             {/* Right: metadata form */}
             <div className="w-52 shrink-0 border-l hairline border-border flex flex-col gap-4 p-4">
+              {!prefilledBidId && (
               <div>
                 <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
                   Document Type
@@ -242,23 +244,27 @@ export function UploadModal({ open, onClose, bids }: Props) {
                   ))}
                 </select>
               </div>
+              )}
 
-              <div>
-                <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
-                  Link to Bid
+              {!prefilledBidId && (
+                <div>
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
+                    Link to Bid
+                  </div>
+                  <select
+                    value={bidId}
+                    onChange={(e) => setBidId(e.target.value)}
+                    className="w-full text-[11px] bg-background border hairline border-border rounded-md px-2 py-1.5 text-foreground"
+                  >
+                    <option value="">— Global Template —</option>
+                    {bids.map((b) => (
+                      <option key={b.id} value={b.id}>{b.client_name}</option>
+                    ))}
+                  </select>
                 </div>
-                <select
-                  value={bidId}
-                  onChange={(e) => setBidId(e.target.value)}
-                  className="w-full text-[11px] bg-background border hairline border-border rounded-md px-2 py-1.5 text-foreground"
-                >
-                  <option value="">— Global Template —</option>
-                  {bids.map((b) => (
-                    <option key={b.id} value={b.id}>{b.client_name}</option>
-                  ))}
-                </select>
-              </div>
+              )}
 
+              {!prefilledBidId && (
               <div>
                 <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
                   Stage (optional)
@@ -273,6 +279,7 @@ export function UploadModal({ open, onClose, bids }: Props) {
                   ))}
                 </select>
               </div>
+              )}
 
               <div className="mt-auto flex flex-col gap-2">
                 <button

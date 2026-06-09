@@ -1,16 +1,36 @@
 ---
 name: iMocha Proposal Generator
-description: Generate a branded iMocha .docx proposal by cloning the master template (preserving design, fonts, colors, logos) and applying client-specific content. Use for any iMocha TA or TM proposal or RFP response.
+description: Generate a branded iMocha .docx proposal by cloning the master template (preserving design, fonts, colors, logos) and applying client-specific content. Use for any iMocha TA/SA or TM/SI proposal or RFP response.
 ---
 
 # iMocha Proposal Generator
 
-Produce a client-ready .docx proposal for iMocha's Talent Acquisition (TA) or Talent Management / Skills Intelligence (TM) products. This skill clones the iMocha master template and edits only its body content — all branding (cover page, fonts, theme, colors, logos, headers, footers, embedded images) is preserved automatically.
+Produce a client-ready .docx proposal for iMocha's two product lines. This skill clones the correct branded master template and edits only its body content — all branding (cover page, fonts, theme, colors, logos, headers, footers, embedded images) is preserved automatically.
+
+## Product Nomenclature
+
+iMocha uses two product lines. The terms below are **all equivalent** — use whichever the user or RFP uses:
+
+| Code | Full names (all interchangeable) | Keywords |
+|------|----------------------------------|---------|
+| **TA** | Talent Acquisition · Skills Assessment (SA) | hiring, recruitment, candidate, screening, proctoring, pre-hire, ATS |
+| **TM** | Talent Management · Skills Intelligence (SI) | skills, competency, workforce, upskilling, internal mobility, skill inference, HRIS, LMS |
+
+When outputting files or JSON, always normalise to `"TA"` or `"TM"`.
+
+## Master Templates
+
+Both templates are committed to `src/assets/` in the BidTrack repo:
+
+| Product | Template file |
+|---------|--------------|
+| TA (Skills Assessment) | `TA_Proposal_template.docx` |
+| TM (Skills Intelligence) | `TM_Proposal_template.docx` |
 
 ## When to use
 Trigger when the user asks for:
 - "Generate an iMocha proposal for <customer>"
-- "Create a TA / TM / Skills-First proposal"
+- "Create a TA / SA / TM / SI / Skills-First proposal"
 - "Respond to this RFP" in an iMocha context
 - Anything that produces a branded iMocha business proposal as a Word document
 
@@ -20,19 +40,17 @@ Trigger when the user asks for:
 
 ## Prerequisites
 - Code execution must be enabled (it is, since this skill runs scripts).
-- The iMocha master template (.docx) must be present at `/mnt/user-data/uploads/`. If the user hasn't attached it, ask them to attach it before continuing. Do not proceed without it.
+- The iMocha master template (.docx) must be present at `/mnt/user-data/uploads/`. If the user hasn't attached it, ask them to attach the correct one before continuing. Do not proceed without it.
 
 ## Workflow
 
 ### 1. Locate the master template
-Look in `/mnt/user-data/uploads/` for a file matching `*Proposal*Template*.docx` or `Skills-First*.docx`. If none found, STOP and ask the user to attach the master. Do not proceed; do not rebuild.
+Look in `/mnt/user-data/uploads/` for a file matching `TA_Proposal_template.docx` or `TM_Proposal_template.docx`. If neither is found, STOP and ask the user to attach the correct master. Do not proceed; do not rebuild.
 
 Quickly verify the file is the real branded master: `unzip -l <file> | grep -c word/media/` should be > 0 and `word/theme/` should be present. If `media/` is empty or `theme/` is missing, warn the user that the file looks like a previous output rather than the brand master, and ask them to attach the original.
 
 ### 2. Identify the product
-- TA = hiring, recruitment, candidate assessment, screening, proctoring.
-- TM = skills intelligence, competency, gaps, upskilling, internal mobility, skill inference.
-If unclear from the user's brief, ask once: "Is this for Talent Acquisition (TA) or Talent Management / Skills Intelligence (TM)?"
+Infer from the user's brief using the keyword table above. If ambiguous, ask once: "Is this for Talent Acquisition / Skills Assessment (TA) or Talent Management / Skills Intelligence (TM)?"
 
 ### 3. Gather intake
 Collect ALL of the inputs below in ONE consolidated request. If the user already provided a requirement summary or RFP excerpt, extract first; only ask for what is genuinely missing. Do not invent values.
@@ -64,10 +82,12 @@ Assemble all collected and authored content into a JSON file matching the schema
 ### 6. Run the generator script
 ```
 python scripts/generate_proposal.py \
-    --master /mnt/user-data/uploads/<master_filename>.docx \
+    --master /mnt/user-data/uploads/TA_Proposal_template.docx \
     --intake /tmp/intake.json \
     --output /mnt/user-data/outputs/iMocha_Proposal_<CustomerDisplayName>_<TA|TM>_DRAFT.docx
 ```
+
+Replace `TA_Proposal_template.docx` with `TM_Proposal_template.docx` for TM/SI proposals.
 
 The script:
 - Clones and unpacks the master
@@ -89,9 +109,6 @@ If the script raises an error (e.g., "Heading not found"), inspect the master wi
   - Any judgment calls you made (display name format, exclusions framing)
   - Any sections you trimmed via selective inclusion
 - Keep the doc body itself client-ready — no meta-commentary inside it.
-
-## TM handling (until a dedicated TM master exists)
-If product = TM and no TM-specific master is in uploads, clone the TA master as the design carrier. The Section 3 "iMocha Solution" content in the TA master is TA-specific (assessments, proctoring) and must be replaced with TM Solution content (skills inference engine, taxonomy, confidence/proficiency, competency framework, skill-gap & internal-mobility, Skill Inventory dashboards). When injecting TM Solution paragraphs, every new paragraph must reference an existing template `<w:pStyle>` ID — NEVER inline font/color/size on runs. Where TM solution detail is missing from intake, insert `[TO PROVIDE: TM detail — <topic>]` rather than fabricating.
 
 ## Resources
 - `scripts/generate_proposal.py` — main deterministic generator (clone, edit, validate, pack)

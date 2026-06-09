@@ -1,20 +1,80 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import Anthropic from "@anthropic-ai/sdk";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-function chunkText(text: string, chunkSize = 1800, overlap = 180): string[] {
-  const chunks: string[] = [];
-  let start = 0;
-  while (start < text.length) {
-    chunks.push(text.slice(start, start + chunkSize));
-    start += chunkSize - overlap;
+// Sentence-aware chunker — never splits mid-sentence
+function chunkText(text: string, targetSize = 1800, overlap = 180): string[] {
+  const paragraphs = text.split(/\n\n+/);
+  const sentences: string[] = [];
+  for (const para of paragraphs) {
+    const parts = para.split(/(?<=[.!?])\s+/);
+    sentences.push(...parts.filter((s) => s.trim()));
   }
+
+  const chunks: string[] = [];
+  let current = "";
+  let overlapBuffer = "";
+
+  for (const sentence of sentences) {
+    if ((current + sentence).length > targetSize && current) {
+      chunks.push(current.trim());
+      overlapBuffer = current.slice(-overlap);
+      current = overlapBuffer + " " + sentence;
+    } else {
+      current += (current ? " " : "") + sentence;
+    }
+  }
+  if (current.trim()) chunks.push(current.trim());
   return chunks;
 }
 
-async function embedBatch(texts: string[]): Promise<number[][]> {
+// Contextual Retrieval: prepend a 50-100 token situating blurb per chunk
+// using Haiku with the full document cached as a system block.
+async function contextualiseChunks(
+  chunks: string[],
+  fullDocText: string
+): Promise<string[]> {
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  const contextualised: string[] = [];
+
+  for (const chunk of chunks) {
+    try {
+      const resp = await anthropic.messages.create({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 150,
+        system: [
+          {
+            type: "text",
+            text: fullDocText,
+            cache_control: { type: "ephemeral" },
+          },
+        ],
+        messages: [
+          {
+            role: "user",
+            content:
+              "Here is a chunk from the document:\n\n" +
+              chunk +
+              "\n\nGive a 1-2 sentence context situating this chunk within the overall document for search retrieval. Answer only with the context.",
+          },
+        ],
+      });
+      const context =
+        resp.content.find((b) => b.type === "text")?.text?.trim() ?? "";
+      contextualised.push(context ? `${context}\n\n${chunk}` : chunk);
+    } catch {
+      // Contextualisation is best-effort — fall back to raw chunk
+      contextualised.push(chunk);
+    }
+  }
+
+  return contextualised;
+}
+
+async function embedBatch(texts: string[], attempt = 0): Promise<number[][]> {
   const resp = await fetch("https://api.voyageai.com/v1/embeddings", {
     method: "POST",
     headers: {
@@ -23,6 +83,13 @@ async function embedBatch(texts: string[]): Promise<number[][]> {
     },
     body: JSON.stringify({ model: "voyage-3", input: texts }),
   });
+  if (resp.status === 429 && attempt < 4) {
+    // Respect Retry-After if present, otherwise exponential backoff (20s, 40s, 80s, 160s)
+    const retryAfter = Number(resp.headers.get("Retry-After") ?? 0);
+    const delay = retryAfter > 0 ? retryAfter * 1000 : 20_000 * 2 ** attempt;
+    await new Promise((r) => setTimeout(r, delay));
+    return embedBatch(texts, attempt + 1);
+  }
   if (!resp.ok) throw new Error(`Voyage API error: ${resp.status} ${await resp.text()}`);
   const json = (await resp.json()) as { data: { embedding: number[] }[] };
   return json.data.map((d) => d.embedding);
@@ -74,8 +141,9 @@ export const indexDocument = createServerFn({ method: "POST" })
     const text = await extractText(buffer, ext);
     if (!text.trim()) return { chunksIndexed: 0 };
 
-    // 4. Chunk the text
-    const chunks = chunkText(text);
+    // 4. Chunk (sentence-aware) then contextualise via Haiku (best-effort)
+    const rawChunks = chunkText(text);
+    const chunks = await contextualiseChunks(rawChunks, text);
 
     // 5. Embed in batches of 128 (Voyage API limit)
     const allEmbeddings: number[][] = [];
@@ -111,6 +179,28 @@ export const indexDocument = createServerFn({ method: "POST" })
     if (updateErr) throw updateErr;
 
     return { chunksIndexed: chunks.length };
+  });
+
+// ── reindexAll ────────────────────────────────────────────────────────────────
+export const reindexAll = createServerFn({ method: "POST" })
+  .inputValidator(z.object({}))
+  .handler(async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: docs, error } = await (supabaseAdmin as any)
+      .from("bid_documents")
+      .select("id");
+    if (error) throw error;
+
+    let indexed = 0;
+    for (const doc of docs ?? []) {
+      try {
+        await indexDocument({ data: { documentId: doc.id } });
+        indexed++;
+      } catch (err) {
+        console.error(`reindexAll: failed for ${doc.id}`, err);
+      }
+    }
+    return { indexed, total: docs?.length ?? 0 };
   });
 
 // ── getDocPreview ─────────────────────────────────────────────────────────────

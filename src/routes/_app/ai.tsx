@@ -11,6 +11,7 @@ import {
 } from "@/lib/ai-queries";
 import { AiBidList, type AiMode } from "@/components/ai/AiBidList";
 import { AiChatPanel } from "@/components/ai/AiChatPanel";
+import { useDocuments } from "@/lib/doc-queries";
 
 const MODEL_STORAGE_KEY = "bid-compass:ai-model";
 const DEFAULT_MODEL = "claude-sonnet-4-6";
@@ -51,6 +52,10 @@ function AiPage() {
     : {};
 
   const activeBid = bids.find((b) => b.id === selectedBidId) ?? null;
+
+  const { data: bidDocs = [] } = useDocuments(
+    mode === "bid" && selectedBidId ? { bidId: selectedBidId } : undefined
+  );
 
   const { messages, isStreaming, inputValue, setInputValue, send } = useAiChat(
     selectedSessionId,
@@ -146,6 +151,7 @@ function AiPage() {
         model={model}
         onModelChange={handleModelChange}
         requestCount={requestCount}
+        bidDocs={bidDocs}
       />
     </div>
   );

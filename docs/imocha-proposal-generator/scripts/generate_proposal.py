@@ -8,9 +8,16 @@ validates. All design elements — cover page, fonts, theme, colors,
 logos, embedded images, table styles — are preserved by construction
 because no other file inside the .docx is ever touched.
 
+Product nomenclature (all aliases are equivalent):
+  TA = Talent Acquisition = SA (Skills Assessment)  → use TA_Proposal_template.docx
+  TM = Talent Management  = SI (Skills Intelligence) → use TM_Proposal_template.docx
+
+Templates live at: src/assets/TA_Proposal_template.docx
+                   src/assets/TM_Proposal_template.docx
+
 Usage:
     python generate_proposal.py \
-        --master /mnt/user-data/uploads/<master>.docx \
+        --master src/assets/TA_Proposal_template.docx \
         --intake /tmp/intake.json \
         --output /mnt/user-data/outputs/iMocha_Proposal_<Customer>_<TA|TM>_DRAFT.docx
 """
