@@ -128,6 +128,55 @@ export function useReplaceDocument() {
   });
 }
 
+// ── useUploadAndIndexDocument ──────────────────────────────────────────────────
+// Like useUploadDocument but AWAITS indexDocument so chunks exist on resolve.
+export function useUploadAndIndexDocument() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      file: File;
+      type: DocType;
+      bidId: string | null;
+      stage: string | null;
+    }) => {
+      const docId = crypto.randomUUID();
+      const path = `${docId}/${input.file.name}`;
+
+      const { error: upErr } = await supabase.storage
+        .from("bid-documents")
+        .upload(path, input.file, { upsert: false });
+      if (upErr) throw upErr;
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not authenticated");
+
+      const { data: doc, error: insertErr } = await (supabase as any)
+        .from("bid_documents")
+        .insert({
+          id: docId,
+          name: input.file.name,
+          type: input.type,
+          bid_id: input.bidId,
+          stage: input.stage,
+          storage_path: path,
+          size_bytes: input.file.size,
+          uploaded_by: user.id,
+          source: "uploaded",
+        })
+        .select()
+        .single();
+      if (insertErr) throw insertErr;
+
+      // Await real indexing — not fire-and-forget.
+      // fetchPinnedChunks in stream-chat.ts reads bid_document_chunks,
+      // which only exist after this resolves.
+      await indexDocument({ data: { documentId: (doc as BidDocument).id } });
+      return doc as BidDocument;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["documents"] }),
+  });
+}
+
 // ── useDeleteDocument ─────────────────────────────────────────────────────────
 export function useDeleteDocument() {
   const qc = useQueryClient();
