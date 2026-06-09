@@ -1,5 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
+import { Eye, EyeOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useSession } from "@/lib/auth";
 
@@ -44,6 +45,7 @@ function AuthPage() {
   const [name, setName] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
   const { session } = useSession();
 
@@ -110,7 +112,7 @@ function AuthPage() {
         <div className="relative z-10 flex flex-col h-full p-12">
           {/* Logo */}
           <div className="flex items-center gap-2.5 mb-auto">
-            <img src="/favicon.jpg" alt="iMocha" className="h-9 w-9 rounded-lg object-cover" />
+            <img src="/imocha-logo.png" alt="iMocha" className="h-8 w-auto brightness-0 invert" />
             <div>
               <div className="text-white text-[15px] font-semibold leading-none">Bid Compass</div>
               <div className="text-white/40 text-[10px] uppercase tracking-widest mt-0.5">by iMocha</div>
@@ -205,15 +207,25 @@ function AuthPage() {
             </FormField>
 
             <FormField label="Password">
-              <input
-                type="password"
-                required
-                minLength={8}
-                placeholder="········"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full h-11 px-3.5 rounded-lg border border-gray-200 bg-gray-50 text-[13px] text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-[#491AEB] focus:bg-white transition-colors"
-              />
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  required
+                  minLength={8}
+                  placeholder="········"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full h-11 px-3.5 pr-10 rounded-lg border border-gray-200 bg-gray-50 text-[13px] text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-[#491AEB] focus:bg-white transition-colors"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                  tabIndex={-1}
+                >
+                  {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                </button>
+              </div>
             </FormField>
 
             {err && (

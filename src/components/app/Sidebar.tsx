@@ -43,19 +43,21 @@ export function Sidebar() {
   return (
     <aside className="w-[220px] min-w-[220px] shrink-0 bg-sidebar flex flex-col overflow-y-auto overflow-x-hidden">
       {/* Header */}
-      <div className="flex items-center gap-2.5 px-3.5 py-4 border-b border-white/[0.08]">
-        <Link to="/dashboard" className="size-8 rounded-[8px] shrink-0 overflow-hidden">
-          <img src="/favicon.jpg" alt="Bid Compass" className="size-full object-cover" />
-        </Link>
+      <Link to="/dashboard" className="flex items-center gap-3 px-4 py-4 border-b border-white/[0.08] hover:opacity-90 transition-opacity">
+        <img
+          src="/Imocha symbol.png"
+          alt="iMocha"
+          className="size-8 shrink-0 object-contain"
+        />
         <div>
-          <div className="text-[13px] font-semibold text-white leading-tight">
+          <div className="text-[13.5px] font-bold text-white leading-tight tracking-[-0.01em]">
             Bid Compass
           </div>
-          <div className="text-[10px] text-white/40 mt-px">
+          <div className="text-[9.5px] text-white/35 mt-0.5 uppercase tracking-[0.1em]">
             Pursuit Management
           </div>
         </div>
-      </div>
+      </Link>
 
       {/* Nav */}
       <div className="py-2 flex-1">
