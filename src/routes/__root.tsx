@@ -54,7 +54,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     ],
     links: [
       { rel: "stylesheet", href: appCss },
-      { rel: "icon", type: "image/png", href: "/imocha-logo.png" },
+      { rel: "icon", type: "image/jpeg", href: "/favicon.jpg" },
     ],
   }),
   shellComponent: RootShell,
