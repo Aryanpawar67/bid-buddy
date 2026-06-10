@@ -156,11 +156,11 @@ export function useApproveUser() {
         .insert({ user_id: userId, role });
       if (roleErr) throw roleErr;
 
-      // Dismiss the new_user_signup notification for this user (RLS: admin's own row)
+      // Mark the new_user_signup notification as read (UPDATE already granted; no DELETE grant needed)
       if (profile?.email) {
         await (supabase as any)
           .from("notifications")
-          .delete()
+          .update({ read: true })
           .eq("type", "new_user_signup")
           .ilike("body", `%${profile.email}%`);
       }
@@ -169,6 +169,7 @@ export function useApproveUser() {
       qc.invalidateQueries({ queryKey: ["team-members"] });
       qc.invalidateQueries({ queryKey: ["pending-members"] });
       qc.invalidateQueries({ queryKey: ["notifications"] });
+      qc.invalidateQueries({ queryKey: ["notification-count"] });
     },
   });
 }
