@@ -136,6 +136,13 @@ export function useApproveUser() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ userId, role }: { userId: string; role: AppRole }) => {
+      // Fetch email before approval so we can clear the signup notification
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("email")
+        .eq("id", userId)
+        .single();
+
       const { error: statusErr } = await (supabase as any)
         .from("profiles")
         .update({ status: "active" })
@@ -148,6 +155,15 @@ export function useApproveUser() {
         .from("user_roles")
         .insert({ user_id: userId, role });
       if (roleErr) throw roleErr;
+
+      // Dismiss the new_user_signup notification for this user (RLS: admin's own row)
+      if (profile?.email) {
+        await (supabase as any)
+          .from("notifications")
+          .delete()
+          .eq("type", "new_user_signup")
+          .ilike("body", `%${profile.email}%`);
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["team-members"] });
