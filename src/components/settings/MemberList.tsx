@@ -1,9 +1,16 @@
 import { useState } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useBidAssignments, useUpdateMemberRole, useRemoveBidAssignment, useSuspendUser } from "@/lib/settings-queries";
+import {
+  useBidAssignments,
+  useUpdateMemberRole,
+  useRemoveBidAssignment,
+  useSuspendUser,
+  useDeleteUser,
+} from "@/lib/settings-queries";
 import type { TeamMember } from "@/lib/settings-queries";
 import type { AppRole } from "@/lib/auth";
 import { BidAssignModal } from "./BidAssignModal";
+import { ChangePasswordModal } from "./ChangePasswordModal";
 import { initials } from "@/lib/bid-constants";
 
 type Props = { members: TeamMember[]; isAdmin: boolean };
@@ -17,12 +24,24 @@ const ROLE_OPTIONS: { value: AppRole; label: string }[] = [
 
 function MemberRow({ member, isAdmin }: { member: TeamMember; isAdmin: boolean }) {
   const [assignOpen, setAssignOpen] = useState(false);
+  const [pwOpen, setPwOpen] = useState(false);
   const updateRole = useUpdateMemberRole();
   const removeAssignment = useRemoveBidAssignment();
   const suspend = useSuspendUser();
+  const deleteUser = useDeleteUser();
   const { data: assignments = [] } = useBidAssignments(member.id);
 
   const assignedBidIds = assignments.map((a) => a.bid_id);
+
+  function handleDelete() {
+    if (
+      window.confirm(
+        `Permanently delete ${member.full_name ?? member.email}? This cannot be undone.`
+      )
+    ) {
+      deleteUser.mutate(member.id);
+    }
+  }
 
   return (
     <div className="flex items-start gap-3 px-3 py-2.5 border-b hairline border-border last:border-0">
@@ -97,21 +116,38 @@ function MemberRow({ member, isAdmin }: { member: TeamMember; isAdmin: boolean }
         )}
       </div>
 
-      {/* Status badge + suspend */}
+      {/* Status badge + admin actions */}
       <div className="shrink-0 flex items-center gap-2 pt-0.5">
         {member.status === "suspended" && (
           <span className="text-[9px] uppercase tracking-wider text-destructive bg-destructive/10 px-1.5 py-0.5 rounded">
             Suspended
           </span>
         )}
-        {isAdmin && member.status !== "suspended" && (
-          <button
-            onClick={() => suspend.mutate(member.id)}
-            disabled={suspend.isPending}
-            className="text-[10px] text-muted-foreground hover:text-destructive transition-colors disabled:opacity-40"
-          >
-            Suspend
-          </button>
+        {isAdmin && (
+          <div className="flex items-center gap-1.5">
+            {member.status !== "suspended" && (
+              <button
+                onClick={() => suspend.mutate(member.id)}
+                disabled={suspend.isPending}
+                className="text-[10px] text-muted-foreground hover:text-destructive transition-colors disabled:opacity-40"
+              >
+                Suspend
+              </button>
+            )}
+            <button
+              onClick={() => setPwOpen(true)}
+              className="text-[10px] text-muted-foreground hover:text-primary transition-colors"
+            >
+              Pwd
+            </button>
+            <button
+              onClick={handleDelete}
+              disabled={deleteUser.isPending}
+              className="text-[10px] text-muted-foreground hover:text-destructive transition-colors disabled:opacity-40"
+            >
+              Delete
+            </button>
+          </div>
         )}
       </div>
 
@@ -120,6 +156,13 @@ function MemberRow({ member, isAdmin }: { member: TeamMember; isAdmin: boolean }
         onClose={() => setAssignOpen(false)}
         userId={member.id}
         assignedBidIds={assignedBidIds}
+      />
+
+      <ChangePasswordModal
+        open={pwOpen}
+        onClose={() => setPwOpen(false)}
+        userId={member.id}
+        userName={member.full_name ?? member.email}
       />
     </div>
   );
@@ -140,7 +183,7 @@ export function MemberList({ members, isAdmin }: Props) {
         <div className="w-7 shrink-0" />
         <div className="flex-1 text-[10px] uppercase tracking-wider text-muted-foreground">Member</div>
         <div className="w-28 text-[10px] uppercase tracking-wider text-muted-foreground shrink-0">Role</div>
-        <div className="w-20 shrink-0" />
+        <div className="w-32 shrink-0" />
       </div>
       {members.map((m) => (
         <MemberRow key={m.id} member={m} isAdmin={isAdmin} />

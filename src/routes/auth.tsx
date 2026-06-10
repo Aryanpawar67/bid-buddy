@@ -60,7 +60,7 @@ function AuthPage() {
     setBusy(true);
     try {
       if (mode === "signup") {
-        const { data: signUpData, error } = await supabase.auth.signUp({
+        const { error } = await supabase.auth.signUp({
           email,
           password,
           options: {
@@ -69,11 +69,6 @@ function AuthPage() {
           },
         });
         if (error) throw error;
-        if (signUpData.user) {
-          await supabase.from("user_roles")
-            .update({ role } as never)
-            .eq("user_id", signUpData.user.id);
-        }
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;

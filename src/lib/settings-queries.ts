@@ -8,6 +8,11 @@ import {
   saveStageMapFn,
   syncFromHubSpotFn,
 } from "@/lib/api/hubspot-sync";
+import {
+  createUserFn,
+  changePasswordFn,
+  deleteUserFn,
+} from "@/lib/api/admin-user";
 
 export type RolePermission = {
   id: string;
@@ -136,6 +141,9 @@ export function useApproveUser() {
         .update({ status: "active" })
         .eq("id", userId);
       if (statusErr) throw statusErr;
+
+      // Delete the trigger-inserted default role before inserting the chosen one
+      await supabase.from("user_roles").delete().eq("user_id", userId);
       const { error: roleErr } = await supabase
         .from("user_roles")
         .insert({ user_id: userId, role });
@@ -276,6 +284,41 @@ export function useRejectUser() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["pending-members"] });
       qc.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+}
+
+// ── useCreateUser ─────────────────────────────────────────────────────────────
+export function useCreateUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: {
+      email: string;
+      password: string;
+      fullName: string;
+      role: AppRole;
+    }) => createUserFn({ data: payload }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["team-members"] });
+    },
+  });
+}
+
+// ── useChangePassword ─────────────────────────────────────────────────────────
+export function useChangePassword() {
+  return useMutation({
+    mutationFn: (payload: { userId: string; newPassword: string }) =>
+      changePasswordFn({ data: payload }),
+  });
+}
+
+// ── useDeleteUser ─────────────────────────────────────────────────────────────
+export function useDeleteUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: string) => deleteUserFn({ data: { userId } }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["team-members"] });
     },
   });
 }
