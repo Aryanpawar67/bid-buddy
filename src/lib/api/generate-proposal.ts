@@ -5,11 +5,6 @@ import JSZip from "jszip";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
-const InputSchema = z.object({
-  bidId: z.string().uuid(),
-  sessionId: z.string().uuid(),
-});
-
 // ── Template cache ─────────────────────────────────────────────────────────────
 const templateCache: Record<string, Buffer> = {};
 
@@ -27,37 +22,302 @@ const TA_TEMPLATE = "TA_Proposal_template.docx";
 const TM_TEMPLATE = "TM_Proposal_template.docx";
 
 // ── Intake schema ──────────────────────────────────────────────────────────────
-type Intake = {
-  product: "TA" | "TM";
-  rfp_name: string;
-  customer_display_name: string;
-  prepared_for: string;
-  spoc_name: string;
-  spoc_email: string;
-  exec_summary: { pleased: string; aligned: string; confident: string };
-  scope_intro: string;
-  deliverables: string[];
+export const IntakeSchema = z.object({
+  product: z.enum(["TA", "TM"]),
+  rfp_name: z.string(),
+  customer_display_name: z.string(),
+  prepared_for: z.string(),
+  spoc_name: z.string(),
+  spoc_email: z.string(),
+  exec_summary: z.object({
+    pleased: z.string(),
+    aligned: z.string(),
+    confident: z.string(),
+  }),
+  scope_intro: z.string(),
+  deliverables: z.array(z.string()),
+  integrations: z.string().optional(),         // comma-separated platform names for heading
+  integrations_content: z.string().optional(), // full paragraph injected into section body
+});
+
+export type Intake = z.infer<typeof IntakeSchema>;
+export type ProposalPreview = Omit<Intake, "prepared_for" | "spoc_name" | "spoc_email">;
+
+const InputSchema = z.object({
+  bidId: z.string().uuid(),
+  sessionId: z.string().uuid(),
+  intake: IntakeSchema.optional(),
+});
+
+// ── RAG helpers ────────────────────────────────────────────────────────────────
+type ChunkRow = { doc_name: string; chunk_text: string };
+
+async function embedText(text: string): Promise<number[]> {
+  const resp = await fetch("https://api.voyageai.com/v1/embeddings", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.VOYAGE_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ model: "voyage-3", input: [text] }),
+  });
+  if (!resp.ok) throw new Error(`Voyage embed error: ${resp.status}`);
+  const json = (await resp.json()) as { data: { embedding: number[] }[] };
+  return json.data[0].embedding;
+}
+
+async function searchChunks(query: string, bidId: string, topK = 5): Promise<ChunkRow[]> {
+  try {
+    const embedding = await embedText(query);
+    const { data } = await (supabaseAdmin.rpc as any)("hybrid_search_chunks", {
+      query_text: query,
+      query_embedding: JSON.stringify(embedding),
+      match_bid_id: bidId,
+      match_count: 20,
+      min_similarity: 0.35,
+    });
+    return ((data ?? []) as ChunkRow[]).slice(0, topK);
+  } catch {
+    // Voyage down — FTS-only fallback with zero vector
+    try {
+      const zero = JSON.stringify(new Array(1024).fill(0));
+      const { data } = await (supabaseAdmin.rpc as any)("hybrid_search_chunks", {
+        query_text: query,
+        query_embedding: zero,
+        match_bid_id: bidId,
+        match_count: topK,
+        semantic_weight: 0,
+      });
+      return (data ?? []) as ChunkRow[];
+    } catch {
+      return [];
+    }
+  }
+}
+
+function formatChunks(chunks: ChunkRow[], heading: string): string {
+  if (!chunks.length) return "";
+  return `## ${heading}\n${chunks.map((c) => `[${c.doc_name}]\n${c.chunk_text}`).join("\n---\n")}\n\n`;
+}
+
+// ── Document context via RAG (P0 fix: uploaded RFP docs now reach the proposal) ─
+type DocContext = {
+  requirementsText: string;
+  integrationsText: string;
+  customStructureText: string;
+  hasCustomStructure: boolean;
 };
 
+async function buildDocumentContext(bidId: string): Promise<DocContext> {
+  const [reqChunks, intChunks, structChunks] = await Promise.all([
+    searchChunks("scope requirements deliverables timeline evaluation criteria", bidId, 6),
+    searchChunks("integration HRMS ATS LMS LXP system platform API connector webhook SSO", bidId, 5),
+    searchChunks("proposal format table of contents structure required sections response format", bidId, 4),
+  ]);
+
+  const hasCustomStructure =
+    structChunks.length >= 2 &&
+    structChunks.some((c) =>
+      /table of contents|section \d+|required format|proposal structure|bid format|response format/i.test(
+        c.chunk_text
+      )
+    );
+
+  return {
+    requirementsText: formatChunks(reqChunks, "RFP Excerpts — Requirements & Scope"),
+    integrationsText: formatChunks(intChunks, "RFP Excerpts — Integration Requirements"),
+    customStructureText: hasCustomStructure
+      ? formatChunks(structChunks, "Customer Proposal Format Requirements")
+      : "",
+    hasCustomStructure,
+  };
+}
+
+// ── System blocks ──────────────────────────────────────────────────────────────
+async function buildProposalSystemBlocks(
+  bidId: string
+): Promise<Anthropic.Messages.TextBlockParam[]> {
+  const [
+    { data: bid },
+    { data: questions },
+    { data: deliverables },
+    docCtx,
+  ] = await Promise.all([
+    supabaseAdmin
+      .from("bids")
+      .select("client_name, title, type, value, stage, deadline")
+      .eq("id", bidId)
+      .single(),
+    supabaseAdmin
+      .from("bid_questions")
+      .select("question_text, stage")
+      .eq("bid_id", bidId)
+      .order("created_at", { ascending: true }),
+    supabaseAdmin
+      .from("bid_deliverables")
+      .select("label, stage")
+      .eq("bid_id", bidId)
+      .order("created_at", { ascending: true }),
+    buildDocumentContext(bidId),
+  ]);
+
+  const parts: string[] = [
+    "You are the iMocha proposal author assistant.",
+    "Author variable content for an iMocha branded proposal grounded in all context below.",
+    "Every claim must be traceable to the provided context — do not invent capabilities, statistics, or certifications.",
+    "",
+  ];
+
+  if (bid) {
+    parts.push("## Bid Metadata");
+    parts.push(`Client: ${bid.client_name}`);
+    parts.push(`Title: ${bid.title}`);
+    parts.push(`Type: ${bid.type?.toUpperCase() ?? "RFP"}`);
+    parts.push(`Value: $${((bid.value ?? 0) / 1_000_000).toFixed(1)}M`);
+    parts.push(`Stage: ${bid.stage}`);
+    parts.push(`Deadline: ${bid.deadline}`);
+    parts.push("");
+  }
+
+  if (questions?.length) {
+    parts.push("## Bid Questions (client requirements)");
+    for (const q of questions) parts.push(`- ${q.question_text}`);
+    parts.push("");
+  }
+
+  if (deliverables?.length) {
+    parts.push("## Bid Deliverables");
+    for (const d of deliverables) parts.push(`- ${d.label}`);
+    parts.push("");
+  }
+
+  if (docCtx.requirementsText) parts.push(docCtx.requirementsText);
+  if (docCtx.integrationsText) parts.push(docCtx.integrationsText);
+
+  if (docCtx.hasCustomStructure) {
+    parts.push(docCtx.customStructureText);
+    parts.push(
+      "IMPORTANT: The customer has specified a proposal format/structure above. " +
+        "Follow their section structure and requirements when authoring scope_intro and deliverables content."
+    );
+    parts.push("");
+  }
+
+  return [{ type: "text", text: parts.join("\n"), cache_control: { type: "ephemeral" } }];
+}
+
+// ── Authoring prompt (shared by Sonnet preview and Haiku fallback) ─────────────
+function buildAuthorPrompt(chatText: string, includeSpoc: boolean): string {
+  const spocFields = includeSpoc
+    ? `
+  "prepared_for": "[TO PROVIDE: contact name and title at client org]",
+  "spoc_name": "[TO PROVIDE: Sales SPOC full name]",
+  "spoc_email": "[TO PROVIDE: Sales SPOC email address]",`
+    : "";
+
+  const chatSection = chatText
+    ? `\n<chat_history>\n${chatText}\n</chat_history>\n`
+    : "";
+
+  return `Author the variable content for an iMocha proposal based on all context in your system blocks.${chatSection}
+Output a single valid JSON object with this exact schema (no markdown, no code blocks, no extra text):
+{
+  "product": "TA or TM — TA for hiring/recruitment/assessment/candidates, TM for skills/competency/workforce development",
+  "rfp_name": "bid title + iMocha Proposal",
+  "customer_display_name": "client name exactly as it should appear throughout the document",${spocFields}
+  "exec_summary": {
+    "pleased": "SHORT opening paragraph — 2 to 3 sentences only. Warmly introduce iMocha [TA or TM] as the recommended platform for [client name]. State the specific headline value it delivers to them. Be direct and confident — no generic filler.",
+    "aligned": "MEDIUM paragraph — 3 to 5 sentences. Open by naming the client and their specific challenge or stated requirement (draw from uploaded documents or chat context — be specific). Explain how iMocha directly addresses each requirement. Close with any explicit exclusions or scope boundaries.",
+    "confident": "MEDIUM paragraph — 3 to 5 sentences. Lead with concrete proof points: Azure SaaS infrastructure, ISO 27001, SOC 2 Type II, 99.9% uptime SLA. Name the specific integration platforms relevant to this client. Describe the commercial and delivery model. Close with a forward-looking partnership statement."
+  },
+  "scope_intro": "One concise paragraph: describe the in-scope work aligned to this client's specific requirements (cite requirements from the context — no generic statements). Close with a sentence listing explicit out-of-scope exclusions.",
+  "integrations": "Comma-separated list of HRMS, ATS, LMS, or LXP platform names found in the uploaded documents or chat history. If none found: Workday, SAP SuccessFactors, Cornerstone OnDemand, Degreed, and other LTI-compliant platforms.",
+  "integrations_content": "2 to 3 sentences describing how iMocha integrates with the platforms listed above. Reference specific mechanisms: REST API, SAML 2.0 SSO, LTI 1.3, pre-built connectors. Describe the data that flows between systems: candidate invites, assessment results, skill scores, competency data. Tailor to the actual platforms identified.",
+  "deliverables": ["8 to 12 concise bullets. Each must map a SPECIFIC client requirement (from the documents or bid context) to a NAMED iMocha capability. Start each with an action verb. No generic statements — every bullet must be traceable to provided context."]
+}`;
+}
+
+// ── XML helpers ────────────────────────────────────────────────────────────────
+
+function xmlEscape(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// Strip newlines — Word <w:t> nodes don't render \n as line breaks.
+// Each exec-summary field and scope_intro is already its own <w:p>; within a
+// single paragraph, sentences should flow continuously.
+function sanitize(text: string): string {
+  return text.replace(/[\r\n]+/g, " ").trim();
+}
+
 // ── Substitution helpers ───────────────────────────────────────────────────────
+
+// Word's spell-checker splits certain placeholders across multiple <w:r> runs by
+// wrapping flagged words (e.g. "spoc", "iMocha") in <w:proofErr> elements. Direct
+// string replacement can't find those tokens. This function extracts the full text
+// of each paragraph by concatenating all <w:t> nodes, matches against known tokens,
+// and replaces the entire paragraph with a clean single run — preserving the
+// original paragraph and run formatting.
+function applyParagraphLevelSubstitutions(xml: string, subs: [string, string][]): string {
+  return xml.replace(/<w:p[ >][\s\S]*?<\/w:p>/g, (para) => {
+    const tMatches = [...para.matchAll(/<w:t(?:[^>]*)>([^<]*)<\/w:t>/g)];
+    const fullText = tMatches
+      .map((m) => m[1].replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">"))
+      .join("");
+
+    for (const [token, value] of subs) {
+      if (fullText === token) {
+        const pAttrsMatch = para.match(/^<w:p([^>]*)>/);
+        const pAttrs = pAttrsMatch ? pAttrsMatch[1] : "";
+        const pPrMatch = para.match(/<w:pPr>[\s\S]*?<\/w:pPr>/);
+        const pPr = pPrMatch ? pPrMatch[0] : "";
+        const rPrMatch = para.match(/<w:rPr>[\s\S]*?<\/w:rPr>/);
+        const rPr = rPrMatch ? rPrMatch[0] : "";
+        return `<w:p${pAttrs}>${pPr}<w:r>${rPr}<w:t xml:space="preserve">${xmlEscape(value)}</w:t></w:r></w:p>`;
+      }
+    }
+    return para;
+  });
+}
+
 function applySubstitutions(xml: string, intake: Intake): string {
-  const subs: [string, string][] = [
-    ["Customer Name (CUSTOMER NAME)", intake.customer_display_name],
-    ["&lt;RFP Name&gt;", intake.rfp_name],
-    ["&lt;Customer Name&gt;", intake.customer_display_name],
-    ["CUSTOMER NAME", intake.customer_display_name],
-    ["&lt;Sales spoc name&gt;", intake.spoc_name],
-    ["Sales email id", intake.spoc_email],
-    ["&lt;How we are pleased to provide the solution&gt;", intake.exec_summary.pleased],
-    ["&lt;How we are aligned with customer goals and their requirement&gt;", intake.exec_summary.aligned],
-    ["&lt;How confident we are to deliver value&gt;", intake.exec_summary.confident],
-    ["&lt;How scope is aligned to what iMocha can deliver&gt;", intake.scope_intro],
+  const integrationList =
+    intake.integrations ??
+    "Workday, SAP SuccessFactors, Cornerstone OnDemand, Degreed, and other LTI-compliant LMS/LXP platforms";
+
+  // Pass 1: direct XML-entity string replacement (intact single-run placeholders)
+  const directSubs: [string, string][] = [
+    ["&lt;RFP Name&gt;", sanitize(intake.rfp_name)],
+    ["&lt;Customer Name&gt;", sanitize(intake.customer_display_name)],
+    // "Customer Name (CUSTOMER NAME)" appears as literal text (not XML-encoded) in body
+    ["Customer Name (CUSTOMER NAME)", sanitize(intake.customer_display_name)],
+    ["CUSTOMER NAME", sanitize(intake.customer_display_name)],
+    ["Sales email id", sanitize(intake.spoc_email)],
+    ["&lt;How we are pleased to provide the solution&gt;", sanitize(intake.exec_summary.pleased)],
+    ["&lt;How we are aligned with customer goals and their requirement&gt;", sanitize(intake.exec_summary.aligned)],
+    ["&lt;How confident we are to deliver value&gt;", sanitize(intake.exec_summary.confident)],
+    // Integrations heading placeholder
+    ["&lt;HRMS, LMS, LXP", sanitize(integrationList)],
   ];
 
   let result = xml;
-  for (const [token, value] of subs) {
-    result = result.split(token).join(value);
+  for (const [token, value] of directSubs) {
+    result = result.split(token).join(xmlEscape(value));
   }
+
+  // Cover page "Prepared For: Name" — "Name" is a standalone <w:t>Name</w:t> element
+  // right after a <w:br/> on the cover page. Replace it with the actual contact.
+  result = result
+    .split("<w:t>Name</w:t>")
+    .join(`<w:t xml:space="preserve">${xmlEscape(sanitize(intake.prepared_for))}</w:t>`);
+
+  // Pass 2: paragraph-level replacement for split-run placeholders (proofErr-split)
+  const splitRunSubs: [string, string][] = [
+    ["<Sales spoc name>", sanitize(intake.spoc_name)],
+    ["<How scope is aligned to what iMocha can deliver>", sanitize(intake.scope_intro)],
+  ];
+  result = applyParagraphLevelSubstitutions(result, splitRunSubs);
+
   return result;
 }
 
@@ -71,7 +331,7 @@ function buildBulletParagraphs(deliverables: string[], numId: string | null): st
   return deliverables
     .map(
       (text) =>
-        `<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="${nId}"/></w:numPr></w:pPr><w:r><w:t xml:space="preserve">${text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</w:t></w:r></w:p>`
+        `<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="${nId}"/></w:numPr></w:pPr><w:r><w:t xml:space="preserve">${xmlEscape(text)}</w:t></w:r></w:p>`
     )
     .join("\n");
 }
@@ -90,67 +350,97 @@ function injectDeliverables(xml: string, deliverables: string[]): string {
   return xml.slice(0, headingParaEnd) + "\n" + bullets + xml.slice(headingParaEnd);
 }
 
+// Injects integrations_content as a body paragraph immediately after the Integration
+// heading. Uses the '_Integration_with_SAP' named bookmark as a reliable anchor —
+// it is embedded in the integrations heading paragraph in both TA and TM templates.
+function injectIntegrationsContent(xml: string, content: string): string {
+  if (!content) return xml;
+
+  const anchor = "_Integration_with_SAP";
+  const anchorIdx = xml.indexOf(anchor);
+  if (anchorIdx === -1) return xml;
+
+  const paraEnd = xml.indexOf("</w:p>", anchorIdx) + "</w:p>".length;
+
+  // Use Poppins 11pt to match the template body text style
+  const rPr = `<w:rPr><w:rFonts w:ascii="Poppins" w:hAnsi="Poppins" w:cs="Poppins"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr>`;
+  const pPr = `<w:pPr><w:pStyle w:val="NormalWeb"/>${rPr}</w:pPr>`;
+  const contentPara = `<w:p>${pPr}<w:r>${rPr}<w:t xml:space="preserve">${xmlEscape(sanitize(content))}</w:t></w:r></w:p>`;
+
+  return xml.slice(0, paraEnd) + "\n" + contentPara + xml.slice(paraEnd);
+}
+
 function applyHeaderFooterSubstitutions(xml: string, intake: Intake): string {
   return xml
-    .split("&lt;Customer Name&gt;").join(intake.customer_display_name)
-    .split("&lt;RFP Name&gt;").join(intake.rfp_name)
-    .split("CUSTOMER NAME").join(intake.customer_display_name);
+    .split("&lt;Customer Name&gt;")
+    .join(xmlEscape(sanitize(intake.customer_display_name)))
+    .split("&lt;RFP Name&gt;")
+    .join(xmlEscape(sanitize(intake.rfp_name)))
+    .split("CUSTOMER NAME")
+    .join(xmlEscape(sanitize(intake.customer_display_name)));
 }
 
-// ── System blocks for proposal authoring ──────────────────────────────────────
-async function buildProposalSystemBlocks(
-  bidId: string
-): Promise<Anthropic.Messages.TextBlockParam[]> {
-  const { data: bid } = await supabaseAdmin
-    .from("bids")
-    .select("client_name, title, type, value, stage, deadline")
-    .eq("id", bidId)
-    .single();
+// ── Preview server function (Sonnet + RAG + chat history → ProposalPreview) ────
+export const previewProposalFn = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ bidId: z.string().uuid(), sessionId: z.string().uuid() }))
+  .handler(async ({ data }) => {
+    const authHeader = getRequest().headers.get("authorization");
+    const token = authHeader?.replace("Bearer ", "");
+    if (!token) return new Response("Unauthorized", { status: 401 });
 
-  const { data: questions } = await supabaseAdmin
-    .from("bid_questions")
-    .select("question_text, stage")
-    .eq("bid_id", bidId)
-    .order("created_at", { ascending: true });
+    const { data: { user }, error: authErr } = await supabaseAdmin.auth.getUser(token);
+    if (authErr || !user) return new Response("Unauthorized", { status: 401 });
 
-  const { data: deliverables } = await supabaseAdmin
-    .from("bid_deliverables")
-    .select("label, stage")
-    .eq("bid_id", bidId)
-    .order("created_at", { ascending: true });
+    const { data: sessionRow } = await (supabaseAdmin.from("ai_sessions") as any)
+      .select("messages")
+      .eq("id", data.sessionId)
+      .single();
 
-  const parts: string[] = [
-    "You are the iMocha proposal author assistant.",
-    "Author variable content for an iMocha branded proposal based on the bid context below.",
-    "Every claim must come from the provided context — do not invent capabilities, statistics, or certifications.",
-    "",
-  ];
+    const chatText = ((sessionRow?.messages as any[]) ?? [])
+      .map((m: any) => `<${m.role}>\n${m.content}\n</${m.role}>`)
+      .join("\n\n");
 
-  if (bid) {
-    parts.push("## Bid Context");
-    parts.push(`Client: ${bid.client_name}`);
-    parts.push(`Title: ${bid.title}`);
-    parts.push(`Type: ${bid.type?.toUpperCase() ?? "RFP"}`);
-    parts.push(`Value: $${((bid.value ?? 0) / 1_000_000).toFixed(1)}M`);
-    parts.push(`Stage: ${bid.stage}`);
-    parts.push(`Deadline: ${bid.deadline}`);
-    parts.push("");
-  }
+    const systemBlocks = await buildProposalSystemBlocks(data.bidId);
+    const userContent = buildAuthorPrompt(chatText, false);
 
-  if (questions?.length) {
-    parts.push("## Bid Questions (requirements)");
-    for (const q of questions) parts.push(`- ${q.question_text}`);
-    parts.push("");
-  }
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const resp = await anthropic.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 4096,
+      system: systemBlocks,
+      messages: [{ role: "user", content: userContent }],
+    });
 
-  if (deliverables?.length) {
-    parts.push("## Bid Deliverables");
-    for (const d of deliverables) parts.push(`- ${d.label}`);
-    parts.push("");
-  }
+    const rawText = resp.content
+      .filter((b) => b.type === "text")
+      .map((b) => (b as Anthropic.Messages.TextBlock).text)
+      .join("");
 
-  return [{ type: "text", text: parts.join("\n"), cache_control: { type: "ephemeral" } }];
-}
+    let preview: ProposalPreview;
+    try {
+      const cleaned = rawText.replace(/^```[a-z]*\n?/m, "").replace(/```$/m, "").trim();
+      preview = JSON.parse(cleaned) as ProposalPreview;
+    } catch {
+      return new Response("Preview author failed: invalid JSON from Sonnet", { status: 500 });
+    }
+
+    if (!preview.exec_summary?.pleased)
+      preview.exec_summary = { ...preview.exec_summary, pleased: "[TO PROVIDE: exec summary — pleased]" };
+    if (!preview.exec_summary?.aligned)
+      preview.exec_summary = { ...preview.exec_summary, aligned: "[TO PROVIDE: exec summary — aligned]" };
+    if (!preview.exec_summary?.confident)
+      preview.exec_summary = { ...preview.exec_summary, confident: "[TO PROVIDE: exec summary — confident]" };
+    if (!preview.scope_intro) preview.scope_intro = "[TO PROVIDE: scope intro]";
+    if (!Array.isArray(preview.deliverables) || !preview.deliverables.length)
+      preview.deliverables = ["[TO PROVIDE: deliverables]"];
+    if (!preview.rfp_name) preview.rfp_name = "[TO PROVIDE: rfp name]";
+    if (!preview.customer_display_name) preview.customer_display_name = "[TO PROVIDE: customer name]";
+    if (!preview.product) preview.product = "TA";
+
+    return new Response(JSON.stringify(preview), {
+      headers: { "Content-Type": "application/json" },
+    });
+  });
 
 // ── Main server function ───────────────────────────────────────────────────────
 export const generateProposalFn = createServerFn({ method: "POST" })
@@ -163,57 +453,43 @@ export const generateProposalFn = createServerFn({ method: "POST" })
     const { data: { user }, error: authErr } = await supabaseAdmin.auth.getUser(token);
     if (authErr || !user) return new Response("Unauthorized", { status: 401 });
 
-    // ── Phase 1: Author via Haiku ─────────────────────────────────────────────
-    const systemBlocks = await buildProposalSystemBlocks(data.bidId);
-
-    const intakePrompt = `Based on the bid context in your system blocks, author the variable content for an iMocha proposal.
-
-Output a single valid JSON object with this exact schema (no markdown, no code blocks, no extra text):
-{
-  "product": "TA or SI — TA for hiring/recruitment/assessment, SI for skills/competency/workforce",
-  "rfp_name": "bid title + iMocha Proposal",
-  "customer_display_name": "client name as it should appear throughout",
-  "prepared_for": "[TO PROVIDE: contact name & title]",
-  "spoc_name": "[TO PROVIDE: Sales SPOC name]",
-  "spoc_email": "[TO PROVIDE: Sales SPOC email]",
-  "exec_summary": {
-    "pleased": "Paragraph 1: introduce iMocha TA or SI as recommended platform for this client",
-    "aligned": "Paragraph 2: restate client requirements from context; note any exclusions",
-    "confident": "Paragraph 3: proof points — Azure SaaS, ISO 27001, SOC 2 Type II, 99.9% SLA, named integrations, commercial model"
-  },
-  "scope_intro": "One paragraph: in-scope work + closing sentence with explicit exclusions",
-  "deliverables": ["8 to 12 bullets mapping bid requirements to iMocha capabilities"]
-}`;
-
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-    const authorResp = await anthropic.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 2000,
-      system: systemBlocks,
-      messages: [{ role: "user", content: intakePrompt }],
-    });
-
-    const rawText = authorResp.content
-      .filter((b) => b.type === "text")
-      .map((b) => (b as Anthropic.Messages.TextBlock).text)
-      .join("");
-
+    // ── Phase 1: Author via Haiku (skipped when pre-authored intake provided) ─
     let intake: Intake;
-    try {
-      const cleaned = rawText.replace(/^```[a-z]*\n?/m, "").replace(/```$/m, "").trim();
-      intake = JSON.parse(cleaned) as Intake;
-    } catch {
-      return new Response("Proposal author failed: invalid JSON from Haiku", { status: 500 });
-    }
+    if (data.intake) {
+      intake = data.intake;
+    } else {
+      const systemBlocks = await buildProposalSystemBlocks(data.bidId);
+      const intakePrompt = buildAuthorPrompt("", true);
 
-    const required: (keyof Intake)[] = [
-      "product", "rfp_name", "customer_display_name", "exec_summary", "scope_intro", "deliverables",
-    ];
-    for (const k of required) {
-      if (!intake[k]) intake[k as "rfp_name"] = `[TO PROVIDE: ${k}]`;
-    }
-    if (!Array.isArray(intake.deliverables) || intake.deliverables.length === 0) {
-      intake.deliverables = ["[TO PROVIDE: deliverables]"];
+      const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+      const authorResp = await anthropic.messages.create({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 3000,
+        system: systemBlocks,
+        messages: [{ role: "user", content: intakePrompt }],
+      });
+
+      const rawText = authorResp.content
+        .filter((b) => b.type === "text")
+        .map((b) => (b as Anthropic.Messages.TextBlock).text)
+        .join("");
+
+      try {
+        const cleaned = rawText.replace(/^```[a-z]*\n?/m, "").replace(/```$/m, "").trim();
+        intake = JSON.parse(cleaned) as Intake;
+      } catch {
+        return new Response("Proposal author failed: invalid JSON from Haiku", { status: 500 });
+      }
+
+      const required: (keyof Intake)[] = [
+        "product", "rfp_name", "customer_display_name", "exec_summary", "scope_intro", "deliverables",
+      ];
+      for (const k of required) {
+        if (!intake[k]) intake[k as "rfp_name"] = `[TO PROVIDE: ${k}]`;
+      }
+      if (!Array.isArray(intake.deliverables) || !intake.deliverables.length) {
+        intake.deliverables = ["[TO PROVIDE: deliverables]"];
+      }
     }
 
     // ── Phase 2: Assemble DOCX ────────────────────────────────────────────────
@@ -225,6 +501,9 @@ Output a single valid JSON object with this exact schema (no markdown, no code b
     const docXml = await zip.file("word/document.xml")!.async("string");
     let editedDocXml = applySubstitutions(docXml, intake);
     editedDocXml = injectDeliverables(editedDocXml, intake.deliverables);
+    if (intake.integrations_content) {
+      editedDocXml = injectIntegrationsContent(editedDocXml, intake.integrations_content);
+    }
     zip.file("word/document.xml", editedDocXml);
 
     for (const filename of Object.keys(zip.files)) {
@@ -269,12 +548,7 @@ Output a single valid JSON object with this exact schema (no markdown, no code b
         "Content-Type":
           "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "Content-Disposition": `attachment; filename="${filename}"`,
-        "X-Open-Items": JSON.stringify([
-          "prepared_for — contact name & title not set (fill in DOCX cover page)",
-          "spoc_name — sales SPOC name not set (fill in DOCX cover page)",
-          "spoc_email — sales SPOC email not set (fill in DOCX cover page)",
-          `Template used: ${templateFilename}`,
-        ]),
+        "X-Proposal-Template": templateFilename,
       },
     });
   });

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Eye, EyeOff } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   useBidAssignments,
@@ -25,6 +26,7 @@ const ROLE_OPTIONS: { value: AppRole; label: string }[] = [
 function MemberRow({ member, isAdmin }: { member: TeamMember; isAdmin: boolean }) {
   const [assignOpen, setAssignOpen] = useState(false);
   const [pwOpen, setPwOpen] = useState(false);
+  const [showPw, setShowPw] = useState(false);
   const updateRole = useUpdateMemberRole();
   const removeAssignment = useRemoveBidAssignment();
   const suspend = useSuspendUser();
@@ -58,6 +60,20 @@ function MemberRow({ member, isAdmin }: { member: TeamMember; isAdmin: boolean }
       <div className="flex-1 min-w-0">
         <div className="text-[12px] font-medium truncate">{member.full_name ?? "—"}</div>
         <div className="text-[10px] text-muted-foreground truncate">{member.email}</div>
+        {isAdmin && member.temp_password && (
+          <div className="flex items-center gap-1 mt-0.5">
+            <span className="text-[10px] text-muted-foreground font-mono">
+              {showPw ? member.temp_password : "••••••••"}
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowPw((v) => !v)}
+              className="text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {showPw ? <EyeOff className="size-3" /> : <Eye className="size-3" />}
+            </button>
+          </div>
+        )}
 
         {/* Assigned bids pills */}
         <div className="flex flex-wrap gap-1 mt-1.5">

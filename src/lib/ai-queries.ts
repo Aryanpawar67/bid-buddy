@@ -315,10 +315,26 @@ export function useAiChat(
   return { messages, isStreaming, inputValue, setInputValue, send };
 }
 
+// ── usePreviewProposal ────────────────────────────────────────────────────────
+export function usePreviewProposal() {
+  return useMutation({
+    mutationFn: async (input: { bidId: string; sessionId: string }) => {
+      const { previewProposal } = await import("@/lib/api/ai-functions");
+      const res = await previewProposal(input);
+      if (!res.ok) throw new Error(await res.text());
+      return res.json() as Promise<import("@/lib/api/generate-proposal").ProposalPreview>;
+    },
+  });
+}
+
 // ── useGenerateProposal ───────────────────────────────────────────────────────
 export function useGenerateProposal() {
   return useMutation({
-    mutationFn: async (input: { bidId: string; sessionId: string }) => {
+    mutationFn: async (input: {
+      bidId: string;
+      sessionId: string;
+      intake?: import("@/lib/api/generate-proposal").Intake;
+    }) => {
       const { generateProposal } = await import("@/lib/api/ai-functions");
       const res = await generateProposal(input);
       if (!res.ok) throw new Error("Proposal generation failed");

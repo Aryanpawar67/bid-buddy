@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { AppRole } from "@/lib/auth";
 import { useCurrentUser } from "@/lib/auth";
 import { rejectUserFn } from "@/lib/api/reject-user";
+import { approveUserFn } from "@/lib/api/approve-user";
 import {
   saveHubSpotTokenFn,
   saveStageMapFn,
@@ -29,6 +30,7 @@ export type TeamMember = {
   avatar_url: string | null;
   status: "pending" | "active" | "suspended";
   primaryRole: AppRole;
+  temp_password: string | null;
 };
 
 export type BidAssignment = {
@@ -79,7 +81,7 @@ export function useTeamMembers() {
     queryFn: async () => {
       const { data: profiles, error } = await supabase
         .from("profiles")
-        .select("id, full_name, email, avatar_url, status")
+        .select("id, full_name, email, avatar_url, status, temp_password")
         .in("status" as never, ["active", "suspended"])
         .order("full_name");
       if (error) throw error;
@@ -136,38 +138,13 @@ export function useApproveUser() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ userId, role }: { userId: string; role: AppRole }) => {
-      // Fetch email before approval so we can clear the signup notification
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("email")
-        .eq("id", userId)
-        .single();
-
-      const { error: statusErr } = await (supabase as any)
-        .from("profiles")
-        .update({ status: "active" })
-        .eq("id", userId);
-      if (statusErr) throw statusErr;
-
-      // Delete the trigger-inserted default role before inserting the chosen one
-      await supabase.from("user_roles").delete().eq("user_id", userId);
-      const { error: roleErr } = await supabase
-        .from("user_roles")
-        .insert({ user_id: userId, role });
-      if (roleErr) throw roleErr;
-
-      // Mark the new_user_signup notification as read (UPDATE already granted; no DELETE grant needed)
-      if (profile?.email) {
-        await (supabase as any)
-          .from("notifications")
-          .update({ read: true })
-          .eq("type", "new_user_signup")
-          .ilike("body", `%${profile.email}%`);
-      }
+      const res = await approveUserFn({ data: { userId, role } });
+      if (res instanceof Response && !res.ok) throw new Error("Approve failed");
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["team-members"] });
       qc.invalidateQueries({ queryKey: ["pending-members"] });
+      qc.invalidateQueries({ queryKey: ["pending-members-count"] });
       qc.invalidateQueries({ queryKey: ["notifications"] });
       qc.invalidateQueries({ queryKey: ["notification-count"] });
     },
@@ -300,7 +277,9 @@ export function useRejectUser() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["pending-members"] });
+      qc.invalidateQueries({ queryKey: ["pending-members-count"] });
       qc.invalidateQueries({ queryKey: ["notifications"] });
+      qc.invalidateQueries({ queryKey: ["notification-count"] });
     },
   });
 }

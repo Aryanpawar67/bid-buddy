@@ -27,6 +27,21 @@ export const createUserFn = createServerFn({ method: "POST" })
     const guard = await assertAdmin(getRequest().headers.get("authorization"));
     if (guard) return guard;
 
+    // Check if email already exists in profiles (self-signup pending users, etc.)
+    const { data: existing } = await (supabaseAdmin as any)
+      .from("profiles").select("id").eq("email", data.email).maybeSingle();
+
+    if (existing) {
+      await (supabaseAdmin as any).from("profiles")
+        .update({ status: "active", full_name: data.fullName, temp_password: data.password }).eq("id", existing.id);
+      await supabaseAdmin.from("user_roles").delete().eq("user_id", existing.id);
+      const { error: roleErr } = await supabaseAdmin
+        .from("user_roles").insert({ user_id: existing.id, role: data.role });
+      if (roleErr) throw new Error(roleErr.message);
+      await supabaseAdmin.auth.admin.updateUserById(existing.id, { password: data.password });
+      return { ok: true, userId: existing.id };
+    }
+
     const { data: created, error: createErr } = await supabaseAdmin.auth.admin.createUser({
       email: data.email,
       password: data.password,
@@ -37,9 +52,8 @@ export const createUserFn = createServerFn({ method: "POST" })
 
     const userId = created.user.id;
 
-    // handle_new_user trigger fires synchronously: profile (status=pending) +
-    // user_roles (pre_sales) already inserted. Activate and assign chosen role.
-    await (supabaseAdmin as any).from("profiles").update({ status: "active" }).eq("id", userId);
+    await (supabaseAdmin as any).from("profiles")
+      .update({ status: "active", temp_password: data.password }).eq("id", userId);
     await supabaseAdmin.from("user_roles").delete().eq("user_id", userId);
     const { error: roleErr } = await supabaseAdmin
       .from("user_roles").insert({ user_id: userId, role: data.role });
@@ -62,6 +76,8 @@ export const changePasswordFn = createServerFn({ method: "POST" })
       password: data.newPassword,
     });
     if (error) throw new Error(error.message);
+    await (supabaseAdmin as any).from("profiles")
+      .update({ temp_password: data.newPassword }).eq("id", data.userId);
     return { ok: true };
   });
 

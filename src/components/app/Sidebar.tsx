@@ -130,7 +130,7 @@ export function Sidebar() {
         <NavLink
           to="/ai"
           icon={Sparkles}
-          label="RFx Generator"
+          label="RFx Responder"
           active={path.startsWith("/ai")}
           badge="New"
           badgeVariant="success"

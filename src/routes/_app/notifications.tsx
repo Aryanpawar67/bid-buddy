@@ -1,12 +1,16 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
-import { Bell, UserPlus } from "lucide-react";
+import { Bell } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import {
   useNotifications,
   useMarkRead,
   useMarkAllRead,
   type Notification,
 } from "@/lib/notification-queries";
+import { useApproveUser, useRejectUser } from "@/lib/settings-queries";
+import { supabase } from "@/integrations/supabase/client";
+import type { AppRole } from "@/lib/auth";
 
 export const Route = createFileRoute("/_app/notifications")({
   component: NotificationsPage,
@@ -51,6 +55,53 @@ function relativeTime(dateStr: string): string {
   const hours = Math.floor(mins / 60);
   if (hours < 24) return `${hours}h ago`;
   return `${Math.floor(hours / 24)}d ago`;
+}
+
+function SignupActions({ notification }: { notification: Notification }) {
+  const approveUser = useApproveUser();
+  const rejectUser = useRejectUser();
+
+  const emailMatch = notification.body.match(/\(([^)]+@[^)]+)\)/);
+  const email = emailMatch?.[1];
+
+  const { data: profile } = useQuery({
+    queryKey: ["pending-profile-by-email", email],
+    queryFn: async () => {
+      if (!email) return null;
+      const { data } = await (supabase as any)
+        .from("profiles")
+        .select("id, user_roles(role)")
+        .eq("email", email)
+        .eq("status", "pending")
+        .single();
+      return data as { id: string; user_roles: { role: string }[] } | null;
+    },
+    enabled: !!email,
+  });
+
+  if (!profile) return null;
+
+  const role = (profile.user_roles?.[0]?.role ?? "pre_sales") as AppRole;
+  const busy = approveUser.isPending || rejectUser.isPending;
+
+  return (
+    <>
+      <button
+        onClick={() => approveUser.mutate({ userId: profile.id, role })}
+        disabled={busy}
+        className="h-8 px-4 rounded-md bg-primary text-primary-foreground text-[12px] font-medium hover:opacity-90 disabled:opacity-50"
+      >
+        {approveUser.isPending ? "Approving…" : "Approve"}
+      </button>
+      <button
+        onClick={() => rejectUser.mutate(profile.id)}
+        disabled={busy}
+        className="h-8 px-4 rounded-md border hairline border-border-strong text-[12px] text-destructive hover:bg-destructive/5 disabled:opacity-50"
+      >
+        {rejectUser.isPending ? "Rejecting…" : "Reject"}
+      </button>
+    </>
+  );
 }
 
 function NotificationsPage() {
@@ -197,12 +248,7 @@ function NotificationsPage() {
 
               <div className="px-6 py-4 border-t hairline border-border flex items-center gap-3">
                 {selected.type === "new_user_signup" && (
-                  <Link
-                    to="/settings"
-                    className="h-8 px-4 rounded-md bg-primary text-primary-foreground text-[12px] font-medium inline-flex items-center gap-1.5 hover:opacity-90"
-                  >
-                    Review in Settings →
-                  </Link>
+                  <SignupActions notification={selected} />
                 )}
                 {selected.bid_id && selected.type !== "new_user_signup" && (
                   <Link

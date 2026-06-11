@@ -3,8 +3,8 @@ import { Send, Loader2, Copy, Check, Download, FileText, Paperclip, CheckCircle2
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Message } from "@/lib/ai-queries";
-import { useGenerateProposal } from "@/lib/ai-queries";
 import type { Bid } from "@/lib/bid-queries";
+import { ProposalModal } from "@/components/ai/ProposalModal";
 import type { BidDocument } from "@/lib/doc-queries";
 import { useUploadAndIndexDocument } from "@/lib/doc-queries";
 import { stageLabel } from "@/lib/bid-constants";
@@ -206,9 +206,6 @@ export function AiChatPanel({
       setAttachments((prev) => [...prev, { localId, name: file.name, status: "uploading" }]);
 
       try {
-        setAttachments((prev) =>
-          prev.map((a) => a.localId === localId ? { ...a, status: "indexing" } : a)
-        );
         const doc = await uploadAndIndex.mutateAsync({
           file,
           type: "reference",
@@ -273,43 +270,7 @@ export function AiChatPanel({
   const showQuickActions = !isGlobal && !!activeBid && messages.length === 0 && !!sessionId;
   const isRfiRfpStage = activeBid?.stage === "rfi" || activeBid?.stage === "rfp";
   const quickActions = isRfiRfpStage ? QUICK_ACTIONS_RFI_RFP : QUICK_ACTIONS_GENERIC;
-  const generateProposal = useGenerateProposal();
-  const [proposalError, setProposalError] = useState<string | null>(null);
-
-  async function handleGenerateProposal() {
-    if (!activeBid || !sessionId) return;
-    setProposalError(null);
-    onSend("Generating branded proposal — analysing bid requirements…", undefined);
-    try {
-      const res = await generateProposal.mutateAsync({
-        bidId: activeBid.id,
-        sessionId,
-      });
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const contentDisposition = res.headers.get("Content-Disposition") ?? "";
-      const filenameMatch = contentDisposition.match(/filename="([^"]+)"/);
-      const filename = filenameMatch?.[1] ?? "proposal.docx";
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(url);
-
-      const openItemsRaw = res.headers.get("X-Open-Items");
-      const openItems: string[] = openItemsRaw ? JSON.parse(openItemsRaw) : [];
-      const openItemsText = openItems.length
-        ? `\n\n**Open items to complete in the DOCX:**\n${openItems.map((i) => `- ${i}`).join("\n")}`
-        : "";
-
-      onSend(
-        `Proposal generated and saved to Knowledge Hub. Download started.${openItemsText}`,
-        undefined
-      );
-    } catch {
-      setProposalError("Proposal generation failed — please try again.");
-    }
-  }
+  const [proposalModalOpen, setProposalModalOpen] = useState(false);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -377,26 +338,6 @@ export function AiChatPanel({
               {action.label}
             </button>
           ))}
-          {isRfiRfpStage && (
-            <>
-              <button
-                onClick={handleGenerateProposal}
-                disabled={isStreaming || generateProposal.isPending}
-                className="text-[10px] px-3 py-1.5 rounded-full border hairline border-orange-400/60 text-orange-600 bg-orange-50/50 hover:bg-orange-500 hover:text-white hover:border-orange-500 disabled:opacity-40 transition-colors dark:text-orange-400 dark:bg-orange-950/20"
-              >
-                {generateProposal.isPending ? (
-                  <span className="flex items-center gap-1">
-                    <Loader2 className="size-3 animate-spin inline" /> Generating…
-                  </span>
-                ) : (
-                  "Generate Proposal"
-                )}
-              </button>
-              {proposalError && (
-                <span className="text-[10px] text-destructive">{proposalError}</span>
-              )}
-            </>
-          )}
         </div>
       )}
 
@@ -437,6 +378,19 @@ export function AiChatPanel({
       {/* Input bar */}
       {sessionId && (
         <div className="shrink-0 px-4 py-3 border-t hairline border-border bg-card">
+          {/* Generate Proposal footer chip */}
+          {!isGlobal && isRfiRfpStage && canAttach && (
+            <div className="flex gap-2 mb-2 flex-wrap">
+              <button
+                onClick={() => setProposalModalOpen(true)}
+                disabled={isStreaming || !sessionId}
+                className="text-[10px] px-3 py-1.5 rounded-full border hairline border-orange-400/60 text-orange-500 bg-orange-50/50 hover:bg-orange-500 hover:text-white hover:border-orange-500 disabled:opacity-40 transition-colors dark:text-orange-400 dark:bg-orange-950/20 flex items-center gap-1"
+              >
+                ✦ Generate Proposal
+              </button>
+            </div>
+          )}
+
           {/* Attachment chips */}
           {attachments.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mb-2">
@@ -578,6 +532,16 @@ export function AiChatPanel({
               : "Enter to send · Shift+Enter for new line"}
           </div>
         </div>
+      )}
+
+      {activeBid && sessionId && (
+        <ProposalModal
+          open={proposalModalOpen}
+          onClose={() => setProposalModalOpen(false)}
+          bidId={activeBid.id}
+          sessionId={sessionId}
+          clientName={activeBid.client_name}
+        />
       )}
     </div>
   );

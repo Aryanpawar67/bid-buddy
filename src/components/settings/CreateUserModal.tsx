@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Eye, EyeOff } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useCreateUser } from "@/lib/settings-queries";
 import type { AppRole } from "@/lib/auth";
@@ -17,11 +18,12 @@ export function CreateUserModal({ open, onClose }: Props) {
   const [fullName, setFullName] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<AppRole>("pre_sales");
+  const [showPassword, setShowPassword] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const create = useCreateUser();
 
   function reset() {
-    setEmail(""); setFullName(""); setPassword(""); setRole("pre_sales"); setErr(null);
+    setEmail(""); setFullName(""); setPassword(""); setRole("pre_sales"); setShowPassword(false); setErr(null);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -78,15 +80,24 @@ export function CreateUserModal({ open, onClose }: Props) {
           </Field>
 
           <Field label="Password (min 8 chars)">
-            <input
-              type="password"
-              required
-              minLength={8}
-              placeholder="········"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full h-8 px-2.5 rounded-md border border-border bg-background text-[12px] focus:outline-none focus:ring-1 focus:ring-primary"
-            />
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                required
+                minLength={8}
+                placeholder="········"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full h-8 px-2.5 pr-8 rounded-md border border-border bg-background text-[12px] focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                {showPassword ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+              </button>
+            </div>
           </Field>
 
           {err && (

@@ -38,9 +38,8 @@ async function contextualiseChunks(
   fullDocText: string
 ): Promise<string[]> {
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  const contextualised: string[] = [];
 
-  for (const chunk of chunks) {
+  const contextualise = async (chunk: string): Promise<string> => {
     try {
       const resp = await anthropic.messages.create({
         model: "claude-haiku-4-5-20251001",
@@ -64,14 +63,21 @@ async function contextualiseChunks(
       });
       const context =
         resp.content.find((b) => b.type === "text")?.text?.trim() ?? "";
-      contextualised.push(context ? `${context}\n\n${chunk}` : chunk);
+      return context ? `${context}\n\n${chunk}` : chunk;
     } catch {
-      // Contextualisation is best-effort — fall back to raw chunk
-      contextualised.push(chunk);
+      return chunk;
     }
-  }
+  };
 
-  return contextualised;
+  // Parallelise with a concurrency cap of 8 to avoid rate-limit spikes
+  const CONCURRENCY = 8;
+  const results: string[] = new Array(chunks.length);
+  for (let i = 0; i < chunks.length; i += CONCURRENCY) {
+    const batch = chunks.slice(i, i + CONCURRENCY);
+    const settled = await Promise.all(batch.map(contextualise));
+    settled.forEach((r, j) => { results[i + j] = r; });
+  }
+  return results;
 }
 
 async function embedBatch(texts: string[], attempt = 0): Promise<number[][]> {
