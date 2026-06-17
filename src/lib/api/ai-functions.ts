@@ -41,12 +41,13 @@ export async function generateProposal(input: {
   bidId: string;
   sessionId: string;
   intake?: Intake;
+  format?: "docx" | "pdf";
 }): Promise<Response> {
   const { data: { session } } = await import("@/integrations/supabase/client").then(
     (m) => m.supabase.auth.getSession()
   );
   return generateProposalFn({
-    data: input,
+    data: { ...input, format: input.format ?? "docx" },
     headers: { authorization: `Bearer ${session?.access_token ?? ""}` },
   }) as unknown as Response;
 }

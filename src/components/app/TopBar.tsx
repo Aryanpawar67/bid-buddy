@@ -1,8 +1,9 @@
 import { useRouterState } from "@tanstack/react-router";
-import { Search, Plus, Clock, User, Info, MessageSquare } from "lucide-react";
+import { Search, Plus, Clock, User, Info, MessageSquare, Settings2 } from "lucide-react";
 import { useState } from "react";
 import { IntakeModal } from "@/components/bids/IntakeModal";
 import { useCurrentUser } from "@/lib/auth";
+import { useAiConfigure } from "@/lib/ai-configure-context";
 
 type PageMeta = { title: string; subtitle: string };
 
@@ -27,8 +28,11 @@ function usePageMeta(): PageMeta {
 
 export function TopBar() {
   const { title, subtitle } = usePageMeta();
+  const path = useRouterState({ select: (s) => s.location.pathname });
   const [open, setOpen] = useState(false);
-  const { isPreSales } = useCurrentUser();
+  const { isPreSales, isAdmin } = useCurrentUser();
+  const { setOpen: setConfigureOpen } = useAiConfigure();
+  const isAiPage = path.startsWith("/ai");
 
   return (
     <header className="h-[52px] min-h-[52px] shrink-0 bg-card border-b hairline border-border-strong flex items-center px-5 gap-3">
@@ -48,12 +52,24 @@ export function TopBar() {
 
       <div className="flex-1" />
 
-      <div className="flex items-center gap-1.5">
-        <IconBtn icon={Clock} title="Recent activity" />
-        <IconBtn icon={User} title="Profile" badge={12} />
-        <IconBtn icon={Info} title="Help" />
-        <IconBtn icon={MessageSquare} title="Messages" badge={3} />
-      </div>
+      {!isAiPage && (
+        <div className="flex items-center gap-1.5">
+          <IconBtn icon={Clock} title="Recent activity" />
+          <IconBtn icon={User} title="Profile" badge={12} />
+          <IconBtn icon={Info} title="Help" />
+          <IconBtn icon={MessageSquare} title="Messages" badge={3} />
+        </div>
+      )}
+
+      {isAiPage && isAdmin && (
+        <button
+          onClick={() => setConfigureOpen(true)}
+          title="Configure RFx Responder"
+          className="h-8 px-3 rounded-md border hairline border-border text-muted-foreground text-[12px] font-medium inline-flex items-center gap-1.5 hover:bg-background hover:text-foreground transition-colors"
+        >
+          <Settings2 className="size-3.5" /> Configure
+        </button>
+      )}
 
       {isPreSales && (
         <button

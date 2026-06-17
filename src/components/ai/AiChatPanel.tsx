@@ -73,7 +73,7 @@ type Props = {
   isStreaming: boolean;
   inputValue: string;
   onInputChange: (v: string) => void;
-  onSend: (text?: string, mentionedDocIds?: string[]) => void;
+  onSend: (text?: string, mentionedDocIds?: string[], attachmentNames?: string[]) => void;
   model: string;
   onModelChange: (model: string) => void;
   requestCount: number;
@@ -185,37 +185,53 @@ export function AiChatPanel({
   }
 
   async function handleFilesSelected(files: FileList | null) {
-    if (!files || !activeBid) return;
+    console.log("[attach] onChange fired", { filesCount: files?.length ?? 0, activeBid: activeBid?.id ?? null, canAttach });
+    if (!files || !activeBid) {
+      console.log("[attach] early return — files:", !!files, "activeBid:", !!activeBid);
+      return;
+    }
+    // Snapshot into a plain array BEFORE clearing the input — FileList is a
+    // live DOM object and clearing input.value empties it immediately.
+    const fileArray = Array.from(files);
     if (fileInputRef.current) fileInputRef.current.value = "";
 
     const valid: File[] = [];
-    for (const f of Array.from(files)) {
+    for (const f of fileArray) {
+      console.log("[attach] checking file", f.name, f.size);
       if (!ATTACH_EXT.test(f.name)) {
+        console.log("[attach] rejected — bad extension:", f.name);
         toast.warning(`${f.name}: only PDF, DOCX, and XLSX are supported`);
         continue;
       }
       if (f.size > MAX_ATTACH_BYTES) {
+        console.log("[attach] rejected — too large:", f.size);
         toast.warning(`${f.name}: file must be under 25 MB`);
         continue;
       }
       valid.push(f);
     }
 
+    console.log("[attach] valid files:", valid.map((f) => f.name));
+
     for (const file of valid) {
       const localId = crypto.randomUUID();
+      console.log("[attach] starting upload:", file.name, localId);
       setAttachments((prev) => [...prev, { localId, name: file.name, status: "uploading" }]);
 
       try {
+        console.log("[attach] calling mutateAsync…");
         const doc = await uploadAndIndex.mutateAsync({
           file,
           type: "reference",
           bidId: activeBid.id,
           stage: null,
         });
+        console.log("[attach] upload+index done:", doc.id);
         setAttachments((prev) =>
           prev.map((a) => a.localId === localId ? { ...a, status: "ready", docId: doc.id } : a)
         );
       } catch (err) {
+        console.error("[attach] upload error:", err);
         const msg = err instanceof Error ? err.message : "Upload failed";
         const display = msg.includes("upsert") || msg.includes("already exists")
           ? "Already exists — use Documents tab to replace"
@@ -261,7 +277,10 @@ export function AiChatPanel({
       (readyDocIds.length ? "Please review the attached document(s)." : "");
     const mentioned = resolveMentionedDocIds(text);
     const ids = [...new Set([...mentioned, ...readyDocIds])];
-    onSend(text || undefined, ids.length ? ids : undefined);
+    const names = attachments
+      .filter((a) => a.status === "ready")
+      .map((a) => a.name);
+    onSend(text || undefined, ids.length ? ids : undefined, names.length ? names : undefined);
     setAttachments([]);
   }
 
@@ -476,27 +495,34 @@ export function AiChatPanel({
               </div>
             )}
 
-            {/* Paperclip attach button */}
+            {/* File input lives outside the canAttach gate so it is never
+              unmounted while a file picker is open. If canAttach flickers
+              during a re-render the input stays in the DOM and onChange fires
+              on the live element. handleFilesSelected guards against null
+              activeBid itself. */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.docx,.xlsx"
+              multiple
+              className="hidden"
+              onChange={(e) => handleFilesSelected(e.target.files)}
+            />
+
+            {/* Paperclip attach button — gated by role/bid/mode */}
             {canAttach && (
-              <>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".pdf,.docx,.xlsx"
-                  multiple
-                  className="hidden"
-                  onChange={(e) => handleFilesSelected(e.target.files)}
-                />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={attachmentsPending || isStreaming}
-                  title="Attach file (PDF, DOCX, XLSX)"
-                  className="h-9 w-9 flex items-center justify-center rounded-lg border hairline border-border text-muted-foreground hover:bg-background hover:text-foreground transition-colors shrink-0 disabled:opacity-40"
-                >
-                  <Paperclip className="size-4" strokeWidth={1.5} />
-                </button>
-              </>
+              <button
+                type="button"
+                onClick={() => {
+                  console.log("[attach] paperclip clicked, fileInputRef:", !!fileInputRef.current);
+                  fileInputRef.current?.click();
+                }}
+                disabled={attachmentsPending || isStreaming}
+                title="Attach file (PDF, DOCX, XLSX)"
+                className="h-9 w-9 flex items-center justify-center rounded-lg border hairline border-border text-muted-foreground hover:bg-background hover:text-foreground transition-colors shrink-0 disabled:opacity-40"
+              >
+                <Paperclip className="size-4" strokeWidth={1.5} />
+              </button>
             )}
 
             <textarea
@@ -612,6 +638,24 @@ function MessageBubble({
       </div>
 
       <div className="max-w-[75%] flex flex-col gap-1">
+        {isUser && message.attachments && message.attachments.length > 0 && (
+          <div className="flex flex-wrap gap-1 justify-end mb-0.5">
+            {message.attachments.map((name) => {
+              const ext = name.split(".").pop()?.toLowerCase() ?? "";
+              const extLabel = ext === "pdf" ? "PDF" : ext === "docx" ? "DOC" : "XLS";
+              const extColor = ext === "pdf" ? "#e53e3e" : ext === "docx" ? "#2563eb" : "#16a34a";
+              return (
+                <div
+                  key={name}
+                  className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-full bg-primary/10 text-primary border hairline border-primary/20"
+                >
+                  <span className="font-bold text-[9px]" style={{ color: extColor }}>{extLabel}</span>
+                  <span className="truncate max-w-[160px]">{name}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
         <div
           className={[
             "rounded-xl px-3 py-2.5 text-[12px] leading-relaxed",

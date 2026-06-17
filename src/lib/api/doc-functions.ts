@@ -103,9 +103,11 @@ async function embedBatch(texts: string[], attempt = 0): Promise<number[][]> {
 
 async function extractText(buffer: Buffer, ext: string): Promise<string> {
   if (ext === "pdf") {
-    const pdfParse = (await import("pdf-parse")).default;
-    const result = await pdfParse(buffer);
-    return result.text;
+    // pdf-parse v2 uses a class API: new PDFParse({ data: buffer }).getText()
+    const { PDFParse } = await import("pdf-parse") as any;
+    const parser = new PDFParse({ data: buffer });
+    const result = await parser.getText();
+    return result.text as string;
   }
   if (ext === "docx") {
     const mammoth = await import("mammoth");

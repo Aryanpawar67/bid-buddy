@@ -11,7 +11,9 @@ import {
 } from "@/lib/ai-queries";
 import { AiBidList, type AiMode } from "@/components/ai/AiBidList";
 import { AiChatPanel } from "@/components/ai/AiChatPanel";
+import { ConfigureDrawer } from "@/components/ai/ConfigureDrawer";
 import { useDocuments } from "@/lib/doc-queries";
+import { useAiConfigure } from "@/lib/ai-configure-context";
 
 const MODEL_STORAGE_KEY = "bid-compass:ai-model";
 const DEFAULT_MODEL = "claude-sonnet-4-6";
@@ -23,6 +25,7 @@ export const Route = createFileRoute("/_app/ai")({
 function AiPage() {
   const { user } = useCurrentUser();
   const { data: bids = [] } = useBids();
+  const { open: configureOpen, setOpen: setConfigureOpen } = useAiConfigure();
 
   const [mode, setMode] = useState<AiMode>("bid");
   const [selectedBidId, setSelectedBidId] = useState<string | null>(null);
@@ -125,6 +128,7 @@ function AiPage() {
 
   return (
     <div className="h-full flex overflow-hidden">
+      <ConfigureDrawer open={configureOpen} onClose={() => setConfigureOpen(false)} />
       <AiBidList
         bids={bids}
         sessions={sessionsMap}

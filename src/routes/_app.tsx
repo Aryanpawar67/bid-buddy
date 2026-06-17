@@ -4,6 +4,7 @@ import { Sidebar } from "@/components/app/Sidebar";
 import { TopBar } from "@/components/app/TopBar";
 import { useCurrentUser } from "@/lib/auth";
 import { useDeadlineNotifier } from "@/lib/notification-queries";
+import { AiConfigureProvider } from "@/lib/ai-configure-context";
 
 function DeadlineNotifier() {
   useDeadlineNotifier();
@@ -33,15 +34,17 @@ function AppLayout() {
   }
 
   return (
-    <div className="h-screen w-screen flex bg-background overflow-hidden">
-      <DeadlineNotifier />
-      <Sidebar />
-      <div className="flex-1 flex flex-col min-w-0">
-        <TopBar />
-        <main className="flex-1 min-h-0 overflow-hidden">
-          <Outlet />
-        </main>
+    <AiConfigureProvider>
+      <div className="h-screen w-screen flex bg-background overflow-hidden">
+        <DeadlineNotifier />
+        <Sidebar />
+        <div className="flex-1 flex flex-col min-w-0">
+          <TopBar />
+          <main className="flex-1 min-h-0 overflow-hidden">
+            <Outlet />
+          </main>
+        </div>
       </div>
-    </div>
+    </AiConfigureProvider>
   );
 }

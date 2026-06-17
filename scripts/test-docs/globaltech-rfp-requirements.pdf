@@ -1,0 +1,79 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /FR << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> /FB << /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >> /FR9 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /MacRomanEncoding >> /FR10 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /MacRomanEncoding >> /FR11 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /MacRomanEncoding >> >> >> >>
+endobj
+4 0 obj
+<< /Length 3896 >>
+stream
+BT /FB10 10 Tf 50 750 Td (GlobalTech Solutions ? RFP Response Requirements) Tj ET
+BT /FR10 10 Tf 50 737 Td () Tj ET
+BT /FB11 11 Tf 50 724 Td (Section 1: Executive Summary) Tj ET
+BT /FB10 10 Tf 50 710 Td (GlobalTech Solutions is seeking a comprehensive talent assessment platform to support) Tj ET
+BT /FR10 10 Tf 50 697 Td (our 2026 hiring expansion across 14 countries. We require skills-based screening for) Tj ET
+BT /FR10 10 Tf 50 684 Td (3,000+ annual hires across Engineering, Product, Sales, and Operations functions.) Tj ET
+BT /FR10 10 Tf 50 671 Td () Tj ET
+BT /FB11 11 Tf 50 658 Td (Section 2: Functional Requirements) Tj ET
+BT /FR10 10 Tf 50 644 Td (2.1 Assessment Library) Tj ET
+BT /FR9 9 Tf 50 631 Td (- Pre-built question banks covering: Python, Java, SQL, Data Science, Cloud \(AWS/GCP/Azure\)) Tj ET
+BT /FR9 9 Tf 50 619 Td (- Role-specific assessments: Software Engineer L1-L5, Data Analyst, Product Manager) Tj ET
+BT /FR9 9 Tf 50 607 Td (- Minimum 10,000 validated questions with psychometric rigor documentation) Tj ET
+BT /FR9 9 Tf 50 595 Td (- Custom question authoring with SME review workflow) Tj ET
+BT /FR10 10 Tf 50 583 Td () Tj ET
+BT /FR10 10 Tf 50 570 Td (2.2 Candidate Experience) Tj ET
+BT /FR9 9 Tf 50 557 Td (- Mobile-responsive interface with accessibility compliance \(WCAG 2.1 AA\)) Tj ET
+BT /FR9 9 Tf 50 545 Td (- Proctoring: AI-based webcam monitoring, screen recording, tab-switch detection) Tj ET
+BT /FR9 9 Tf 50 533 Td (- Estimated completion time displayed before start) Tj ET
+BT /FR9 9 Tf 50 521 Td (- Multi-language support: English, Spanish, German, French, Japanese \(minimum\)) Tj ET
+BT /FR10 10 Tf 50 509 Td () Tj ET
+BT /FR10 10 Tf 50 496 Td (2.3 Integration Requirements) Tj ET
+BT /FR9 9 Tf 50 483 Td (- HRIS: Workday, SAP SuccessFactors \(bidirectional sync\)) Tj ET
+BT /FR9 9 Tf 50 471 Td (- ATS: Greenhouse, Lever, iCIMS \(webhook + API\)) Tj ET
+BT /FR9 9 Tf 50 459 Td (- SSO: SAML 2.0, OAuth 2.0, SCIM provisioning) Tj ET
+BT /FR9 9 Tf 50 447 Td (- Data export: CSV, JSON, PDF reports) Tj ET
+BT /FR10 10 Tf 50 435 Td () Tj ET
+BT /FB11 11 Tf 50 422 Td (Section 3: Evaluation Criteria \(Weighted\)) Tj ET
+BT /FR9 9 Tf 50 408 Td (| Criterion                   | Weight |) Tj ET
+BT /FR9 9 Tf 50 396 Td (| Platform functionality      | 30\%    |) Tj ET
+BT /FR9 9 Tf 50 384 Td (| Integration depth           | 25\%    |) Tj ET
+BT /FR9 9 Tf 50 372 Td (| Candidate experience        | 20\%    |) Tj ET
+BT /FR9 9 Tf 50 360 Td (| Security & compliance       | 15\%    |) Tj ET
+BT /FR9 9 Tf 50 348 Td (| Pricing & commercial terms  | 10\%    |) Tj ET
+BT /FR10 10 Tf 50 336 Td () Tj ET
+BT /FB11 11 Tf 50 323 Td (Section 4: Security & Compliance) Tj ET
+BT /FR9 9 Tf 50 309 Td (- SOC 2 Type II certification required \(report < 12 months old\)) Tj ET
+BT /FR9 9 Tf 50 297 Td (- GDPR, CCPA, PDPA compliance with DPA available) Tj ET
+BT /FR9 9 Tf 50 285 Td (- Data residency options: US, EU, APAC) Tj ET
+BT /FR9 9 Tf 50 273 Td (- Penetration test results from last 18 months) Tj ET
+BT /FR9 9 Tf 50 261 Td (- ISO 27001 preferred) Tj ET
+BT /FR10 10 Tf 50 249 Td () Tj ET
+BT /FB11 11 Tf 50 236 Td (Section 5: Pricing Requirements) Tj ET
+BT /FR9 9 Tf 50 222 Td (- Per-assessment pricing model preferred) Tj ET
+BT /FR9 9 Tf 50 210 Td (- Volume tiers: 0-500, 501-2000, 2001-10000 assessments/month) Tj ET
+BT /FR9 9 Tf 50 198 Td (- Annual contract with quarterly review clauses) Tj ET
+BT /FR9 9 Tf 50 186 Td (- Pilot: 3-month proof-of-concept for 200 assessments at no cost) Tj ET
+BT /FR10 10 Tf 50 174 Td () Tj ET
+BT /FB11 11 Tf 50 161 Td (Section 6: Submission Details) Tj ET
+BT /FR10 10 Tf 50 147 Td (Deadline: 2026-07-15) Tj ET
+BT /FR10 10 Tf 50 134 Td (Contact: procurement@globaltech.com) Tj ET
+BT /FR10 10 Tf 50 121 Td (Format: PDF + DOCX, max 50 pages) Tj ET
+BT /FR10 10 Tf 50 108 Td (Questions: vendor-rfp-qa@globaltech.com \(responses published fortnightly\)) Tj ET
+endstream
+endobj
+xref
+0 5
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000620 00000 n 
+trailer
+<< /Size 5 /Root 1 0 R >>
+startxref
+4567
+%%EOF

@@ -8,6 +8,7 @@ export type Message = {
   content: string;
   created_at: string;
   exportMeta?: { format: string; filename: string };
+  attachments?: string[]; // filenames attached to a user message
 };
 
 export type AiSession = {
@@ -16,6 +17,7 @@ export type AiSession = {
   user_id: string;
   model: string;
   messages: Message[];
+  pinned_doc_ids: string[];
   created_at: string;
   title: string | null;
 };
@@ -80,6 +82,7 @@ export function useCreateAiSession() {
           user_id: input.userId,
           model: input.model,
           messages: [],
+          pinned_doc_ids: [],
         })
         .select()
         .single();
@@ -99,10 +102,13 @@ export function useUpdateAiSession() {
     mutationFn: async (input: {
       sessionId: string;
       messages: Message[];
+      pinnedDocIds?: string[];
     }) => {
+      const patch: Record<string, unknown> = { messages: input.messages };
+      if (input.pinnedDocIds !== undefined) patch.pinned_doc_ids = input.pinnedDocIds;
       const { error } = await supabase
         .from("ai_sessions")
-        .update({ messages: input.messages })
+        .update(patch)
         .eq("id", input.sessionId);
       if (error) throw error;
     },
@@ -180,15 +186,20 @@ export function useAiChat(
   const [messages, setMessages] = useState<Message[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [inputValue, setInputValue] = useState("");
+  // Accumulates all doc IDs ever pinned in this session so every subsequent
+  // message re-injects their chunks — making attached docs always in context.
+  const [sessionPinnedDocIds, setSessionPinnedDocIds] = useState<string[]>([]);
   const updateSession = useUpdateAiSession();
   const sessionQuery = useAiSession(sessionId);
 
-  // Seed messages from DB when session changes
+  // Seed messages + pinned doc IDs from DB when session changes
   useEffect(() => {
     if (sessionQuery.data) {
       setMessages(sessionQuery.data.messages);
+      setSessionPinnedDocIds(sessionQuery.data.pinned_doc_ids ?? []);
     } else if (!sessionId) {
       setMessages([]);
+      setSessionPinnedDocIds([]);
     }
   }, [sessionId, sessionQuery.data]);
 
@@ -198,14 +209,21 @@ export function useAiChat(
   }, [sessionId]);
 
   const send = useCallback(
-    async (overrideText?: string, mentionedDocIds?: string[]) => {
+    async (overrideText?: string, mentionedDocIds?: string[], attachmentNames?: string[]) => {
       const text = (overrideText ?? inputValue).trim();
       if (!text || isStreaming || !sessionId) return;
+
+      // Merge new IDs into the session-wide pinned set
+      const allPinnedIds = mentionedDocIds?.length
+        ? [...new Set([...sessionPinnedDocIds, ...mentionedDocIds])]
+        : sessionPinnedDocIds;
+      if (mentionedDocIds?.length) setSessionPinnedDocIds(allPinnedIds);
 
       const userMsg: Message = {
         role: "user",
         content: text,
         created_at: new Date().toISOString(),
+        ...(attachmentNames?.length ? { attachments: attachmentNames } : {}),
       };
       const updatedWithUser = [...messages, userMsg];
       setMessages(updatedWithUser);
@@ -224,7 +242,7 @@ export function useAiChat(
           bidId,
           messages: updatedWithUser,
           model,
-          mentionedDocIds,
+          mentionedDocIds: allPinnedIds.length ? allPinnedIds : undefined,
         });
 
         const reader = stream.getReader();
@@ -294,7 +312,11 @@ export function useAiChat(
         ];
         setMessages(finalMessages);
 
-        await updateSession.mutateAsync({ sessionId, messages: finalMessages });
+        await updateSession.mutateAsync({
+          sessionId,
+          messages: finalMessages,
+          pinnedDocIds: allPinnedIds,
+        });
       } catch (err) {
         console.error("Stream error:", err);
         setMessages((prev) => {
@@ -334,6 +356,7 @@ export function useGenerateProposal() {
       bidId: string;
       sessionId: string;
       intake?: import("@/lib/api/generate-proposal").Intake;
+      format?: "docx" | "pdf";
     }) => {
       const { generateProposal } = await import("@/lib/api/ai-functions");
       const res = await generateProposal(input);

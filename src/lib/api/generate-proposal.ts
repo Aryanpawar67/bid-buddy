@@ -47,6 +47,7 @@ const InputSchema = z.object({
   bidId: z.string().uuid(),
   sessionId: z.string().uuid(),
   intake: IntakeSchema.optional(),
+  format: z.enum(["docx", "pdf"]).default("docx"),
 });
 
 // ── RAG helpers ────────────────────────────────────────────────────────────────
@@ -518,18 +519,54 @@ export const generateProposalFn = createServerFn({ method: "POST" })
 
     const docxBuffer = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
 
-    // ── Phase 3: Upload to Knowledge Hub ─────────────────────────────────────
+    // ── Phase 3: Optionally convert to PDF via LibreOffice ───────────────────
     const safeClient = intake.customer_display_name.replace(/[^a-z0-9]/gi, "_");
-    const filename = `iMocha_${safeClient}_${intake.product}_Proposal_DRAFT.docx`;
+    const format = data.format ?? "docx";
+
+    let outputBuffer: Buffer = docxBuffer;
+    let contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    let ext = "docx";
+
+    if (format === "pdf") {
+      try {
+        const { execSync } = await import("node:child_process");
+        const { writeFileSync, readFileSync, rmSync, mkdirSync } = await import("node:fs");
+        const { join } = await import("node:path");
+        const { tmpdir } = await import("node:os");
+
+        const tmpDir = join(tmpdir(), `proposal-${Date.now()}`);
+        mkdirSync(tmpDir, { recursive: true });
+        const tmpDocx = join(tmpDir, "proposal.docx");
+        writeFileSync(tmpDocx, docxBuffer);
+
+        const soffice =
+          ["/opt/homebrew/bin/soffice", "/usr/bin/soffice", "soffice"].find((p) => {
+            try { execSync(`"${p}" --version`, { stdio: "pipe" }); return true; } catch { return false; }
+          }) ?? "soffice";
+
+        execSync(`"${soffice}" --headless --convert-to pdf --outdir "${tmpDir}" "${tmpDocx}"`, {
+          timeout: 30_000,
+          stdio: "pipe",
+        });
+
+        const pdfPath = join(tmpDir, "proposal.pdf");
+        outputBuffer = readFileSync(pdfPath);
+        rmSync(tmpDir, { recursive: true, force: true });
+        contentType = "application/pdf";
+        ext = "pdf";
+      } catch (err) {
+        console.error("[generate-proposal] PDF conversion failed, falling back to DOCX:", err);
+        // fall back to DOCX silently
+      }
+    }
+
+    // ── Phase 4: Upload to Knowledge Hub ─────────────────────────────────────
+    const filename = `iMocha_${safeClient}_${intake.product}_Proposal_DRAFT.${ext}`;
     const storagePath = `${data.bidId}/proposals/${filename}`;
 
     const { error: storageErr } = await supabaseAdmin.storage
       .from("bid-documents")
-      .upload(storagePath, docxBuffer, {
-        contentType:
-          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        upsert: true,
-      });
+      .upload(storagePath, outputBuffer, { contentType, upsert: true });
     if (storageErr) console.error("[generate-proposal] storage upload error:", storageErr);
 
     await (supabaseAdmin.from("bid_documents") as any).insert({
@@ -538,15 +575,14 @@ export const generateProposalFn = createServerFn({ method: "POST" })
       type: "proposal",
       stage: null,
       storage_path: storagePath,
-      size_bytes: docxBuffer.length,
+      size_bytes: outputBuffer.length,
       uploaded_by: user.id,
       source: "generated",
     });
 
-    return new Response(docxBuffer, {
+    return new Response(outputBuffer, {
       headers: {
-        "Content-Type":
-          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "Content-Type": contentType,
         "Content-Disposition": `attachment; filename="${filename}"`,
         "X-Proposal-Template": templateFilename,
       },
