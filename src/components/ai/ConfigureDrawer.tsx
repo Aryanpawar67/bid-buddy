@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   Loader2,
   Upload,
+  Eye,
 } from "lucide-react";
 import { useDocuments, type BidDocument } from "@/lib/doc-queries";
 import { useBids } from "@/lib/bid-queries";
@@ -125,6 +126,7 @@ export function ConfigureDrawer({ open, onClose }: Props) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [previewDoc, setPreviewDoc] = useState<BidDocument | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [templatePreview, setTemplatePreview] = useState<{ label: string; file: string } | null>(null);
 
   const { user } = useCurrentUser();
   const { data: activeVersion } = useActivePrompt();
@@ -236,6 +238,7 @@ export function ConfigureDrawer({ open, onClose }: Props) {
               isLoading={docsLoading}
               onPreview={setPreviewDoc}
               onUpload={() => setUploadOpen(true)}
+              onTemplatePreview={setTemplatePreview}
             />
           )}
         </div>
@@ -251,6 +254,13 @@ export function ConfigureDrawer({ open, onClose }: Props) {
         onClose={() => setUploadOpen(false)}
         bids={bids}
       />
+      {templatePreview && (
+        <TemplatePreviewModal
+          label={templatePreview.label}
+          file={templatePreview.file}
+          onClose={() => setTemplatePreview(null)}
+        />
+      )}
     </>
   );
 }
@@ -409,12 +419,14 @@ function KnowledgeTab({
   isLoading,
   onPreview,
   onUpload,
+  onTemplatePreview,
 }: {
   docs: BidDocument[];
   bids: import("@/lib/bid-queries").Bid[];
   isLoading: boolean;
   onPreview: (doc: BidDocument) => void;
   onUpload: () => void;
+  onTemplatePreview: (t: { label: string; file: string }) => void;
 }) {
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -453,13 +465,21 @@ function KnowledgeTab({
                 <div className="text-[11px] font-medium text-foreground truncate">{t.label}</div>
                 <div className="text-[10px] text-muted-foreground">{t.tag}</div>
               </div>
-              <a
-                href={`/templates/${t.file}`}
-                download={t.file}
-                className="shrink-0 h-6 px-2.5 rounded border hairline border-border text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted inline-flex items-center gap-1 transition-colors"
-              >
-                ↓ Download
-              </a>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  onClick={() => onTemplatePreview(t)}
+                  className="h-6 px-2.5 rounded border hairline border-border text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted inline-flex items-center gap-1 transition-colors"
+                >
+                  <Eye className="size-2.5" /> Preview
+                </button>
+                <a
+                  href={`/templates/${t.file}`}
+                  download={t.file}
+                  className="h-6 px-2.5 rounded border hairline border-border text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted inline-flex items-center gap-1 transition-colors"
+                >
+                  ↓ Download
+                </a>
+              </div>
             </div>
           ))}
         </div>
@@ -486,5 +506,76 @@ function KnowledgeTab({
         )}
       </div>
     </div>
+  );
+}
+
+// ── Template preview modal ────────────────────────────────────────────────────
+
+function TemplatePreviewModal({
+  label,
+  file,
+  onClose,
+}: {
+  label: string;
+  file: string;
+  onClose: () => void;
+}) {
+  const [html, setHtml] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    setError(false);
+    fetch(`/templates/${file}`)
+      .then((r) => r.arrayBuffer())
+      .then((buf) => import("mammoth").then((m) => m.convertToHtml({ arrayBuffer: buf })))
+      .then((result) => setHtml(result.value))
+      .catch(() => setError(true))
+      .finally(() => setLoading(false));
+  }, [file]);
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/40 z-[60]" onClick={onClose} />
+      <div className="fixed inset-0 z-[70] flex items-center justify-center p-6">
+        <div className="relative w-full max-w-3xl max-h-[88vh] flex flex-col bg-card border hairline border-border rounded-xl shadow-2xl overflow-hidden">
+          <div className="flex items-center gap-3 px-5 py-3 border-b hairline border-border shrink-0">
+            <span className="flex-1 text-[13px] font-semibold">{label} — Preview</span>
+            <a
+              href={`/templates/${file}`}
+              download={file}
+              className="h-7 px-3 rounded border hairline border-border text-[10px] text-muted-foreground hover:text-foreground hover:bg-background inline-flex items-center gap-1 transition-colors"
+            >
+              ↓ Download
+            </a>
+            <button
+              onClick={onClose}
+              className="h-7 w-7 flex items-center justify-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground transition-colors"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-6">
+            {loading && (
+              <div className="flex items-center justify-center py-16">
+                <Loader2 className="size-5 animate-spin text-muted-foreground" />
+              </div>
+            )}
+            {error && (
+              <div className="text-[12px] text-destructive text-center py-16">
+                Failed to load preview.
+              </div>
+            )}
+            {html && (
+              <div
+                className="prose prose-sm max-w-none"
+                dangerouslySetInnerHTML={{ __html: html }}
+              />
+            )}
+          </div>
+        </div>
+      </div>
+    </>
   );
 }
