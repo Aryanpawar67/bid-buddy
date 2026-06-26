@@ -2,9 +2,17 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { StageKey } from "@/lib/bid-constants";
 
+export type QualificationInsights = {
+  strengths: string[];
+  risks: string[];
+  recommendation: string;
+  generated_at: string;
+};
+
 export type AssessmentData = {
   scores: Record<string, number>;
   comments: Record<string, string>;
+  insights?: QualificationInsights;
 };
 
 export type Bid = {
@@ -253,6 +261,26 @@ export function useSaveAssessment() {
     onSuccess: (_d, v) => {
       qc.invalidateQueries({ queryKey: ["assessment-data", v.bidId] });
       qc.invalidateQueries({ queryKey: ["bid", v.bidId] });
+    },
+  });
+}
+
+// ── useGenerateQualificationInsights ─────────────────────────────────────────
+export function useGenerateQualificationInsights() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (bidId: string) => {
+      const { generateQualificationInsightsFn } = await import("@/lib/api/generate-qualification-insights");
+      const { data: { session } } = await supabase.auth.getSession();
+      const result = await generateQualificationInsightsFn({
+        data: { bidId },
+        headers: { authorization: `Bearer ${session?.access_token ?? ""}` },
+      });
+      return result as { strengths: string[]; risks: string[]; recommendation: string };
+    },
+    onSuccess: (_d, bidId) => {
+      qc.invalidateQueries({ queryKey: ["assessment-data", bidId] });
+      qc.invalidateQueries({ queryKey: ["bid", bidId] });
     },
   });
 }

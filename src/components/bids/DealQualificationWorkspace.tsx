@@ -1,13 +1,14 @@
 import { useState, useMemo } from "react";
-import { Lock, CheckCircle2, Users, ClipboardList, BarChart3, Activity, ArrowRight } from "lucide-react";
+import { Lock, CheckCircle2, Users, ClipboardList, BarChart3, Activity, ArrowRight, Sparkles, RefreshCw } from "lucide-react";
 import { STAGES, stageLabel, fmtMoney, urgencyClass, initials } from "@/lib/bid-constants";
-import type { Bid, AssessmentData } from "@/lib/bid-queries";
+import type { Bid, AssessmentData, QualificationInsights } from "@/lib/bid-queries";
 import {
   useBidTeam,
   useAssessmentData,
   useSaveAssessment,
   useBidActivity,
   useUpdateBid,
+  useGenerateQualificationInsights,
 } from "@/lib/bid-queries";
 import { useCurrentUser } from "@/lib/auth";
 import { StatusBadge } from "./BidCard";
@@ -400,170 +401,377 @@ function BidAssessmentTab({ bid }: { bid: Bid }) {
 
 // ── Qualification Result Tab ──────────────────────────────────────────────────
 
+function ScoreGauge({ score }: { score: number }) {
+  const r = 50;
+  const circ = 2 * Math.PI * r;
+  const filled = (Math.min(score, 100) / 100) * circ;
+  const strokeColor =
+    score >= 65 ? "var(--color-success-foreground)" : score >= 45 ? "var(--color-warning-foreground)" : "var(--color-danger-foreground)";
+
+  return (
+    <svg viewBox="0 0 120 120" className="size-[110px]">
+      <circle cx="60" cy="60" r={r} fill="none" stroke="var(--color-muted)" strokeWidth="10" />
+      <circle
+        cx="60" cy="60" r={r} fill="none"
+        stroke={strokeColor} strokeWidth="10"
+        strokeDasharray={`${filled} ${circ}`}
+        strokeLinecap="round"
+        transform="rotate(-90 60 60)"
+        style={{ transition: "stroke-dasharray 0.5s ease" }}
+      />
+      <text x="60" y="56" textAnchor="middle" dominantBaseline="middle"
+        className="font-semibold" style={{ fontSize: 22, fill: strokeColor, fontWeight: 600 }}>
+        {score}
+      </text>
+      <text x="60" y="73" textAnchor="middle" dominantBaseline="middle"
+        style={{ fontSize: 9, fill: "var(--color-muted-foreground)" }}>
+        out of 100
+      </text>
+    </svg>
+  );
+}
+
+function paramStatus(score: number): { label: string; cls: string } {
+  if (score === 0) return { label: "—", cls: "text-muted-foreground" };
+  if (score >= 4)  return { label: "Go",      cls: "bg-success-soft text-success-foreground" };
+  if (score === 3) return { label: "Review",   cls: "bg-warning-soft text-warning-foreground" };
+  return               { label: "Caution",  cls: "bg-danger-soft text-danger-foreground" };
+}
+
 function QualificationResultTab({ bid }: { bid: Bid }) {
   const { data: assessmentData, isLoading } = useAssessmentData(bid.id);
   const updateBid = useUpdateBid();
+  const generateInsights = useGenerateQualificationInsights();
   const { user } = useCurrentUser();
 
-  const { totalScore, decision } = useMemo(() => {
+  const { totalScore, decision, avgScore, scoredCount } = useMemo(() => {
     const scores = assessmentData?.scores ?? {};
-    const total = DEFAULT_CRITERIA.reduce((sum, c) => {
+    let total = 0, scoreSum = 0, count = 0;
+    for (const c of DEFAULT_CRITERIA) {
       const s = scores[c.id] ?? 0;
-      return sum + (s / 5) * c.weight * 100;
-    }, 0);
+      total += (s / 5) * c.weight * 100;
+      if (s > 0) { scoreSum += s; count++; }
+    }
     const t = Math.round(total);
     const d: "go" | "conditional_go" | "no_go" =
       t >= 65 ? "go" : t >= 45 ? "conditional_go" : "no_go";
-    return { totalScore: t, decision: d };
+    return { totalScore: t, decision: d, avgScore: count ? (scoreSum / count).toFixed(1) : "—", scoredCount: count };
   }, [assessmentData]);
 
+  const insights: QualificationInsights | undefined = assessmentData?.insights;
   const isLocked = !!bid.gonogo_decision;
+  const hasScores = scoredCount > 0;
 
-  async function lockDecision() {
+  const bidStrength =
+    totalScore >= 75 ? "Strong" : totalScore >= 55 ? "Moderate" : totalScore >= 35 ? "Weak" : "Insufficient Data";
+  const bidStrengthCls =
+    totalScore >= 75 ? "text-success-foreground" : totalScore >= 55 ? "text-warning-foreground" : "text-danger-foreground";
+
+  async function lockAs(d: "go" | "conditional_go" | "no_go") {
     await updateBid.mutateAsync({
       id: bid.id,
       patch: {
         gonogo_score: totalScore,
-        gonogo_decision: decision,
+        gonogo_decision: d,
         gonogo_completed_at: new Date().toISOString(),
         gonogo_completed_by: user?.id ?? null,
       } as never,
     });
   }
 
-  const verdictCls =
-    decision === "go"
-      ? "bg-success-soft text-success-foreground border-[#97C459]"
-      : decision === "conditional_go"
-      ? "bg-warning-soft text-warning-foreground border-[#FB794B]"
-      : "bg-danger-soft text-danger-foreground border-[#A32D2D]";
-
-  const scoreCls =
-    totalScore >= 65
-      ? "text-success-foreground"
-      : totalScore >= 45
-      ? "text-warning-foreground"
-      : "text-danger-foreground";
+  async function putOnHold() {
+    await updateBid.mutateAsync({ id: bid.id, patch: { status: "on_hold" } });
+  }
 
   if (isLoading) return <Empty>Loading…</Empty>;
 
-  const hasScores = Object.keys(assessmentData?.scores ?? {}).length > 0;
-
   return (
-    <div className="space-y-3.5">
-      {/* Score hero */}
-      <Card title="Overall Score">
-        <div className="flex items-center gap-6 py-2">
-          <div className="text-center">
-            <div className={`text-[52px] font-semibold leading-none ${scoreCls}`}>{totalScore}</div>
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground mt-1">out of 100</div>
-          </div>
-          <div className="flex-1">
-            <div className="h-2 bg-muted rounded-full overflow-hidden mb-3">
-              <div
-                className={`h-full rounded-full transition-all ${
-                  totalScore >= 65 ? "bg-success-foreground" : totalScore >= 45 ? "bg-warning-foreground" : "bg-danger-foreground"
-                }`}
-                style={{ width: `${Math.min(totalScore, 100)}%` }}
-              />
-            </div>
-            <div className="flex gap-2 text-[10px]">
-              <span className="text-success-foreground font-medium">≥ 65 Go</span>
-              <span className="text-muted-foreground">·</span>
-              <span className="text-warning-foreground font-medium">45–64 Conditional Go</span>
-              <span className="text-muted-foreground">·</span>
-              <span className="text-danger-foreground font-medium">&lt; 45 No Go</span>
-            </div>
-            <div className={`mt-3 inline-flex px-3 py-1.5 rounded-lg hairline border text-[12px] font-semibold ${verdictCls}`}>
-              {decision === "go" ? "Go" : decision === "conditional_go" ? "Conditional Go" : "No Go"}
-            </div>
-          </div>
-        </div>
-      </Card>
+    <div className="grid grid-cols-[1fr_320px] gap-4">
 
-      {/* Criterion breakdown */}
-      {hasScores && (
-        <Card title="Score Breakdown">
-          <table className="w-full text-[12px]">
-            <thead>
-              <tr className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                <th className="text-left py-2 font-medium">Parameter</th>
-                <th className="text-center py-2 font-medium w-16">Weight</th>
-                <th className="text-center py-2 font-medium w-16">Score</th>
-                <th className="text-center py-2 font-medium w-28">Contribution</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y hairline divide-border">
-              {DEFAULT_CRITERIA.map((c) => {
-                const s = assessmentData?.scores[c.id] ?? 0;
-                const contribution = (s / 5) * c.weight * 100;
-                return (
-                  <tr key={c.id}>
-                    <td className="py-2">{c.parameter}</td>
-                    <td className="py-2 text-center text-muted-foreground">{Math.round(c.weight * 100)}%</td>
-                    <td className="py-2 text-center">
-                      {s > 0 ? (
-                        <span className="font-medium">{s} / 5</span>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
+      {/* ── Left column ── */}
+      <div className="space-y-3.5">
+
+        {/* Summary card */}
+        <section className="bg-card hairline border rounded-xl p-4">
+          <h3 className="text-[13px] font-medium mb-3">Overall Qualification Summary</h3>
+          <div className="flex items-center gap-5">
+            <ScoreGauge score={totalScore} />
+            <div className="grid grid-cols-2 gap-2 flex-1">
+              {[
+                { label: "Total Parameters", value: "10" },
+                { label: "Avg Parameter Score", value: avgScore },
+                { label: "Score Achieved", value: `${totalScore}%` },
+                { label: "Bid Strength", value: bidStrength, valueCls: bidStrengthCls },
+              ].map((m) => (
+                <div key={m.label} className="bg-muted/30 rounded-lg p-2.5">
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{m.label}</div>
+                  <div className={`text-[16px] font-semibold mt-0.5 ${(m as any).valueCls ?? ""}`}>{m.value}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+          {/* Score band legend */}
+          <div className="flex gap-3 text-[10px] mt-3 pt-3 border-t hairline border-border">
+            <span className="text-success-foreground font-medium">≥ 65 → Go</span>
+            <span className="text-muted-foreground">·</span>
+            <span className="text-warning-foreground font-medium">45–64 → Conditional Go</span>
+            <span className="text-muted-foreground">·</span>
+            <span className="text-danger-foreground font-medium">&lt; 45 → No Go</span>
+          </div>
+        </section>
+
+        {/* Breakdown table */}
+        <section className="bg-card hairline border rounded-xl overflow-hidden">
+          <header className="px-3.5 py-2.5 border-b hairline border-border">
+            <h3 className="text-[13px] font-medium">Assessment Summary by Parameter</h3>
+          </header>
+          {!hasScores ? (
+            <div className="text-[12px] text-muted-foreground p-4 text-center">
+              Complete the Bid Assessment tab to see a breakdown here.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-[12px]">
+                <thead>
+                  <tr className="bg-muted/30 text-[10px] uppercase tracking-wider text-muted-foreground">
+                    <th className="text-left px-3.5 py-2 font-medium">#</th>
+                    <th className="text-left px-3.5 py-2 font-medium">Parameter</th>
+                    <th className="text-center px-3.5 py-2 font-medium w-20">Status</th>
+                    <th className="text-center px-3.5 py-2 font-medium w-16">Score</th>
+                    <th className="text-center px-3.5 py-2 font-medium w-14">Weight</th>
+                    <th className="text-left px-3.5 py-2 font-medium w-36">Progress</th>
+                    <th className="text-center px-3.5 py-2 font-medium w-24">Contribution</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y hairline divide-border">
+                  {DEFAULT_CRITERIA.map((c, i) => {
+                    const s = assessmentData?.scores[c.id] ?? 0;
+                    const contribution = (s / 5) * c.weight * 100;
+                    const maxContrib = c.weight * 100;
+                    const pct = maxContrib > 0 ? (contribution / maxContrib) * 100 : 0;
+                    const st = paramStatus(s);
+                    return (
+                      <tr key={c.id} className="hover:bg-muted/20 transition-colors">
+                        <td className="px-3.5 py-2.5 text-muted-foreground">{i + 1}</td>
+                        <td className="px-3.5 py-2.5 font-medium">{c.parameter}</td>
+                        <td className="px-3.5 py-2.5 text-center">
+                          {s === 0 ? (
+                            <span className="text-muted-foreground">—</span>
+                          ) : (
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${st.cls}`}>
+                              {st.label}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3.5 py-2.5 text-center font-medium">
+                          {s > 0 ? `${s}/5` : <span className="text-muted-foreground">—</span>}
+                        </td>
+                        <td className="px-3.5 py-2.5 text-center text-muted-foreground">
+                          {Math.round(c.weight * 100)}%
+                        </td>
+                        <td className="px-3.5 py-2.5">
+                          <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all ${
+                                s >= 4 ? "bg-success-foreground" : s === 3 ? "bg-warning-foreground" : s > 0 ? "bg-danger-foreground" : ""
+                              }`}
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                        </td>
+                        <td className="px-3.5 py-2.5 text-center">
+                          {s > 0 ? (
+                            <span className="font-medium">{contribution.toFixed(1)}</span>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                          <span className="text-muted-foreground text-[10px]">/{maxContrib.toFixed(0)}</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-muted/30 font-semibold">
+                    <td colSpan={6} className="px-3.5 py-2.5 text-[11px] text-right uppercase tracking-wider text-muted-foreground">
+                      Total
                     </td>
-                    <td className="py-2 text-center font-medium">
-                      {s > 0 ? `${contribution.toFixed(1)}` : <span className="text-muted-foreground">—</span>}
+                    <td className="px-3.5 py-2.5 text-center text-[14px]">
+                      {totalScore}
+                      <span className="text-[11px] text-muted-foreground font-normal">/100</span>
                     </td>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </Card>
-      )}
-
-      {!hasScores && (
-        <div className="text-[12px] text-muted-foreground bg-muted/30 rounded-xl p-4 text-center hairline border">
-          Complete the Bid Assessment tab to see a score breakdown here.
-        </div>
-      )}
-
-      {/* Lock decision */}
-      <div className="bg-card hairline border rounded-xl p-3.5">
-        {isLocked ? (
-          <div className="flex items-center gap-3">
-            <div className={`px-3 py-2 rounded-lg hairline border text-[12px] font-semibold ${verdictCls}`}>
-              {bid.gonogo_decision === "go" ? "Go" : bid.gonogo_decision === "conditional_go" ? "Conditional Go" : "No Go"}
+                </tfoot>
+              </table>
             </div>
-            <div>
-              <div className="text-[12px] font-medium flex items-center gap-1.5">
-                <Lock className="size-3.5" /> Decision locked
+          )}
+        </section>
+      </div>
+
+      {/* ── Right column ── */}
+      <div className="space-y-3.5">
+
+        {/* AI Insights */}
+        <section className="bg-card hairline border rounded-xl p-3.5">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-[13px] font-medium">AI Analysis</h3>
+            <button
+              onClick={() => generateInsights.mutate(bid.id)}
+              disabled={generateInsights.isPending || !hasScores}
+              className="h-7 px-2.5 rounded-md bg-primary/10 text-primary text-[11px] font-medium hover:bg-primary/20 disabled:opacity-40 inline-flex items-center gap-1.5 transition-colors"
+            >
+              {generateInsights.isPending ? (
+                <><RefreshCw className="size-3 animate-spin" /> Generating…</>
+              ) : insights ? (
+                <><RefreshCw className="size-3" /> Regenerate</>
+              ) : (
+                <><Sparkles className="size-3" /> Generate with AI</>
+              )}
+            </button>
+          </div>
+
+          {!hasScores && !insights && (
+            <p className="text-[11px] text-muted-foreground">
+              Score all parameters in the Bid Assessment tab first, then generate AI insights.
+            </p>
+          )}
+
+          {hasScores && !insights && !generateInsights.isPending && (
+            <p className="text-[11px] text-muted-foreground">
+              Click "Generate with AI" to get strengths, risks, and a recommendation based on your assessment scores.
+            </p>
+          )}
+
+          {generateInsights.isPending && (
+            <div className="space-y-2">
+              {[60, 80, 50].map((w, i) => (
+                <div key={i} className={`h-3 bg-muted rounded animate-pulse`} style={{ width: `${w}%` }} />
+              ))}
+            </div>
+          )}
+
+          {insights && !generateInsights.isPending && (
+            <div className="space-y-3.5">
+              {/* Key Strengths */}
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-success-foreground font-medium mb-1.5">
+                  Key Strengths
+                </div>
+                <ul className="space-y-1.5">
+                  {insights.strengths.map((s, i) => (
+                    <li key={i} className="flex items-start gap-1.5 text-[11px]">
+                      <span className="text-success-foreground mt-0.5 shrink-0">✓</span>
+                      <span>{s}</span>
+                    </li>
+                  ))}
+                </ul>
               </div>
-              {bid.gonogo_completed_at && (
-                <div className="text-[11px] text-muted-foreground mt-0.5">
-                  {new Date(bid.gonogo_completed_at).toLocaleDateString(undefined, {
-                    year: "numeric", month: "short", day: "numeric",
-                  })}
+
+              {/* Key Risks */}
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-danger-foreground font-medium mb-1.5">
+                  Key Risks / Watchouts
+                </div>
+                <ul className="space-y-1.5">
+                  {insights.risks.map((r, i) => (
+                    <li key={i} className="flex items-start gap-1.5 text-[11px]">
+                      <span className="text-danger-foreground mt-0.5 shrink-0">⚠</span>
+                      <span>{r}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* Recommendation */}
+              <div className="pt-2 border-t hairline border-border">
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">
+                  Recommendation Summary
+                </div>
+                <p className="text-[11px] leading-relaxed">{insights.recommendation}</p>
+              </div>
+
+              {insights.generated_at && (
+                <div className="text-[10px] text-muted-foreground pt-1">
+                  Generated {new Date(insights.generated_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
                 </div>
               )}
             </div>
-          </div>
-        ) : (
-          <div className="flex items-center justify-between">
+          )}
+        </section>
+
+        {/* Lock decision */}
+        <section className="bg-card hairline border rounded-xl p-3.5">
+          <h3 className="text-[13px] font-medium mb-2.5">
+            {isLocked ? "Decision Locked" : "Lock Decision"}
+          </h3>
+          {isLocked ? (
             <div>
-              <div className="text-[12px] font-medium">Lock Go/No-Go Decision</div>
-              <div className="text-[11px] text-muted-foreground mt-0.5">
-                Saves the current score and recommendation. Required before advancing to RFI.
+              <div className={`inline-flex px-3 py-1.5 rounded-lg hairline border text-[12px] font-semibold mb-2 ${
+                bid.gonogo_decision === "go"
+                  ? "bg-success-soft text-success-foreground border-[#97C459]"
+                  : bid.gonogo_decision === "conditional_go"
+                  ? "bg-warning-soft text-warning-foreground border-[#FB794B]"
+                  : "bg-danger-soft text-danger-foreground border-[#A32D2D]"
+              }`}>
+                <Lock className="size-3 mr-1.5" />
+                {bid.gonogo_decision === "go" ? "Go" : bid.gonogo_decision === "conditional_go" ? "Conditional Go" : "No Go"}
+              </div>
+              {bid.gonogo_completed_at && (
+                <div className="text-[11px] text-muted-foreground">
+                  Locked {new Date(bid.gonogo_completed_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                </div>
+              )}
+              <div className="mt-2 pt-2 border-t hairline border-border">
+                <div className="text-[10px] text-muted-foreground mb-1.5">Override decision</div>
+                <DecisionButtons onSelect={lockAs} pending={updateBid.isPending} disabled={!hasScores} />
               </div>
             </div>
-            <button
-              onClick={lockDecision}
-              disabled={updateBid.isPending || !hasScores}
-              className="h-9 px-3.5 rounded-md bg-accent text-accent-foreground text-[12px] font-medium hover:opacity-90 disabled:opacity-40 inline-flex items-center gap-1.5"
-            >
-              <Lock className="size-3.5" />
-              {updateBid.isPending ? "Saving…" : "Lock Decision"}
-            </button>
-          </div>
-        )}
+          ) : (
+            <div>
+              <p className="text-[11px] text-muted-foreground mb-2.5">
+                Required before advancing to RFI. Score: <span className="font-medium text-foreground">{totalScore}/100</span>
+              </p>
+              <DecisionButtons onSelect={lockAs} pending={updateBid.isPending} disabled={!hasScores} />
+              <button
+                onClick={putOnHold}
+                disabled={updateBid.isPending}
+                className="mt-2 w-full h-8 rounded-md hairline border bg-card text-[11px] text-muted-foreground hover:bg-muted disabled:opacity-40 transition-colors"
+              >
+                Put on Hold
+              </button>
+            </div>
+          )}
+        </section>
       </div>
+    </div>
+  );
+}
+
+function DecisionButtons({
+  onSelect,
+  pending,
+  disabled,
+}: {
+  onSelect: (d: "go" | "conditional_go" | "no_go") => void;
+  pending: boolean;
+  disabled: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      {([
+        { key: "go" as const,             label: "Go",             cls: "bg-success-soft text-success-foreground border-[#97C459] hover:brightness-95" },
+        { key: "conditional_go" as const, label: "Conditional Go", cls: "bg-warning-soft text-warning-foreground border-[#FB794B] hover:brightness-95" },
+        { key: "no_go" as const,          label: "No Go",          cls: "bg-danger-soft text-danger-foreground border-[#A32D2D] hover:brightness-95" },
+      ] as const).map((opt) => (
+        <button
+          key={opt.key}
+          onClick={() => onSelect(opt.key)}
+          disabled={pending || disabled}
+          className={`h-8 rounded-lg hairline border text-[12px] font-medium disabled:opacity-40 transition-all inline-flex items-center justify-center gap-1.5 ${opt.cls}`}
+        >
+          <Lock className="size-3" /> {opt.label}
+        </button>
+      ))}
     </div>
   );
 }
