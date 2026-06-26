@@ -1,9 +1,9 @@
-import { Check, Circle, AlertTriangle, FileText, MessageSquare, ArrowRight } from "lucide-react";
-import { Link } from "@tanstack/react-router";
+import { Check, Circle, AlertTriangle, MessageSquare, ArrowRight } from "lucide-react";
 import { STAGES, type StageKey, stageLabel, TEAM_LABEL, urgencyClass, fmtMoney } from "@/lib/bid-constants";
 import type { Bid } from "@/lib/bid-queries";
 import { useStageItems, useToggleDeliverable, useToggleQuestion, useUpdateBid } from "@/lib/bid-queries";
 import { StatusBadge } from "./BidCard";
+import { DealQualificationWorkspace } from "./DealQualificationWorkspace";
 
 const STAGE_BLURBS: Record<StageKey, string> = {
   deal_qualification: "Assess strategic fit, capability, commercial feasibility and risk.",
@@ -17,6 +17,10 @@ const STAGE_BLURBS: Record<StageKey, string> = {
 };
 
 export function StageWorkspace({ bid, stage }: { bid: Bid; stage: StageKey }) {
+  if (stage === "deal_qualification") {
+    return <DealQualificationWorkspace bid={bid} />;
+  }
+
   const items = useStageItems(bid.id, stage);
   const toggleD = useToggleDeliverable();
   const toggleQ = useToggleQuestion();
@@ -130,15 +134,6 @@ export function StageWorkspace({ bid, stage }: { bid: Bid; stage: StageKey }) {
 
         {/* Actions */}
         <div className="flex items-center justify-end gap-2 mt-5">
-          {stage === "deal_qualification" && (
-            <Link
-              to="/bids/$id/gonogo"
-              params={{ id: bid.id }}
-              className="h-9 px-3.5 rounded-md hairline border bg-card text-[12px] font-medium hover:bg-muted inline-flex items-center gap-1.5"
-            >
-              <FileText className="size-3.5" /> Open Go / No-Go scorecard
-            </Link>
-          )}
           {stageIdx === currentIdx && currentIdx < STAGES.length - 1 && (
             <button
               onClick={advance}
