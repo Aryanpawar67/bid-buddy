@@ -318,3 +318,88 @@ export function useDeleteUser() {
     },
   });
 }
+
+// ── SharePoint ────────────────────────────────────────────────────────────────
+
+export function useSharePointStatus() {
+  return useQuery({
+    queryKey: ["sharepoint-status"],
+    queryFn: async () => {
+      const [credsRes, syncRes] = await Promise.all([
+        (supabase as any).from("org_settings").select("value").eq("key", "sharepoint_creds").maybeSingle(),
+        (supabase as any).from("org_settings").select("value").eq("key", "sharepoint_last_synced").maybeSingle(),
+      ]);
+      const creds = credsRes.data?.value ?? {};
+      return {
+        connected: !!(creds.tenantId && creds.clientId && creds.clientSecret),
+        tenantId: (creds.tenantId as string) ?? "",
+        clientId: (creds.clientId as string) ?? "",
+        lastSynced: syncRes.data?.value ?? null,
+      };
+    },
+  });
+}
+
+export function useSaveSharePointCreds() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { tenantId: string; clientId: string; clientSecret: string }) => {
+      const { saveSharePointCredsFn } = await import("@/lib/api/sharepoint-sync");
+      return saveSharePointCredsFn({ data: input });
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["sharepoint-status"] }),
+  });
+}
+
+export function useSharePointSources() {
+  return useQuery({
+    queryKey: ["sharepoint-sources"],
+    queryFn: async () => {
+      const { listSharePointSourcesFn } = await import("@/lib/api/sharepoint-sync");
+      return listSharePointSourcesFn({ data: {} });
+    },
+  });
+}
+
+export function useAddSharePointSource() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { shareUrl: string; type: string }) => {
+      const { addSharePointSourceFn } = await import("@/lib/api/sharepoint-sync");
+      return addSharePointSourceFn({ data: input as any });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sharepoint-sources"] });
+      qc.invalidateQueries({ queryKey: ["documents"] });
+    },
+  });
+}
+
+export function useRemoveSharePointSource() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (documentId: string) => {
+      const { removeSharePointSourceFn } = await import("@/lib/api/sharepoint-sync");
+      return removeSharePointSourceFn({ data: { documentId } });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sharepoint-sources"] });
+      qc.invalidateQueries({ queryKey: ["documents"] });
+    },
+  });
+}
+
+export function useSyncSharePoint() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (documentId?: string) => {
+      const { syncSharePointFn } = await import("@/lib/api/sharepoint-sync");
+      return syncSharePointFn({ data: { documentId } });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sharepoint-status"] });
+      qc.invalidateQueries({ queryKey: ["sharepoint-sources"] });
+      qc.invalidateQueries({ queryKey: ["documents"] });
+    },
+  });
+}

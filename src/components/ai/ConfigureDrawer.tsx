@@ -253,6 +253,7 @@ export function ConfigureDrawer({ open, onClose }: Props) {
         open={uploadOpen}
         onClose={() => setUploadOpen(false)}
         bids={bids}
+        lockToGlobal
       />
       {templatePreview && (
         <TemplatePreviewModal

@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { Send, Loader2, Copy, Check, Download, FileText, Paperclip, CheckCircle2, X } from "lucide-react";
+import { Send, Loader2, Copy, Check, Download, FileText, Paperclip, CheckCircle2, X, MoreHorizontal } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Message } from "@/lib/ai-queries";
 import type { Bid } from "@/lib/bid-queries";
 import { ProposalModal } from "@/components/ai/ProposalModal";
+import { BidDocsDrawer } from "@/components/ai/BidDocsDrawer";
 import type { BidDocument } from "@/lib/doc-queries";
 import { useUploadAndIndexDocument } from "@/lib/doc-queries";
 import { stageLabel } from "@/lib/bid-constants";
@@ -98,7 +99,7 @@ export function AiChatPanel({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // @ mention state
-  const [mentionQuery, setMentionQuery] = useState<string | null>(null); // null = closed
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -153,7 +154,6 @@ export function AiChatPanel({
     const val = e.target.value;
     onInputChange(val);
 
-    // Detect @ trigger: find last @ before cursor that isn't followed by a space
     const cursor = e.target.selectionStart ?? val.length;
     const textUpToCursor = val.slice(0, cursor);
     const atIdx = textUpToCursor.lastIndexOf("@");
@@ -174,10 +174,9 @@ export function AiChatPanel({
     const newVal = `${before}@${doc.name} ${after}`;
     onInputChange(newVal);
     setMentionQuery(null);
-    // Restore focus and move cursor after the inserted mention
     setTimeout(() => {
       if (textareaRef.current) {
-        const pos = before.length + doc.name.length + 2; // "@" + name + " "
+        const pos = before.length + doc.name.length + 2;
         textareaRef.current.focus();
         textareaRef.current.setSelectionRange(pos, pos);
       }
@@ -190,8 +189,6 @@ export function AiChatPanel({
       console.log("[attach] early return — files:", !!files, "activeBid:", !!activeBid);
       return;
     }
-    // Snapshot into a plain array BEFORE clearing the input — FileList is a
-    // live DOM object and clearing input.value empties it immediately.
     const fileArray = Array.from(files);
     if (fileInputRef.current) fileInputRef.current.value = "";
 
@@ -290,8 +287,9 @@ export function AiChatPanel({
   const isRfiRfpStage = activeBid?.stage === "rfi" || activeBid?.stage === "rfp";
   const quickActions = isRfiRfpStage ? QUICK_ACTIONS_RFI_RFP : QUICK_ACTIONS_GENERIC;
   const [proposalModalOpen, setProposalModalOpen] = useState(false);
+  const [docsDrawerOpen, setDocsDrawerOpen] = useState(false);
 
-  // Close dropdown on outside click
+  // Close @ dropdown on outside click
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
@@ -303,7 +301,7 @@ export function AiChatPanel({
   }, []);
 
   return (
-    <div className="flex-1 flex flex-col h-full min-w-0">
+    <div className="relative flex-1 flex flex-col h-full min-w-0">
       {/* Context strip */}
       <div className="flex items-center gap-3 px-4 py-2 border-b hairline border-border bg-card shrink-0">
         <div className="flex-1 flex items-center gap-2 min-w-0">
@@ -342,6 +340,22 @@ export function AiChatPanel({
         <span className="text-[10px] text-muted-foreground whitespace-nowrap">
           {requestCount} requests today
         </span>
+
+        {/* 3-dot menu — only for bid sessions */}
+        {!isGlobal && activeBid && (
+          <button
+            onClick={() => setDocsDrawerOpen((o) => !o)}
+            title="Bid documents"
+            className={[
+              "w-7 h-7 flex items-center justify-center rounded-md transition-colors shrink-0",
+              docsDrawerOpen
+                ? "bg-primary/10 text-primary"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground",
+            ].join(" ")}
+          >
+            <MoreHorizontal className="size-4" />
+          </button>
+        )}
       </div>
 
       {/* Quick action chips — bid mode only, empty session only */}
@@ -495,11 +509,7 @@ export function AiChatPanel({
               </div>
             )}
 
-            {/* File input lives outside the canAttach gate so it is never
-              unmounted while a file picker is open. If canAttach flickers
-              during a re-render the input stays in the DOM and onChange fires
-              on the live element. handleFilesSelected guards against null
-              activeBid itself. */}
+            {/* File input — kept outside canAttach gate so it's never unmounted mid-pick */}
             <input
               ref={fileInputRef}
               type="file"
@@ -567,6 +577,15 @@ export function AiChatPanel({
           bidId={activeBid.id}
           sessionId={sessionId}
           clientName={activeBid.client_name}
+        />
+      )}
+
+      {/* Bid docs drawer — slides in from the right within the chat pane */}
+      {docsDrawerOpen && activeBid && (
+        <BidDocsDrawer
+          bidId={activeBid.id}
+          clientName={activeBid.client_name}
+          onClose={() => setDocsDrawerOpen(false)}
         />
       )}
     </div>

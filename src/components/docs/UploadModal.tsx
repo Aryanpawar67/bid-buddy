@@ -38,9 +38,10 @@ type Props = {
   onClose: () => void;
   bids: Bid[];
   prefilledBidId?: string;
+  lockToGlobal?: boolean;
 };
 
-export function UploadModal({ open, onClose, bids, prefilledBidId }: Props) {
+export function UploadModal({ open, onClose, bids, prefilledBidId, lockToGlobal }: Props) {
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [docType, setDocType] = useState<DocType>(prefilledBidId ? "rfp" : "template");
   const [bidId, setBidId] = useState<string>(prefilledBidId ?? "");
@@ -229,7 +230,7 @@ export function UploadModal({ open, onClose, bids, prefilledBidId }: Props) {
 
             {/* Right: metadata form */}
             <div className="w-52 shrink-0 border-l hairline border-border flex flex-col gap-4 p-4">
-              {!prefilledBidId && (
+              {!prefilledBidId && !lockToGlobal && (
               <div>
                 <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
                   Document Type
@@ -246,7 +247,7 @@ export function UploadModal({ open, onClose, bids, prefilledBidId }: Props) {
               </div>
               )}
 
-              {!prefilledBidId && (
+              {!prefilledBidId && !lockToGlobal && (
                 <div>
                   <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
                     Link to Bid
@@ -264,7 +265,7 @@ export function UploadModal({ open, onClose, bids, prefilledBidId }: Props) {
                 </div>
               )}
 
-              {!prefilledBidId && (
+              {!prefilledBidId && !lockToGlobal && (
               <div>
                 <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
                   Stage (optional)

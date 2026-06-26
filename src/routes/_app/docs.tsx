@@ -1,10 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
+import { Link2 } from "lucide-react";
 import { useDocuments, type BidDocument } from "@/lib/doc-queries";
 import { useBids } from "@/lib/bid-queries";
 import { DocGrid } from "@/components/docs/DocGrid";
 import { DocPreviewModal } from "@/components/docs/DocPreviewModal";
 import { UploadModal } from "@/components/docs/UploadModal";
+import { SharePointModal } from "@/components/docs/SharePointModal";
 import { useCurrentUser } from "@/lib/auth";
 
 export const Route = createFileRoute("/_app/docs")({
@@ -17,8 +19,10 @@ function DocsPage() {
   const { primaryRole } = useCurrentUser();
   const [previewDoc, setPreviewDoc] = useState<BidDocument | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [spOpen, setSpOpen] = useState(false);
 
-  const canUpload = primaryRole === "pre_sales" || primaryRole === "admin";
+  const isAdmin = primaryRole === "admin";
+  const canUpload = primaryRole === "pre_sales" || isAdmin;
 
   return (
     <div className="h-full flex flex-col">
@@ -30,6 +34,15 @@ function DocsPage() {
           readOnly
         />
         <div className="flex-1" />
+        {isAdmin && (
+          <button
+            onClick={() => setSpOpen(true)}
+            className="h-8 px-3 rounded-md hairline border border-border text-foreground text-[12px] font-medium inline-flex items-center gap-1.5 hover:bg-muted transition-colors"
+          >
+            <Link2 className="w-3.5 h-3.5" />
+            SharePoint
+          </button>
+        )}
         {canUpload && (
           <button
             onClick={() => setUploadOpen(true)}
@@ -59,6 +72,11 @@ function DocsPage() {
         open={uploadOpen}
         onClose={() => setUploadOpen(false)}
         bids={bids}
+      />
+
+      <SharePointModal
+        open={spOpen}
+        onClose={() => setSpOpen(false)}
       />
     </div>
   );

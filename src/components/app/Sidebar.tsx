@@ -135,12 +135,14 @@ export function Sidebar() {
           badge="New"
           badgeVariant="success"
         />
-        <NavLink
-          to="/docs"
-          icon={BookOpen}
-          label="Knowledge Hub"
-          active={path.startsWith("/docs")}
-        />
+        {(isAdmin || isPreSales) && (
+          <NavLink
+            to="/docs"
+            icon={BookOpen}
+            label="Knowledge Hub"
+            active={path.startsWith("/docs")}
+          />
+        )}
         {canSeeAnalytics && (
           <NavLink
             to="/analytics"
