@@ -1,7 +1,10 @@
-import { useState, useMemo } from "react";
-import { Lock, CheckCircle2, Users, ClipboardList, BarChart3, Activity, ArrowRight, Sparkles, RefreshCw } from "lucide-react";
+import { useState, useMemo, useEffect, useRef } from "react";
+import { Lock, CheckCircle2, Users, ClipboardList, BarChart3, Activity, ArrowRight, RefreshCw, FileText, Eye, Mail, Download } from "lucide-react";
 import { STAGES, stageLabel, fmtMoney, urgencyClass, initials } from "@/lib/bid-constants";
 import type { Bid, AssessmentData, QualificationInsights } from "@/lib/bid-queries";
+import { useDocuments, type BidDocument, type DocType } from "@/lib/doc-queries";
+import { DocPreviewModal } from "@/components/docs/DocPreviewModal";
+import { UploadModal } from "@/components/docs/UploadModal";
 import {
   useBidTeam,
   useAssessmentData,
@@ -9,6 +12,8 @@ import {
   useBidActivity,
   useUpdateBid,
   useGenerateQualificationInsights,
+  useGenerateQualResult,
+  useGenerateDealBrief,
 } from "@/lib/bid-queries";
 import { useCurrentUser } from "@/lib/auth";
 import { StatusBadge } from "./BidCard";
@@ -171,10 +176,136 @@ export function DealQualificationWorkspace({ bid }: { bid: Bid }) {
 
 // ── Bid Details Tab ───────────────────────────────────────────────────────────
 
+const DOC_TYPE_STYLES: Record<DocType, string> = {
+  rfp:       "bg-[#fff1f1] text-[#e53e3e]",
+  proposal:  "bg-[#fff0e8] text-[#fd5b0e]",
+  legal:     "bg-[#edfaf4] text-[#16a34a]",
+  template:  "bg-[#ede9fd] text-[#491aeb]",
+  reference: "bg-[#f5f4fa] text-muted-foreground",
+};
+
 function BidDetailsTab({ bid }: { bid: Bid }) {
   const u = urgencyClass(bid.deadline);
+  const updateBid = useUpdateBid();
+  const { primaryRole } = useCurrentUser();
+  const { data: docs = [] } = useDocuments({ bidId: bid.id });
+  const [previewDoc, setPreviewDoc] = useState<BidDocument | null>(null);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const canUpload = primaryRole === "pre_sales" || primaryRole === "admin";
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({
+    client_name: bid.client_name,
+    title: bid.title,
+    type: bid.type,
+    priority: bid.priority,
+    procurement_portal: bid.procurement_portal ?? "",
+    value: String(bid.value),
+    deadline: bid.deadline.slice(0, 10),
+    clarification_deadline: bid.clarification_deadline?.slice(0, 10) ?? "",
+    orals_date: bid.orals_date?.slice(0, 10) ?? "",
+  });
+
+  function startEdit() {
+    setForm({
+      client_name: bid.client_name,
+      title: bid.title,
+      type: bid.type,
+      priority: bid.priority,
+      procurement_portal: bid.procurement_portal ?? "",
+      value: String(bid.value),
+      deadline: bid.deadline.slice(0, 10),
+      clarification_deadline: bid.clarification_deadline?.slice(0, 10) ?? "",
+      orals_date: bid.orals_date?.slice(0, 10) ?? "",
+    });
+    setEditing(true);
+  }
+
+  async function handleSave() {
+    await updateBid.mutateAsync({
+      id: bid.id,
+      patch: {
+        client_name: form.client_name,
+        title: form.title,
+        type: form.type as Bid["type"],
+        priority: form.priority as Bid["priority"],
+        procurement_portal: form.procurement_portal || null,
+        value: Number(form.value) || 0,
+        deadline: form.deadline,
+        clarification_deadline: form.clarification_deadline || null,
+        orals_date: form.orals_date || null,
+      },
+    });
+    setEditing(false);
+  }
+
+  function set(key: string, val: string) {
+    setForm((p) => ({ ...p, [key]: val }));
+  }
+
+  if (editing) {
+    return (
+      <div className="space-y-3.5">
+        <Card title="Opportunity">
+          <EditKV label="Client" value={form.client_name} onChange={(v) => set("client_name", v)} />
+          <EditKV label="Title" value={form.title} onChange={(v) => set("title", v)} />
+          <EditKVSelect
+            label="Type"
+            value={form.type}
+            onChange={(v) => set("type", v)}
+            options={[
+              { value: "rfp", label: "RFP" },
+              { value: "rfi", label: "RFI" },
+              { value: "rfq", label: "RFQ" },
+              { value: "direct", label: "DIRECT" },
+            ]}
+          />
+          <EditKVSelect
+            label="Priority"
+            value={form.priority}
+            onChange={(v) => set("priority", v)}
+            options={[
+              { value: "high", label: "High" },
+              { value: "medium", label: "Medium" },
+              { value: "low", label: "Low" },
+            ]}
+          />
+          <EditKV label="Portal" value={form.procurement_portal} onChange={(v) => set("procurement_portal", v)} placeholder="—" />
+          <EditKV label="Deal Value" value={form.value} onChange={(v) => set("value", v)} type="number" />
+        </Card>
+        <Card title="Timeline">
+          <EditKV label="Bid Deadline" value={form.deadline} onChange={(v) => set("deadline", v)} type="date" />
+          <EditKV label="Clarification Deadline" value={form.clarification_deadline} onChange={(v) => set("clarification_deadline", v)} type="date" />
+          <EditKV label="Orals Date" value={form.orals_date} onChange={(v) => set("orals_date", v)} type="date" />
+        </Card>
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={() => setEditing(false)}
+            className="h-8 px-3 rounded-md hairline border text-[12px] text-muted-foreground hover:bg-muted transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={updateBid.isPending}
+            className="h-8 px-3.5 rounded-md bg-primary text-primary-foreground text-[12px] font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
+          >
+            {updateBid.isPending ? "Saving…" : "Save Changes"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-3.5">
+      <div className="flex justify-end">
+        <button
+          onClick={startEdit}
+          className="h-7 px-2.5 rounded-md text-[11px] font-medium text-primary bg-primary/10 hover:bg-primary/20 transition-colors"
+        >
+          Edit
+        </button>
+      </div>
       <Card title="Opportunity">
         <KV label="Client" value={bid.client_name} />
         <KV label="Title" value={bid.title} />
@@ -214,6 +345,78 @@ function BidDetailsTab({ bid }: { bid: Bid }) {
           )}
         </Card>
       )}
+
+      {/* ── Documents ── */}
+      <section className="bg-card hairline border rounded-xl p-3.5">
+        <div className="flex items-center justify-between mb-2.5">
+          <div>
+            <h3 className="text-[13px] font-medium">Documents</h3>
+            {docs.length > 0 && (
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                {docs.length} file{docs.length !== 1 ? "s" : ""}
+              </p>
+            )}
+          </div>
+          {canUpload && (
+            <button
+              onClick={() => setUploadOpen(true)}
+              className="h-7 px-2.5 rounded-md bg-primary/10 text-primary text-[11px] font-medium hover:bg-primary/20 transition-colors"
+            >
+              + Upload
+            </button>
+          )}
+        </div>
+
+        {docs.length === 0 ? (
+          <div className="text-center py-6 text-muted-foreground">
+            <FileText className="size-8 opacity-20 mx-auto mb-2" />
+            <div className="text-[12px]">No documents uploaded yet</div>
+            {canUpload && (
+              <div className="text-[11px] mt-1 opacity-70">Upload the client RFP, SOW, or reference files</div>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-1">
+            {docs.map((doc) => {
+              const ext = doc.name.split(".").pop()?.toLowerCase() ?? "";
+              const extBg = ext === "pdf" ? "#fff1f1" : ext === "docx" ? "#ebf5ff" : "#edfaf4";
+              const extColor = ext === "pdf" ? "#e53e3e" : ext === "docx" ? "#2563eb" : "#16a34a";
+              return (
+                <button
+                  key={doc.id}
+                  onClick={() => setPreviewDoc(doc)}
+                  className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-muted/40 transition-colors group text-left"
+                >
+                  <div
+                    className="w-8 h-9 rounded flex items-center justify-center text-[9px] font-black shrink-0"
+                    style={{ background: extBg, color: extColor }}
+                  >
+                    {ext.toUpperCase().slice(0, 3)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[12px] font-medium truncate">{doc.name}</div>
+                    <div className="flex items-center gap-1 mt-0.5">
+                      <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${DOC_TYPE_STYLES[doc.type]}`}>
+                        {doc.type.charAt(0).toUpperCase() + doc.type.slice(1)}
+                      </span>
+                      {doc.embedding && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#ede9fd] text-primary font-semibold">✦ AI</span>
+                      )}
+                      <span className="text-[10px] text-muted-foreground ml-auto">
+                        {new Date(doc.created_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                  </div>
+                  <Eye className="size-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <DocPreviewModal doc={previewDoc} allDocs={docs} onClose={() => setPreviewDoc(null)} />
+      <UploadModal open={uploadOpen} onClose={() => setUploadOpen(false)} bids={[]} prefilledBidId={bid.id} />
     </div>
   );
 }
@@ -442,6 +645,8 @@ function QualificationResultTab({ bid }: { bid: Bid }) {
   const { data: assessmentData, isLoading } = useAssessmentData(bid.id);
   const updateBid = useUpdateBid();
   const generateInsights = useGenerateQualificationInsights();
+  const generateQualResult = useGenerateQualResult();
+  const generateDealBrief = useGenerateDealBrief();
   const { user } = useCurrentUser();
 
   const { totalScore, decision, avgScore, scoredCount } = useMemo(() => {
@@ -461,6 +666,24 @@ function QualificationResultTab({ bid }: { bid: Bid }) {
   const insights: QualificationInsights | undefined = assessmentData?.insights;
   const isLocked = !!bid.gonogo_decision;
   const hasScores = scoredCount > 0;
+
+  // Auto-generate insights once when scores exist but no cached insights yet.
+  // Guards: data must be fully loaded (!isLoading) so we don't fire on the
+  // undefined-during-fetch window; and we track per-bid with a ref so tab
+  // switching never re-fires even if staleTime hasn't expired yet.
+  const autoFiredRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (
+      !isLoading &&
+      hasScores &&
+      !insights &&
+      !generateInsights.isPending &&
+      autoFiredRef.current !== bid.id
+    ) {
+      autoFiredRef.current = bid.id;
+      generateInsights.mutate(bid.id);
+    }
+  }, [isLoading, hasScores, !!insights, bid.id]);
 
   const bidStrength =
     totalScore >= 75 ? "Strong" : totalScore >= 55 ? "Moderate" : totalScore >= 35 ? "Weak" : "Insufficient Data";
@@ -606,6 +829,39 @@ function QualificationResultTab({ bid }: { bid: Bid }) {
             </div>
           )}
         </section>
+
+        {/* ── Document generation buttons ── */}
+        {(() => {
+          const canGenerate = !!insights && hasScores;
+          const disabledTitle = !canGenerate ? "AI insights must be generated first" : undefined;
+          return (
+            <div className="flex gap-2">
+              <button
+                onClick={() => generateQualResult.mutate({
+                  bidId: bid.id,
+                  clientName: bid.client_name,
+                  decision: bid.gonogo_decision ?? "no_go",
+                  totalScore,
+                })}
+                disabled={generateQualResult.isPending || !canGenerate}
+                title={disabledTitle}
+                className="flex-1 h-9 rounded-md bg-primary text-primary-foreground text-[12px] font-medium disabled:opacity-40 hover:opacity-90 inline-flex items-center justify-center gap-1.5 transition-opacity"
+              >
+                <Mail className="size-3.5" />
+                {generateQualResult.isPending ? "Generating…" : "Notify Bid Team"}
+              </button>
+              <button
+                onClick={() => generateDealBrief.mutate(bid.id)}
+                disabled={generateDealBrief.isPending || !canGenerate}
+                title={disabledTitle}
+                className="flex-1 h-9 rounded-md hairline border bg-card text-[12px] font-medium disabled:opacity-40 hover:bg-muted inline-flex items-center justify-center gap-1.5 transition-colors"
+              >
+                <Download className="size-3.5" />
+                {generateDealBrief.isPending ? "Generating…" : "Deal Brief"}
+              </button>
+            </div>
+          );
+        })()}
       </div>
 
       {/* ── Right column ── */}
@@ -615,31 +871,30 @@ function QualificationResultTab({ bid }: { bid: Bid }) {
         <section className="bg-card hairline border rounded-xl p-3.5">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-[13px] font-medium">AI Analysis</h3>
-            <button
-              onClick={() => generateInsights.mutate(bid.id)}
-              disabled={generateInsights.isPending || !hasScores}
-              className="h-7 px-2.5 rounded-md bg-primary/10 text-primary text-[11px] font-medium hover:bg-primary/20 disabled:opacity-40 inline-flex items-center gap-1.5 transition-colors"
-            >
-              {generateInsights.isPending ? (
-                <><RefreshCw className="size-3 animate-spin" /> Generating…</>
-              ) : insights ? (
-                <><RefreshCw className="size-3" /> Regenerate</>
-              ) : (
-                <><Sparkles className="size-3" /> Generate with AI</>
-              )}
-            </button>
+            {/* Only show regenerate when insights are already cached */}
+            {insights && (
+              <button
+                onClick={() => {
+                  autoFiredRef.current = null;
+                  generateInsights.mutate(bid.id);
+                }}
+                disabled={generateInsights.isPending}
+                title="Regenerate AI insights"
+                className="h-7 w-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-40 inline-flex items-center justify-center transition-colors"
+              >
+                <RefreshCw className={`size-3 ${generateInsights.isPending ? "animate-spin" : ""}`} />
+              </button>
+            )}
           </div>
 
-          {!hasScores && !insights && (
+          {!hasScores && (
             <p className="text-[11px] text-muted-foreground">
-              Score all parameters in the Bid Assessment tab first, then generate AI insights.
+              Score all parameters in the Bid Assessment tab first.
             </p>
           )}
 
           {hasScores && !insights && !generateInsights.isPending && (
-            <p className="text-[11px] text-muted-foreground">
-              Click "Generate with AI" to get strengths, risks, and a recommendation based on your assessment scores.
-            </p>
+            <p className="text-[11px] text-muted-foreground">Generating AI analysis…</p>
           )}
 
           {generateInsights.isPending && (
@@ -861,4 +1116,58 @@ function KV({
 
 function Empty({ children }: { children: React.ReactNode }) {
   return <div className="text-[12px] text-muted-foreground py-4 text-center">{children}</div>;
+}
+
+function EditKV({
+  label,
+  value,
+  onChange,
+  type = "text",
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  type?: string;
+  placeholder?: string;
+}) {
+  return (
+    <div className="flex items-center justify-between py-1.5 text-[12px] hairline border-b last:border-b-0 gap-4">
+      <span className="text-muted-foreground shrink-0">{label}</span>
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="text-right bg-transparent text-[12px] font-medium text-foreground outline-none focus:ring-0 border-0 p-0 min-w-0 w-40"
+      />
+    </div>
+  );
+}
+
+function EditKVSelect({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <div className="flex items-center justify-between py-1.5 text-[12px] hairline border-b last:border-b-0 gap-4">
+      <span className="text-muted-foreground shrink-0">{label}</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="text-right bg-transparent text-[12px] font-medium text-foreground outline-none border-0 p-0 cursor-pointer appearance-none"
+      >
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>{o.label}</option>
+        ))}
+      </select>
+    </div>
+  );
 }

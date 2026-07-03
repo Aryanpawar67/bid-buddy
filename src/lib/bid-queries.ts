@@ -236,6 +236,9 @@ export function useAssessmentData(bidId: string | undefined) {
   return useQuery({
     queryKey: ["assessment-data", bidId],
     enabled: !!bidId,
+    // Keep cached data fresh for 10 minutes — prevents re-fetching on every tab switch
+    // and avoids a brief undefined state that would re-trigger auto-insight generation.
+    staleTime: 10 * 60 * 1000,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("bids")
@@ -258,9 +261,18 @@ export function useSaveAssessment() {
         .eq("id", bidId);
       if (error) throw error;
     },
-    onSuccess: (_d, v) => {
+    onSuccess: async (_d, v) => {
       qc.invalidateQueries({ queryKey: ["assessment-data", v.bidId] });
       qc.invalidateQueries({ queryKey: ["bid", v.bidId] });
+      const hasAnyScore = Object.values(v.data.scores ?? {}).some((s) => (s as number) > 0);
+      if (hasAnyScore) {
+        const { generateQualificationInsightsFn } = await import("@/lib/api/generate-qualification-insights");
+        const { data: { session } } = await supabase.auth.getSession();
+        generateQualificationInsightsFn({
+          data: { bidId: v.bidId },
+          headers: { authorization: `Bearer ${session?.access_token ?? ""}` },
+        }).catch(() => {});
+      }
     },
   });
 }
@@ -281,6 +293,86 @@ export function useGenerateQualificationInsights() {
     onSuccess: (_d, bidId) => {
       qc.invalidateQueries({ queryKey: ["assessment-data", bidId] });
       qc.invalidateQueries({ queryKey: ["bid", bidId] });
+    },
+  });
+}
+
+// ── useGenerateQualResult ─────────────────────────────────────────────────────
+export function useGenerateQualResult() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ bidId, clientName, decision, totalScore }: {
+      bidId: string;
+      clientName: string;
+      decision: string;
+      totalScore: number;
+    }) => {
+      const { generateQualResultFn } = await import("@/lib/api/generate-qual-docs");
+      const { data: { session } } = await supabase.auth.getSession();
+
+      // Fetch team emails at click-time (not on render) to avoid CORS spam
+      const { data: teamRows } = await (supabase as any)
+        .from("bid_assignments")
+        .select("profiles(email)")
+        .eq("bid_id", bidId);
+      const teamEmails = ((teamRows ?? []) as any[])
+        .map((r: any) => r.profiles?.email)
+        .filter(Boolean)
+        .join(",");
+
+      const resp = await generateQualResultFn({
+        data: { bidId },
+        headers: { authorization: `Bearer ${session?.access_token ?? ""}` },
+      }) as Response;
+      if (!resp.ok) throw new Error("Generation failed");
+      const blob = await resp.blob();
+      const cd = resp.headers.get("Content-Disposition") ?? "";
+      const filename = cd.match(/filename="([^"]+)"/)?.[1] ?? "QualResult.docx";
+      // Trigger download
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = filename; a.click();
+      URL.revokeObjectURL(url);
+      // Open pre-filled mailto after download registers
+      setTimeout(() => {
+        const decLabel = decision === "go" ? "GO" : decision === "conditional_go" ? "CONDITIONAL GO" : "NO GO";
+        const subject = encodeURIComponent(`[Bid Compass] Qual Result — ${clientName} | ${decLabel}`);
+        const body = encodeURIComponent(
+          `Hi team,\n\nThe Bid Qualification Result for ${clientName} has been locked.\n\nDecision: ${decLabel}\nScore: ${totalScore} / 100\n\nPlease find the attached Qualification Result document.\n\n— iMocha Bid Compass`
+        );
+        window.location.href = `mailto:${teamEmails}?subject=${subject}&body=${body}`;
+      }, 800);
+      return filename;
+    },
+    onSuccess: (_d, { bidId }) => {
+      qc.invalidateQueries({ queryKey: ["documents", { bidId }] });
+    },
+  });
+}
+
+// ── useGenerateDealBrief ──────────────────────────────────────────────────────
+export function useGenerateDealBrief() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (bidId: string) => {
+      const { generateDealBriefFn } = await import("@/lib/api/generate-qual-docs");
+      const { data: { session } } = await supabase.auth.getSession();
+      const resp = await generateDealBriefFn({
+        data: { bidId },
+        headers: { authorization: `Bearer ${session?.access_token ?? ""}` },
+      }) as Response;
+      if (!resp.ok) throw new Error("Generation failed");
+      const blob = await resp.blob();
+      const cd = resp.headers.get("Content-Disposition") ?? "";
+      const filename = cd.match(/filename="([^"]+)"/)?.[1] ?? "DealBrief.docx";
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = filename; a.click();
+      URL.revokeObjectURL(url);
+      return filename;
+    },
+    onSuccess: (_d, bidId) => {
+      qc.invalidateQueries({ queryKey: ["documents", { bidId }] });
     },
   });
 }
