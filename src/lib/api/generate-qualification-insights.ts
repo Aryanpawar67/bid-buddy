@@ -97,7 +97,8 @@ Rules:
     try {
       const cleaned = rawText.replace(/^```[a-z]*\n?/m, "").replace(/```$/m, "").trim();
       insights = JSON.parse(cleaned);
-    } catch {
+    } catch (e) {
+      console.error("[generate-qualification-insights] JSON parse failed:", e, "\nraw:", rawText);
       return new Response("Failed to parse AI response", { status: 500 });
     }
 

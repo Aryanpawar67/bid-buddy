@@ -893,8 +893,23 @@ function QualificationResultTab({ bid }: { bid: Bid }) {
             </p>
           )}
 
-          {hasScores && !insights && !generateInsights.isPending && (
+          {hasScores && !insights && !generateInsights.isPending && !generateInsights.isError && (
             <p className="text-[11px] text-muted-foreground">Generating AI analysis…</p>
+          )}
+
+          {hasScores && !insights && generateInsights.isError && (
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] text-destructive">Could not generate insights.</p>
+              <button
+                onClick={() => {
+                  autoFiredRef.current = null;
+                  generateInsights.mutate(bid.id);
+                }}
+                className="h-6 px-2 rounded-md text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted inline-flex items-center gap-1 transition-colors"
+              >
+                <RefreshCw className="size-3" /> Retry
+              </button>
+            </div>
           )}
 
           {generateInsights.isPending && (
