@@ -159,8 +159,7 @@ async function uploadDoc(opts: {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const generateQualResultFn = createServerFn({ method: "POST" })
-  .validator((d: unknown) => d as { bidId: string })
-  .handler(async ({ data }) => {
+  .handler(async ({ data }: { data: { bidId: string } }) => {
     const user = await authUser(getRequest());
     if (!user) return new Response("Unauthorized", { status: 401 });
 
@@ -494,8 +493,7 @@ export const generateQualResultFn = createServerFn({ method: "POST" })
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const generateDealBriefFn = createServerFn({ method: "POST" })
-  .validator((d: unknown) => d as { bidId: string })
-  .handler(async ({ data }) => {
+  .handler(async ({ data }: { data: { bidId: string } }) => {
     const user = await authUser(getRequest());
     if (!user) return new Response("Unauthorized", { status: 401 });
 

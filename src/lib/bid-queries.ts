@@ -294,6 +294,9 @@ export function useGenerateQualificationInsights() {
       qc.invalidateQueries({ queryKey: ["assessment-data", bidId] });
       qc.invalidateQueries({ queryKey: ["bid", bidId] });
     },
+    onError: (e) => {
+      console.error("[useGenerateQualificationInsights] error:", e);
+    },
   });
 }
 

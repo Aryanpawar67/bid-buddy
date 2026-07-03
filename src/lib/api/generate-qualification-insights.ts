@@ -17,14 +17,14 @@ const CRITERIA_META: Record<string, { parameter: string; weight: number }> = {
 };
 
 export const generateQualificationInsightsFn = createServerFn({ method: "POST" })
-  .validator((d: unknown) => d as { bidId: string })
-  .handler(async ({ data }) => {
+  .handler(async ({ data }: { data: { bidId: string } }) => {
+    try {
     const authHeader = getRequest().headers.get("authorization");
     const token = authHeader?.replace("Bearer ", "");
-    if (!token) return new Response("Unauthorized", { status: 401 });
+    if (!token) throw new Error("Unauthorized");
 
     const { data: { user }, error: authErr } = await supabaseAdmin.auth.getUser(token);
-    if (authErr || !user) return new Response("Unauthorized", { status: 401 });
+    if (authErr || !user) throw new Error(`Auth failed: ${authErr?.message}`);
 
     // Fetch bid + assessment data
     const { data: bid, error: bidErr } = await supabaseAdmin
@@ -32,7 +32,7 @@ export const generateQualificationInsightsFn = createServerFn({ method: "POST" }
       .select("client_name, title, type, value, priority, assessment_data")
       .eq("id", data.bidId)
       .maybeSingle();
-    if (bidErr || !bid) return new Response("Bid not found", { status: 404 });
+    if (bidErr || !bid) throw new Error(`Bid not found: ${bidErr?.message}`);
 
     const assessmentData = (bid as any).assessment_data as {
       scores: Record<string, number>;
@@ -97,9 +97,8 @@ Rules:
     try {
       const cleaned = rawText.replace(/^```[a-z]*\n?/m, "").replace(/```$/m, "").trim();
       insights = JSON.parse(cleaned);
-    } catch (e) {
-      console.error("[generate-qualification-insights] JSON parse failed:", e, "\nraw:", rawText);
-      return new Response("Failed to parse AI response", { status: 500 });
+    } catch {
+      throw new Error("Failed to parse AI response");
     }
 
     // Persist insights back into assessment_data
@@ -113,4 +112,8 @@ Rules:
       .eq("id", data.bidId);
 
     return insights;
+    } catch (e) {
+      console.error("[qual-insights] error:", e);
+      throw e;
+    }
   });
