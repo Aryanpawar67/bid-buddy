@@ -1,4 +1,5 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { DocxViewerModal } from "@/components/docs/DocxViewerModal";
 import { Lock, CheckCircle2, Users, ClipboardList, BarChart3, Activity, ArrowRight, RefreshCw, FileText, Eye, Mail, Download } from "lucide-react";
 import { STAGES, stageLabel, fmtMoney, urgencyClass, initials } from "@/lib/bid-constants";
 import type { Bid, AssessmentData, QualificationInsights } from "@/lib/bid-queries";
@@ -667,6 +668,9 @@ function QualificationResultTab({ bid }: { bid: Bid }) {
   const isLocked = !!bid.gonogo_decision;
   const hasScores = scoredCount > 0;
 
+  const [docxViewer, setDocxViewer] = useState<{ url: string; filename: string } | null>(null);
+  const openDocx = useCallback((url: string, filename: string) => setDocxViewer({ url, filename }), []);
+
   // Auto-generate insights once when scores exist but no cached insights yet.
   // Guards: data must be fully loaded (!isLoading) so we don't fire on the
   // undefined-during-fetch window; and we track per-bid with a ref so tab
@@ -709,6 +713,7 @@ function QualificationResultTab({ bid }: { bid: Bid }) {
   if (isLoading) return <Empty>Loading…</Empty>;
 
   return (
+    <>
     <div className="grid grid-cols-[1fr_320px] gap-4">
 
       {/* ── Left column ── */}
@@ -837,12 +842,10 @@ function QualificationResultTab({ bid }: { bid: Bid }) {
           return (
             <div className="flex gap-2">
               <button
-                onClick={() => generateQualResult.mutate({
-                  bidId: bid.id,
-                  clientName: bid.client_name,
-                  decision: bid.gonogo_decision ?? "no_go",
-                  totalScore,
-                })}
+                onClick={() => generateQualResult.mutate(
+                  { bidId: bid.id, clientName: bid.client_name, decision: bid.gonogo_decision ?? "no_go", totalScore },
+                  { onSuccess: (r) => { if (r?.url) openDocx(r.url, r.filename); } }
+                )}
                 disabled={generateQualResult.isPending || !canGenerate}
                 title={disabledTitle}
                 className="flex-1 h-9 rounded-md bg-primary text-primary-foreground text-[12px] font-medium disabled:opacity-40 hover:opacity-90 inline-flex items-center justify-center gap-1.5 transition-opacity"
@@ -851,12 +854,15 @@ function QualificationResultTab({ bid }: { bid: Bid }) {
                 {generateQualResult.isPending ? "Generating…" : "Notify Bid Team"}
               </button>
               <button
-                onClick={() => generateDealBrief.mutate(bid.id)}
+                onClick={() => generateDealBrief.mutate(
+                  bid.id,
+                  { onSuccess: (r) => { if (r?.url) openDocx(r.url, r.filename); } }
+                )}
                 disabled={generateDealBrief.isPending || !canGenerate}
                 title={disabledTitle}
                 className="flex-1 h-9 rounded-md hairline border bg-card text-[12px] font-medium disabled:opacity-40 hover:bg-muted inline-flex items-center justify-center gap-1.5 transition-colors"
               >
-                <Download className="size-3.5" />
+                <Eye className="size-3.5" />
                 {generateDealBrief.isPending ? "Generating…" : "Deal Brief"}
               </button>
             </div>
@@ -1014,6 +1020,14 @@ function QualificationResultTab({ bid }: { bid: Bid }) {
         </section>
       </div>
     </div>
+    {docxViewer && (
+      <DocxViewerModal
+        url={docxViewer.url}
+        filename={docxViewer.filename}
+        onClose={() => setDocxViewer(null)}
+      />
+    )}
+    </>
   );
 }
 

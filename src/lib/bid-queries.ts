@@ -328,17 +328,16 @@ export function useGenerateQualResult() {
         headers: { authorization: `Bearer ${session?.access_token ?? ""}` },
       }) as { url: string; filename: string };
       if (!url) throw new Error("Generation failed — no download URL");
-      window.location.href = url;
-      // Open pre-filled mailto after navigation registers
-      setTimeout(() => {
-        const decLabel = decision === "go" ? "GO" : decision === "conditional_go" ? "CONDITIONAL GO" : "NO GO";
-        const subject = encodeURIComponent(`[Bid Compass] Qual Result — ${clientName} | ${decLabel}`);
-        const body = encodeURIComponent(
-          `Hi team,\n\nThe Bid Qualification Result for ${clientName} has been locked.\n\nDecision: ${decLabel}\nScore: ${totalScore} / 100\n\nPlease find the attached Qualification Result document.\n\n— iMocha Bid Compass`
-        );
-        window.location.href = `mailto:${teamEmails}?subject=${subject}&body=${body}`;
-      }, 800);
-      return filename;
+
+      // Open mailto for team notification
+      const decLabel = decision === "go" ? "GO" : decision === "conditional_go" ? "CONDITIONAL GO" : "NO GO";
+      const subject = encodeURIComponent(`[Bid Compass] Qual Result — ${clientName} | ${decLabel}`);
+      const body = encodeURIComponent(
+        `Hi team,\n\nThe Bid Qualification Result for ${clientName} has been locked.\n\nDecision: ${decLabel}\nScore: ${totalScore} / 100\n\nPlease find the attached Qualification Result document.\n\n— iMocha Bid Compass`
+      );
+      if (teamEmails) window.open(`mailto:${teamEmails}?subject=${subject}&body=${body}`, "_self");
+
+      return { url, filename };
     },
     onSuccess: (_d, { bidId }) => {
       qc.invalidateQueries({ queryKey: ["documents", { bidId }] });
@@ -358,9 +357,7 @@ export function useGenerateDealBrief() {
         headers: { authorization: `Bearer ${session?.access_token ?? ""}` },
       }) as { url: string; filename: string };
       if (!url) throw new Error("Generation failed — no download URL");
-      const viewerUrl = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(url)}`;
-      window.open(viewerUrl, "_blank", "noopener,noreferrer");
-      return filename;
+      return { url, filename };
     },
     onSuccess: (_d, bidId) => {
       qc.invalidateQueries({ queryKey: ["documents", { bidId }] });
