@@ -451,7 +451,7 @@ export const generateQualResultFn = createServerFn({ method: "POST" })
                 alignment: AlignmentType.CENTER,
                 children: [
                   new TextRun({ text: `Prepared by ${preparedBy} via iMocha Bid Compass · ${today} · CONFIDENTIAL  `, color: C.muted, size: 16, font: "Calibri" }),
-                  new TextRun({ children: [new PageNumber()] }),
+                  new TextRun({ children: [PageNumber.CURRENT] }),
                 ],
               }),
             ],
@@ -478,14 +478,10 @@ export const generateQualResultFn = createServerFn({ method: "POST" })
     const filename = `iMocha_${slug}_QualResult_${dateStr}.docx`;
 
     // Upload to Knowledge Hub (non-blocking — don't fail the download if storage errors)
-    uploadDoc({ buffer, bidId: data.bidId, userId: user.id, folder: "qual-result", filename }).catch(() => {});
-
-    return new Response(buffer, {
-      headers: {
-        "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "Content-Disposition": `attachment; filename="${filename}"`,
-      },
-    });
+    await uploadDoc({ buffer, bidId: data.bidId, userId: user.id, folder: "qual-result", filename });
+    const storagePath = `${data.bidId}/qual-result/${filename}`;
+    const { data: signed } = await supabaseAdmin.storage.from("bid-documents").createSignedUrl(storagePath, 300);
+    return { url: signed?.signedUrl ?? "", filename };
   });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -517,14 +513,17 @@ export const generateDealBriefFn = createServerFn({ method: "POST" })
     const teamLead = team[0]?.name ?? "Bid Team";
 
     const ad: any = bid.assessment_data ?? {};
+    const scores: Record<string, number> = ad.scores ?? {};
     const insights = ad.insights ?? null;
 
     const totalScore = Math.round(
-      CRITERIA.reduce((s, c) => s + (((ad.scores ?? {})[c.id] ?? 0) / 5) * c.weight * 100, 0)
+      CRITERIA.reduce((s, c) => s + ((scores[c.id] ?? 0) / 5) * c.weight * 100, 0)
     );
     const dec: string = bid.gonogo_decision ?? (totalScore >= 65 ? "go" : totalScore >= 45 ? "conditional_go" : "no_go");
     const logo = await getLogo();
     const today = fmtDate(new Date().toISOString());
+    const deadline = bid.deadline ? fmtDate(bid.deadline) : "TBD";
+    const productLine = (bid.type ?? "").toUpperCase() === "TM" ? "Talent Management (Skills Intelligence)" : "Talent Acquisition (Skills Assessment)";
 
     // ── KPI box helper ──────────────────────────────────────────────────────
     function kpiCell(label: string, value: string, valueColour: string, shade: string): TableCell {
@@ -545,25 +544,94 @@ export const generateDealBriefFn = createServerFn({ method: "POST" })
       });
     }
 
-    // ── Next steps by decision ──────────────────────────────────────────────
+    // ── Overview table row helper ───────────────────────────────────────────
+    function ovCell(text: string, shade: string, bold = false): TableCell {
+      return new TableCell({
+        shading: { type: ShadingType.SOLID, color: shade },
+        borders: { top: hairline, bottom: hairline, left: noBorder, right: hairline },
+        margins: { top: 80, bottom: 80, left: 120, right: 120 },
+        children: [new Paragraph({
+          children: [new TextRun({ text, bold, size: 19, font: "Calibri", color: C.ink })],
+        })],
+      });
+    }
+
+    // ── Score breakdown row helper ──────────────────────────────────────────
+    function scoreRow(criterion: string, score: number, weight: number): TableRow {
+      const status = paramStatus(score);
+      const colour = paramStatusColour(score);
+      const dots = score > 0 ? "●".repeat(score) + "○".repeat(5 - score) : "○○○○○";
+      return new TableRow({
+        children: [
+          new TableCell({
+            borders: { top: hairline, bottom: hairline, left: noBorder, right: hairline },
+            margins: { top: 60, bottom: 60, left: 120, right: 80 },
+            children: [new Paragraph({ children: [new TextRun({ text: criterion, size: 18, font: "Calibri", color: C.ink })] })],
+          }),
+          new TableCell({
+            borders: { top: hairline, bottom: hairline, left: noBorder, right: hairline },
+            margins: { top: 60, bottom: 60, left: 80, right: 80 },
+            children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: score > 0 ? `${score}/5` : "—", size: 18, font: "Calibri", color: C.ink, bold: true })] })],
+          }),
+          new TableCell({
+            borders: { top: hairline, bottom: hairline, left: noBorder, right: hairline },
+            margins: { top: 60, bottom: 60, left: 80, right: 80 },
+            children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: dots, size: 14, font: "Calibri", color: colour })] })],
+          }),
+          new TableCell({
+            borders: { top: hairline, bottom: hairline, left: noBorder, right: hairline },
+            margins: { top: 60, bottom: 60, left: 80, right: 80 },
+            children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: `${Math.round(weight * 100)}%`, size: 18, font: "Calibri", color: C.muted })] })],
+          }),
+          new TableCell({
+            shading: { type: ShadingType.SOLID, color: score === 0 ? C.mutedBg : score >= 4 ? C.goTint : score === 3 ? C.warnTint : C.nogoTint },
+            borders: { top: hairline, bottom: hairline, left: noBorder, right: noBorder },
+            margins: { top: 60, bottom: 60, left: 80, right: 80 },
+            children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: status, size: 18, font: "Calibri", color: colour, bold: true })] })],
+          }),
+        ],
+      });
+    }
+
+    // ── Decision badge (table cell — renders reliably) ──────────────────────
+    function decisionBadge(): Table {
+      return new Table({
+        width: { size: 20, type: WidthType.PERCENTAGE },
+        rows: [new TableRow({
+          children: [new TableCell({
+            shading: { type: ShadingType.SOLID, color: decisionColour(dec) },
+            borders: { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder },
+            margins: { top: 100, bottom: 100, left: 200, right: 200 },
+            children: [new Paragraph({
+              alignment: AlignmentType.CENTER,
+              children: [new TextRun({ text: decisionLabel(dec), color: C.white, bold: true, size: 32, font: "Calibri" })],
+            })],
+          })],
+        })],
+      });
+    }
+
+    // ── Next steps by decision (bid-specific) ──────────────────────────────
     const nextSteps: Record<string, string[]> = {
       go: [
-        "Advance bid to RFI stage and brief team on deliverables.",
-        "Confirm client engagement timeline and kickoff date.",
-        "Assign RFI lead and schedule internal kick-off call.",
+        `Assign ${bid.title} to the pre-sales lead and schedule the internal kick-off call this week.`,
+        `Confirm ${bid.client_name}'s submission timeline and lock in key milestones before ${deadline}.`,
+        "Brief the cross-functional team (legal, finance, pre-sales) on deliverables and ownership.",
+        `Open the AI Command Center session for ${bid.client_name} and begin drafting the RFI response.`,
       ],
       conditional_go: [
-        "Resolve open conditions identified in the assessment.",
-        "Schedule stakeholder review before advancing to RFI.",
-        "Confirm final go/no-go with leadership after resolution.",
+        "Resolve the open qualification conditions identified in the risk section above.",
+        `Schedule a stakeholder review call with ${bid.client_name} to clarify decision-maker alignment.`,
+        "Confirm final Go/No-Go with leadership after all conditions are addressed.",
+        `Reassess competitive position and security/compliance requirements before advancing past ${deadline}.`,
       ],
       no_go: [
-        "Notify client of withdrawal in a timely and professional manner.",
-        "Capture lessons learned for future pipeline improvement.",
-        "Archive all bid assets in the Knowledge Hub.",
+        `Notify ${bid.client_name} of iMocha's withdrawal in a professional and timely manner.`,
+        "Capture lessons learned and update the team's qualification playbook accordingly.",
+        "Archive all bid assets in the Knowledge Hub for future reference.",
+        "Redirect pre-sales capacity to higher-scoring opportunities in the pipeline.",
       ],
     };
-
     const steps = nextSteps[dec] ?? nextSteps["no_go"];
 
     // ── Assemble document ───────────────────────────────────────────────────
@@ -579,7 +647,7 @@ export const generateDealBriefFn = createServerFn({ method: "POST" })
                 alignment: AlignmentType.CENTER,
                 children: [
                   new TextRun({ text: `Prepared by ${teamLead} · iMocha Bid Compass · ${today} · LEADERSHIP USE ONLY  `, color: C.muted, size: 16, font: "Calibri" }),
-                  new TextRun({ children: [new PageNumber()] }),
+                  new TextRun({ children: [PageNumber.CURRENT] }),
                 ],
               }),
             ],
@@ -598,10 +666,17 @@ export const generateDealBriefFn = createServerFn({ method: "POST" })
           }),
           new Paragraph({
             shading: { type: ShadingType.SOLID, color: C.navy },
-            spacing: { before: 60, after: 200 },
+            spacing: { before: 60, after: 40 },
             children: [
               new TextRun({ text: bid.client_name, color: C.white, bold: true, size: 48, font: "Calibri" }),
-              new TextRun({ text: `   ${bid.title}`, color: "AAAACC", size: 22, font: "Calibri" }),
+            ],
+          }),
+          new Paragraph({
+            shading: { type: ShadingType.SOLID, color: C.navy },
+            spacing: { before: 0, after: 200 },
+            children: [
+              new TextRun({ text: bid.title, color: "AAAACC", size: 22, font: "Calibri" }),
+              new TextRun({ text: `   ·   ${productLine}`, color: "7766BB", size: 18, font: "Calibri" }),
             ],
           }),
 
@@ -615,16 +690,43 @@ export const generateDealBriefFn = createServerFn({ method: "POST" })
             rows: [
               new TableRow({
                 children: [
-                  kpiCell("Deal Value",    fmtMoney(bid.value),            C.orange,               "FFF8F4"),
-                  kpiCell("Qual. Score",   `${totalScore}/100`,             decisionColour(dec),     decisionTint(dec)),
-                  kpiCell("Decision",      decisionLabel(dec),              decisionColour(dec),     decisionTint(dec)),
-                  kpiCell("Bid Strength",  bidStrength(totalScore),         C.navy,                 C.purpleTint),
+                  kpiCell("Deal Value",    fmtMoney(bid.value),            C.orange,            "FFF8F4"),
+                  kpiCell("Qual. Score",   `${totalScore}/100`,            decisionColour(dec), decisionTint(dec)),
+                  kpiCell("Decision",      decisionLabel(dec),             decisionColour(dec), decisionTint(dec)),
+                  kpiCell("Bid Strength",  bidStrength(totalScore),        C.navy,              C.purpleTint),
                 ],
               }),
             ],
           }),
 
-          // 3. Strategic Rationale
+          // 3. Opportunity Overview
+          new Paragraph({
+            spacing: { before: 280, after: 80 },
+            children: [new TextRun({ text: "Opportunity Overview", color: C.navy, bold: true, size: 26, font: "Calibri" })],
+          }),
+          new Table({
+            width: { size: 100, type: WidthType.PERCENTAGE },
+            rows: [
+              new TableRow({ children: [
+                ovCell("Client",      C.mutedBg, true),  ovCell(bid.client_name,  "FFFFFF"),
+                ovCell("Product Line", C.mutedBg, true), ovCell(productLine,       "FFFFFF"),
+              ]}),
+              new TableRow({ children: [
+                ovCell("Bid Type",    C.mutedBg, true),  ovCell((bid.type ?? "—").toUpperCase(), "FFFFFF"),
+                ovCell("Priority",    C.mutedBg, true),  ovCell(bid.priority ? bid.priority.charAt(0).toUpperCase() + bid.priority.slice(1) : "—", "FFFFFF"),
+              ]}),
+              new TableRow({ children: [
+                ovCell("Deal Value",  C.mutedBg, true),  ovCell(fmtMoney(bid.value), "FFFFFF"),
+                ovCell("Deadline",    C.mutedBg, true),  ovCell(deadline,             "FFFFFF"),
+              ]}),
+              new TableRow({ children: [
+                ovCell("Current Stage", C.mutedBg, true), ovCell("Deal Qualification", "FFFFFF"),
+                ovCell("Bid Team Lead",  C.mutedBg, true), ovCell(teamLead,              "FFFFFF"),
+              ]}),
+            ],
+          }),
+
+          // 4. Strategic Rationale
           new Paragraph({
             spacing: { before: 280, after: 80 },
             children: [new TextRun({ text: "Strategic Rationale", color: C.navy, bold: true, size: 26, font: "Calibri" })],
@@ -633,7 +735,7 @@ export const generateDealBriefFn = createServerFn({ method: "POST" })
             spacing: { before: 0, after: 80 },
             children: [new TextRun({ text: "Why we should pursue this opportunity:", color: C.muted, size: 18, font: "Calibri" })],
           }),
-          ...(insights?.strengths?.slice(0, 3) ?? ["Insights not yet generated."]).map((s: string) =>
+          ...(insights?.strengths ?? ["Insights not yet generated — please run AI Insights on the Qualification tab first."]).map((s: string) =>
             new Paragraph({
               bullet: { level: 0 },
               spacing: { before: 60, after: 60 },
@@ -641,12 +743,12 @@ export const generateDealBriefFn = createServerFn({ method: "POST" })
             })
           ),
 
-          // 4. Key Risks
+          // 5. Key Risks
           new Paragraph({
             spacing: { before: 240, after: 80 },
             children: [new TextRun({ text: "Key Risks to Manage", color: C.warn, bold: true, size: 26, font: "Calibri" })],
           }),
-          ...(insights?.risks?.slice(0, 3) ?? ["Insights not yet generated."]).map((r: string) =>
+          ...(insights?.risks ?? ["Insights not yet generated."]).map((r: string) =>
             new Paragraph({
               bullet: { level: 0 },
               spacing: { before: 60, after: 60 },
@@ -654,33 +756,47 @@ export const generateDealBriefFn = createServerFn({ method: "POST" })
             })
           ),
 
-          // 5. Recommendation box
+          // 6. Score Breakdown
           new Paragraph({
-            spacing: { before: 240, after: 80 },
-            children: [new TextRun({ text: "Recommendation", color: C.navy, bold: true, size: 26, font: "Calibri" })],
+            spacing: { before: 280, after: 80 },
+            children: [new TextRun({ text: "Assessment Score Breakdown", color: C.navy, bold: true, size: 26, font: "Calibri" })],
+          }),
+          new Table({
+            width: { size: 100, type: WidthType.PERCENTAGE },
+            rows: [
+              // Header
+              new TableRow({
+                tableHeader: true,
+                children: [
+                  new TableCell({ shading: { type: ShadingType.SOLID, color: C.navy }, borders: { top: noBorder, bottom: noBorder, left: noBorder, right: hairline }, margins: { top: 80, bottom: 80, left: 120, right: 80 }, children: [new Paragraph({ children: [new TextRun({ text: "Criterion", color: C.white, bold: true, size: 18, font: "Calibri" })] })] }),
+                  new TableCell({ shading: { type: ShadingType.SOLID, color: C.navy }, borders: { top: noBorder, bottom: noBorder, left: noBorder, right: hairline }, margins: { top: 80, bottom: 80, left: 80, right: 80 }, children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: "Score", color: C.white, bold: true, size: 18, font: "Calibri" })] })] }),
+                  new TableCell({ shading: { type: ShadingType.SOLID, color: C.navy }, borders: { top: noBorder, bottom: noBorder, left: noBorder, right: hairline }, margins: { top: 80, bottom: 80, left: 80, right: 80 }, children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: "Rating", color: C.white, bold: true, size: 18, font: "Calibri" })] })] }),
+                  new TableCell({ shading: { type: ShadingType.SOLID, color: C.navy }, borders: { top: noBorder, bottom: noBorder, left: noBorder, right: hairline }, margins: { top: 80, bottom: 80, left: 80, right: 80 }, children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: "Weight", color: C.white, bold: true, size: 18, font: "Calibri" })] })] }),
+                  new TableCell({ shading: { type: ShadingType.SOLID, color: C.navy }, borders: { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder }, margins: { top: 80, bottom: 80, left: 80, right: 80 }, children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: "Status", color: C.white, bold: true, size: 18, font: "Calibri" })] })] }),
+                ],
+              }),
+              ...CRITERIA.map(c => scoreRow(c.parameter, scores[c.id] ?? 0, c.weight)),
+            ],
+          }),
+
+          // 7. Recommendation
+          new Paragraph({
+            spacing: { before: 280, after: 80 },
+            children: [new TextRun({ text: "Leadership Recommendation", color: C.navy, bold: true, size: 26, font: "Calibri" })],
           }),
           new Paragraph({
             shading: { type: ShadingType.SOLID, color: C.purpleTint },
-            spacing: { before: 80, after: 80 },
+            spacing: { before: 100, after: 100 },
+            indent: { left: 160, right: 160 },
             children: [new TextRun({
               text: insights?.recommendation ?? "Please generate AI insights in the Qualification Result tab first.",
               size: 20, font: "Calibri", color: C.ink,
             })],
           }),
-          new Paragraph({
-            spacing: { before: 120, after: 0 },
-            alignment: AlignmentType.CENTER,
-            children: [new TextRun({
-              text: `  ${decisionLabel(dec)}  `,
-              color: C.white,
-              bold: true,
-              size: 32,
-              font: "Calibri",
-              shading: { type: ShadingType.SOLID, fill: decisionColour(dec) },
-            })],
-          }),
+          new Paragraph({ spacing: { before: 120, after: 0 }, children: [] }),
+          decisionBadge(),
 
-          // 6. Next steps
+          // 8. Recommended Next Steps
           new Paragraph({
             spacing: { before: 280, after: 80 },
             children: [new TextRun({ text: "Recommended Next Steps", color: C.navy, bold: true, size: 26, font: "Calibri" })],
@@ -703,12 +819,8 @@ export const generateDealBriefFn = createServerFn({ method: "POST" })
     const dateStr = new Date().toISOString().slice(0, 10);
     const filename = `iMocha_${slug}_DealBrief_${dateStr}.docx`;
 
-    uploadDoc({ buffer, bidId: data.bidId, userId: user.id, folder: "deal-brief", filename }).catch(() => {});
-
-    return new Response(buffer, {
-      headers: {
-        "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "Content-Disposition": `attachment; filename="${filename}"`,
-      },
-    });
+    await uploadDoc({ buffer, bidId: data.bidId, userId: user.id, folder: "deal-brief", filename });
+    const storagePath = `${data.bidId}/deal-brief/${filename}`;
+    const { data: signed } = await supabaseAdmin.storage.from("bid-documents").createSignedUrl(storagePath, 300);
+    return { url: signed?.signedUrl ?? "", filename };
   });

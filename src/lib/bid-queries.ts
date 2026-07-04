@@ -323,20 +323,13 @@ export function useGenerateQualResult() {
         .filter(Boolean)
         .join(",");
 
-      const resp = await generateQualResultFn({
+      const { url, filename } = await generateQualResultFn({
         data: { bidId },
         headers: { authorization: `Bearer ${session?.access_token ?? ""}` },
-      }) as Response;
-      if (!resp.ok) throw new Error("Generation failed");
-      const blob = await resp.blob();
-      const cd = resp.headers.get("Content-Disposition") ?? "";
-      const filename = cd.match(/filename="([^"]+)"/)?.[1] ?? "QualResult.docx";
-      // Trigger download
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url; a.download = filename; a.click();
-      URL.revokeObjectURL(url);
-      // Open pre-filled mailto after download registers
+      }) as { url: string; filename: string };
+      if (!url) throw new Error("Generation failed — no download URL");
+      window.location.href = url;
+      // Open pre-filled mailto after navigation registers
       setTimeout(() => {
         const decLabel = decision === "go" ? "GO" : decision === "conditional_go" ? "CONDITIONAL GO" : "NO GO";
         const subject = encodeURIComponent(`[Bid Compass] Qual Result — ${clientName} | ${decLabel}`);
@@ -360,22 +353,20 @@ export function useGenerateDealBrief() {
     mutationFn: async (bidId: string) => {
       const { generateDealBriefFn } = await import("@/lib/api/generate-qual-docs");
       const { data: { session } } = await supabase.auth.getSession();
-      const resp = await generateDealBriefFn({
+      const { url, filename } = await generateDealBriefFn({
         data: { bidId },
         headers: { authorization: `Bearer ${session?.access_token ?? ""}` },
-      }) as Response;
-      if (!resp.ok) throw new Error("Generation failed");
-      const blob = await resp.blob();
-      const cd = resp.headers.get("Content-Disposition") ?? "";
-      const filename = cd.match(/filename="([^"]+)"/)?.[1] ?? "DealBrief.docx";
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url; a.download = filename; a.click();
-      URL.revokeObjectURL(url);
+      }) as { url: string; filename: string };
+      if (!url) throw new Error("Generation failed — no download URL");
+      const viewerUrl = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(url)}`;
+      window.open(viewerUrl, "_blank", "noopener,noreferrer");
       return filename;
     },
     onSuccess: (_d, bidId) => {
       qc.invalidateQueries({ queryKey: ["documents", { bidId }] });
+    },
+    onError: (e) => {
+      console.error("[useGenerateDealBrief] error:", e);
     },
   });
 }
