@@ -7,6 +7,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { PORTALS } from "@/lib/bid-constants";
 import { useCurrentUser } from "@/lib/auth";
+import { useRef, useState } from "react";
+import { useUploadDocument } from "@/lib/doc-queries";
+import { Paperclip, X as XIcon } from "lucide-react";
 
 const schema = z.object({
   client_name: z.string().trim().min(1).max(120),
@@ -33,6 +36,9 @@ export function IntakeModal({
   const { user } = useCurrentUser();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const upload = useUploadDocument();
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const {
     register,
@@ -43,6 +49,15 @@ export function IntakeModal({
     resolver: zodResolver(schema),
     defaultValues: { type: "rfp", priority: "medium", procurement_portal: "Email", value: 0 },
   });
+
+  function addFiles(incoming: File[]) {
+    const valid = incoming.filter((f) => f.size <= 26_214_400 && /\.(pdf|docx|xlsx)$/i.test(f.name));
+    setPendingFiles((prev) => [...prev, ...valid]);
+  }
+
+  function removeFile(i: number) {
+    setPendingFiles((prev) => prev.filter((_, j) => j !== i));
+  }
 
   async function onSubmit(data: FormData) {
     if (!user) return;
@@ -78,8 +93,24 @@ export function IntakeModal({
       action: "bid_created",
       metadata: { client: data.client_name },
     });
+
+    // Upload any attached documents linked to the new bid
+    for (const file of pendingFiles) {
+      try {
+        await upload.mutateAsync({
+          file,
+          type: "rfp",
+          bidId: row.id,
+          stage: "deal_qualification",
+        });
+      } catch (e) {
+        console.error("Doc upload failed:", e);
+      }
+    }
+
     qc.invalidateQueries({ queryKey: ["bids"] });
     reset();
+    setPendingFiles([]);
     onOpenChange(false);
     navigate({ to: "/bids/$id", params: { id: row.id } });
   }
@@ -134,6 +165,52 @@ export function IntakeModal({
           <F label="HubSpot deal ID (optional)">
             <input {...register("hubspot_deal_id")} className={inputCls} />
           </F>
+          {/* Document attachments */}
+          <div className="col-span-2">
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">
+              Documents <span className="normal-case font-normal">(optional — PDF, DOCX, XLSX)</span>
+            </div>
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              className="border-2 border-dashed rounded-md px-3 py-3 cursor-pointer hover:border-primary/50 transition-colors"
+            >
+              {pendingFiles.length === 0 ? (
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Paperclip className="size-3.5 shrink-0" />
+                  <span className="text-[11px]">Click to attach files</span>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  {pendingFiles.map((f, i) => (
+                    <div key={i} className="flex items-center gap-2 text-[11px]">
+                      <Paperclip className="size-3 text-muted-foreground shrink-0" />
+                      <span className="truncate flex-1 text-foreground">{f.name}</span>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); removeFile(i); }}
+                        className="shrink-0 text-muted-foreground hover:text-destructive"
+                      >
+                        <XIcon className="size-3" />
+                      </button>
+                    </div>
+                  ))}
+                  <div className="text-[10px] text-primary mt-1">+ Add more files</div>
+                </div>
+              )}
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept=".pdf,.docx,.xlsx"
+              className="hidden"
+              onChange={(e) => {
+                addFiles(Array.from(e.target.files ?? []));
+                e.target.value = "";
+              }}
+            />
+          </div>
+
           <div className="col-span-2 flex justify-end gap-2 pt-2">
             <button
               type="button"

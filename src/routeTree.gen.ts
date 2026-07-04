@@ -24,7 +24,6 @@ import { Route as AppCalendarRouteImport } from './routes/_app/calendar'
 import { Route as AppAnalyticsRouteImport } from './routes/_app/analytics'
 import { Route as AppAiRouteImport } from './routes/_app/ai'
 import { Route as AppBidsIdRouteImport } from './routes/_app/bids.$id'
-import { Route as AppBidsIdGonogoRouteImport } from './routes/_app/bids.$id.gonogo'
 
 const PendingRoute = PendingRouteImport.update({
   id: '/pending',
@@ -100,11 +99,6 @@ const AppBidsIdRoute = AppBidsIdRouteImport.update({
   path: '/bids/$id',
   getParentRoute: () => AppRoute,
 } as any)
-const AppBidsIdGonogoRoute = AppBidsIdGonogoRouteImport.update({
-  id: '/gonogo',
-  path: '/gonogo',
-  getParentRoute: () => AppBidsIdRoute,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -120,8 +114,7 @@ export interface FileRoutesByFullPath {
   '/pipeline': typeof AppPipelineRoute
   '/queue': typeof AppQueueRoute
   '/settings': typeof AppSettingsRoute
-  '/bids/$id': typeof AppBidsIdRouteWithChildren
-  '/bids/$id/gonogo': typeof AppBidsIdGonogoRoute
+  '/bids/$id': typeof AppBidsIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -137,8 +130,7 @@ export interface FileRoutesByTo {
   '/pipeline': typeof AppPipelineRoute
   '/queue': typeof AppQueueRoute
   '/settings': typeof AppSettingsRoute
-  '/bids/$id': typeof AppBidsIdRouteWithChildren
-  '/bids/$id/gonogo': typeof AppBidsIdGonogoRoute
+  '/bids/$id': typeof AppBidsIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -156,8 +148,7 @@ export interface FileRoutesById {
   '/_app/pipeline': typeof AppPipelineRoute
   '/_app/queue': typeof AppQueueRoute
   '/_app/settings': typeof AppSettingsRoute
-  '/_app/bids/$id': typeof AppBidsIdRouteWithChildren
-  '/_app/bids/$id/gonogo': typeof AppBidsIdGonogoRoute
+  '/_app/bids/$id': typeof AppBidsIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -176,7 +167,6 @@ export interface FileRouteTypes {
     | '/queue'
     | '/settings'
     | '/bids/$id'
-    | '/bids/$id/gonogo'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -193,7 +183,6 @@ export interface FileRouteTypes {
     | '/queue'
     | '/settings'
     | '/bids/$id'
-    | '/bids/$id/gonogo'
   id:
     | '__root__'
     | '/'
@@ -211,7 +200,6 @@ export interface FileRouteTypes {
     | '/_app/queue'
     | '/_app/settings'
     | '/_app/bids/$id'
-    | '/_app/bids/$id/gonogo'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -328,27 +316,8 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppBidsIdRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/bids/$id/gonogo': {
-      id: '/_app/bids/$id/gonogo'
-      path: '/gonogo'
-      fullPath: '/bids/$id/gonogo'
-      preLoaderRoute: typeof AppBidsIdGonogoRouteImport
-      parentRoute: typeof AppBidsIdRoute
-    }
   }
 }
-
-interface AppBidsIdRouteChildren {
-  AppBidsIdGonogoRoute: typeof AppBidsIdGonogoRoute
-}
-
-const AppBidsIdRouteChildren: AppBidsIdRouteChildren = {
-  AppBidsIdGonogoRoute: AppBidsIdGonogoRoute,
-}
-
-const AppBidsIdRouteWithChildren = AppBidsIdRoute._addFileChildren(
-  AppBidsIdRouteChildren,
-)
 
 interface AppRouteChildren {
   AppAiRoute: typeof AppAiRoute
@@ -361,7 +330,7 @@ interface AppRouteChildren {
   AppPipelineRoute: typeof AppPipelineRoute
   AppQueueRoute: typeof AppQueueRoute
   AppSettingsRoute: typeof AppSettingsRoute
-  AppBidsIdRoute: typeof AppBidsIdRouteWithChildren
+  AppBidsIdRoute: typeof AppBidsIdRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
@@ -375,7 +344,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppPipelineRoute: AppPipelineRoute,
   AppQueueRoute: AppQueueRoute,
   AppSettingsRoute: AppSettingsRoute,
-  AppBidsIdRoute: AppBidsIdRouteWithChildren,
+  AppBidsIdRoute: AppBidsIdRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
