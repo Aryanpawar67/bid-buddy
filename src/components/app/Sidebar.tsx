@@ -12,6 +12,8 @@ import {
   Bell,
   LogOut,
   ChevronDown,
+  ChevronsLeft,
+  ChevronsRight,
 } from "lucide-react";
 import { useCurrentUser } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
@@ -24,6 +26,17 @@ export function Sidebar() {
   const { primaryRole, profile, user } = useCurrentUser();
   const path = useRouterState({ select: (s) => s.location.pathname });
   const [pursuitsOpen, setPursuitsOpen] = useState(true);
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return localStorage.getItem("sidebar-collapsed") === "true"; } catch { return false; }
+  });
+
+  function toggleCollapsed() {
+    setCollapsed((c) => {
+      const next = !c;
+      try { localStorage.setItem("sidebar-collapsed", String(next)); } catch {}
+      return next;
+    });
+  }
 
   const { data: bids = [] } = useBids();
   const { data: queueData } = useMyQueue(user?.id);
@@ -53,24 +66,80 @@ export function Sidebar() {
   const canSeePipeline = isAdmin || isPreSales;
   const canSeeAnalytics = isAdmin || isPreSales;
 
-  return (
-    <aside className="w-[220px] min-w-[220px] shrink-0 bg-sidebar flex flex-col overflow-y-auto overflow-x-hidden">
-      {/* Header */}
-      <Link to="/dashboard" className="flex items-center gap-3 px-4 py-4 border-b border-white/[0.08] hover:opacity-90 transition-opacity">
-        <img
-          src="/imocha-symbol.png"
-          alt="iMocha"
-          className="size-8 shrink-0 object-contain"
-        />
-        <div>
-          <div className="text-[13.5px] font-bold text-white leading-tight tracking-[-0.01em]">
-            Bid Compass
-          </div>
-          <div className="text-[9.5px] text-white/35 mt-0.5 uppercase tracking-[0.1em]">
-            Pursuit Management
+  if (collapsed) {
+    return (
+      <aside className="shrink-0 bg-sidebar flex flex-col overflow-y-auto overflow-x-hidden transition-all" style={{ width: 52 }}>
+        {/* Logo icon */}
+        <Link to="/dashboard" className="flex items-center justify-center py-[14px] border-b border-white/[0.08] hover:opacity-90 transition-opacity">
+          <img src="/imocha-symbol.png" alt="iMocha" className="size-7 object-contain" />
+        </Link>
+
+        {/* Collapse toggle */}
+        <button
+          onClick={toggleCollapsed}
+          title="Expand sidebar"
+          className="mx-auto mt-2 size-8 rounded-[6px] flex items-center justify-center bg-white/[0.08] text-white/50 hover:bg-white/[0.16] hover:text-white transition-colors border border-white/[0.08]"
+        >
+          <ChevronsRight className="size-4" strokeWidth={2} />
+        </button>
+
+        {/* Icon-only nav */}
+        <div className="py-1 flex-1 flex flex-col items-center gap-0.5">
+          <IconLink to="/dashboard" icon={LayoutDashboard} label="Dashboard" active={path === "/dashboard"} />
+          {canSeePipeline && (
+            <IconLink to="/pipeline" icon={Target} label="Pursuits" active={path.startsWith("/pipeline")} badge={activeBids.length || undefined} />
+          )}
+          <IconLink to="/queue" icon={CheckSquare} label="My Queue" active={path.startsWith("/queue")} badge={queueCount > 0 ? queueCount : undefined} badgeVariant="accent" />
+          <IconLink to="/ai" icon={Sparkles} label="RFx Responder" active={path.startsWith("/ai")} />
+          {(isAdmin || isPreSales) && (
+            <IconLink to="/docs" icon={BookOpen} label="Knowledge Hub" active={path.startsWith("/docs")} />
+          )}
+          {canSeeAnalytics && (
+            <IconLink to="/analytics" icon={BarChart3} label="Reports & Analytics" active={path.startsWith("/analytics")} />
+          )}
+          <IconLink to="/calendar" icon={Calendar} label="Calendar" active={path.startsWith("/calendar")} />
+          {isAdmin && (
+            <IconLink to="/settings" icon={Settings} label="Settings" active={path.startsWith("/settings")} badge={pendingCount > 0 ? pendingCount : undefined} badgeVariant="accent" />
+          )}
+          <IconLink to="/notifications" icon={Bell} label="Notifications" active={path.startsWith("/notifications")} badge={notifCount > 0 ? notifCount : undefined} badgeVariant="accent" />
+        </div>
+
+        {/* User avatar */}
+        <div className="border-t border-white/[0.08] py-3 flex justify-center">
+          <div
+            title={profile?.full_name ?? profile?.email ?? "User"}
+            className="size-7 rounded-full bg-accent flex items-center justify-center text-[10px] font-semibold text-white shrink-0 cursor-default"
+          >
+            {initials(profile?.full_name ?? profile?.email ?? "?")}
           </div>
         </div>
-      </Link>
+      </aside>
+    );
+  }
+
+  return (
+    <aside className="shrink-0 bg-sidebar flex flex-col overflow-y-auto overflow-x-hidden transition-all" style={{ width: 220 }}>
+      {/* Header */}
+      <div className="flex items-center gap-3 px-4 py-4 border-b border-white/[0.08]">
+        <Link to="/dashboard" className="flex items-center gap-3 flex-1 min-w-0 hover:opacity-90 transition-opacity">
+          <img src="/imocha-symbol.png" alt="iMocha" className="size-8 shrink-0 object-contain" />
+          <div className="min-w-0">
+            <div className="text-[13.5px] font-bold text-white leading-tight tracking-[-0.01em]">
+              Bid Compass
+            </div>
+            <div className="text-[9.5px] text-white/35 mt-0.5 uppercase tracking-[0.1em]">
+              Pursuit Management
+            </div>
+          </div>
+        </Link>
+        <button
+          onClick={toggleCollapsed}
+          title="Collapse sidebar"
+          className="size-7 rounded-[6px] flex items-center justify-center bg-white/[0.06] text-white/40 hover:bg-white/[0.14] hover:text-white transition-colors shrink-0 border border-white/[0.06]"
+        >
+          <ChevronsLeft className="size-4" strokeWidth={2} />
+        </button>
+      </div>
 
       {/* Nav */}
       <div className="py-2 flex-1">
@@ -84,9 +153,7 @@ export function Sidebar() {
             >
               <Target className="size-4 shrink-0 opacity-75" strokeWidth={1.5} />
               <span className="flex-1 truncate text-left">Pursuits</span>
-              <span className="text-[10px] text-white/35 mr-1">
-                {activeBids.length}
-              </span>
+              <span className="text-[10px] text-white/35 mr-1">{activeBids.length}</span>
               <ChevronDown
                 className={`size-3.5 text-white/30 transition-transform ${pursuitsOpen ? "" : "-rotate-90"}`}
                 strokeWidth={1.5}
@@ -96,13 +163,12 @@ export function Sidebar() {
             {pursuitsOpen && (
               <div className="mb-1">
                 {STAGES.map((s, i) => {
-                  const count = activeBids.filter(
-                    (b) => b.stage === s.key,
-                  ).length;
+                  const count = activeBids.filter((b) => b.stage === s.key).length;
+                  const isClosure = s.key === "post_closure";
                   return (
                     <Link
                       key={s.key}
-                      to="/pipeline"
+                      to={isClosure ? "/closure" : "/pipeline"}
                       className="flex items-center gap-2 py-[5px] pl-[38px] pr-[14px] mx-1.5 rounded-[4px] text-[11px] text-white/38 hover:bg-white/10 hover:text-white/70 transition-colors"
                     >
                       <span className="size-4 rounded-full bg-white/[0.08] flex items-center justify-center text-[9px] text-white/50 shrink-0 font-medium">
@@ -119,64 +185,21 @@ export function Sidebar() {
         )}
 
         <SectionLabel>Tools</SectionLabel>
-        <NavLink
-          to="/queue"
-          icon={CheckSquare}
-          label="My Queue"
-          active={path.startsWith("/queue")}
-          badge={queueCount > 0 ? queueCount : undefined}
-          badgeVariant="accent"
-        />
-        <NavLink
-          to="/ai"
-          icon={Sparkles}
-          label="RFx Responder"
-          active={path.startsWith("/ai")}
-          badge="New"
-          badgeVariant="success"
-        />
+        <NavLink to="/queue" icon={CheckSquare} label="My Queue" active={path.startsWith("/queue")} badge={queueCount > 0 ? queueCount : undefined} badgeVariant="accent" />
+        <NavLink to="/ai" icon={Sparkles} label="RFx Responder" active={path.startsWith("/ai")} badge="New" badgeVariant="success" />
         {(isAdmin || isPreSales) && (
-          <NavLink
-            to="/docs"
-            icon={BookOpen}
-            label="Knowledge Hub"
-            active={path.startsWith("/docs")}
-          />
+          <NavLink to="/docs" icon={BookOpen} label="Knowledge Hub" active={path.startsWith("/docs")} />
         )}
         {canSeeAnalytics && (
-          <NavLink
-            to="/analytics"
-            icon={BarChart3}
-            label="Reports & Analytics"
-            active={path.startsWith("/analytics")}
-          />
+          <NavLink to="/analytics" icon={BarChart3} label="Reports & Analytics" active={path.startsWith("/analytics")} />
         )}
-        <NavLink
-          to="/calendar"
-          icon={Calendar}
-          label="Calendar"
-          active={path.startsWith("/calendar")}
-        />
+        <NavLink to="/calendar" icon={Calendar} label="Calendar" active={path.startsWith("/calendar")} />
 
         <SectionLabel>System</SectionLabel>
         {isAdmin && (
-          <NavLink
-            to="/settings"
-            icon={Settings}
-            label="Settings"
-            active={path.startsWith("/settings")}
-            badge={pendingCount > 0 ? pendingCount : undefined}
-            badgeVariant="accent"
-          />
+          <NavLink to="/settings" icon={Settings} label="Settings" active={path.startsWith("/settings")} badge={pendingCount > 0 ? pendingCount : undefined} badgeVariant="accent" />
         )}
-        <NavLink
-          to="/notifications"
-          icon={Bell}
-          label="Notifications"
-          active={path.startsWith("/notifications")}
-          badge={notifCount > 0 ? notifCount : undefined}
-          badgeVariant="accent"
-        />
+        <NavLink to="/notifications" icon={Bell} label="Notifications" active={path.startsWith("/notifications")} badge={notifCount > 0 ? notifCount : undefined} badgeVariant="accent" />
       </div>
 
       {/* Footer / User row */}
@@ -203,6 +226,45 @@ export function Sidebar() {
         </div>
       </div>
     </aside>
+  );
+}
+
+function IconLink({
+  to,
+  icon: Icon,
+  label,
+  active,
+  badge,
+  badgeVariant = "accent",
+}: {
+  to: string;
+  icon: React.ElementType;
+  label: string;
+  active: boolean;
+  badge?: string | number;
+  badgeVariant?: "accent" | "success";
+}) {
+  return (
+    <Link
+      to={to}
+      title={label}
+      className={[
+        "relative size-9 rounded-[6px] flex items-center justify-center transition-colors",
+        active ? "bg-primary text-white" : "text-white/45 hover:bg-white/10 hover:text-white/80",
+      ].join(" ")}
+    >
+      <Icon className="size-4 shrink-0" strokeWidth={1.5} />
+      {badge !== undefined && (
+        <span
+          className={[
+            "absolute top-0.5 right-0.5 min-w-[14px] h-[14px] text-[8px] font-bold px-[3px] rounded-full leading-[14px] text-center",
+            badgeVariant === "success" ? "bg-success text-white" : "bg-accent text-white",
+          ].join(" ")}
+        >
+          {badge}
+        </span>
+      )}
+    </Link>
   );
 }
 

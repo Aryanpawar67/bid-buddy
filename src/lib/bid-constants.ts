@@ -6,7 +6,7 @@ export const STAGES = [
   { key: "due_diligence", label: "Due Diligence", short: "DD" },
   { key: "bafo", label: "BAFO", short: "BAFO" },
   { key: "contract_closure", label: "Contract & Closure", short: "Contract" },
-  { key: "post_closure", label: "Post Closure", short: "Closed" },
+  { key: "post_closure", label: "Closure", short: "Closure" },
 ] as const;
 
 export type StageKey = (typeof STAGES)[number]["key"];
