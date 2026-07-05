@@ -31,3 +31,8 @@ dist-ssr
 *.sln
 *.sw?
 iMocha_GlobalTech_Inc_TA_Proposal_DRAFT.docx
+
+# Environment variables
+.env
+.env.*
+!.env.example
