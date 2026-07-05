@@ -1,0 +1,423 @@
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font-sans)}
+.dash{display:grid;grid-template-columns:200px 1fr;min-height:600px;background:var(--color-background-tertiary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);overflow:hidden}
+.sidebar{background:var(--color-background-primary);border-right:0.5px solid var(--color-border-tertiary);padding:0;display:flex;flex-direction:column}
+.logo{padding:16px;display:flex;align-items:center;gap:8px;border-bottom:0.5px solid var(--color-border-tertiary)}
+.logo-mark{width:28px;height:28px;background:#4F46E5;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:500}
+.logo-text{font-size:13px;font-weight:500;color:var(--color-text-primary)}
+.logo-sub{font-size:10px;color:var(--color-text-secondary)}
+.nav{padding:12px 8px;flex:1}
+.nav-label{font-size:10px;color:var(--color-text-tertiary);padding:8px 8px 4px;letter-spacing:0.05em;text-transform:uppercase}
+.nav-item{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:6px;cursor:pointer;font-size:12px;color:var(--color-text-secondary);margin-bottom:2px;transition:background 0.15s}
+.nav-item:hover{background:var(--color-background-secondary)}
+.nav-item.active{background:#EEF2FF;color:#4F46E5}
+.nav-item i{font-size:15px;width:16px}
+.nav-badge{margin-left:auto;background:#EF4444;color:#fff;font-size:9px;border-radius:10px;padding:1px 5px}
+.nav-badge-purple{margin-left:auto;background:#EEF2FF;color:#4F46E5;font-size:9px;border-radius:10px;padding:1px 6px;font-weight:500}
+.sidebar-user{padding:12px;border-top:0.5px solid var(--color-border-tertiary);display:flex;align-items:center;gap:8px}
+.avatar{width:28px;height:28px;border-radius:50%;background:#4F46E5;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:500;flex-shrink:0}
+.user-name{font-size:12px;font-weight:500;color:var(--color-text-primary)}
+.user-role{font-size:10px;color:var(--color-text-secondary)}
+.main{overflow:auto;display:flex;flex-direction:column}
+.topbar{background:var(--color-background-primary);border-bottom:0.5px solid var(--color-border-tertiary);padding:10px 20px;display:flex;align-items:center;justify-content:space-between}
+.topbar-title{font-size:14px;font-weight:500;color:var(--color-text-primary)}
+.topbar-right{display:flex;align-items:center;gap:8px}
+.tb-btn{display:flex;align-items:center;gap:5px;padding:5px 10px;border-radius:6px;border:0.5px solid var(--color-border-secondary);background:transparent;cursor:pointer;font-size:11px;color:var(--color-text-secondary)}
+.tb-btn:hover{background:var(--color-background-secondary)}
+.tb-btn-primary{background:#4F46E5;border-color:#4F46E5;color:#fff}
+.tb-btn-primary:hover{background:#4338CA;border-color:#4338CA}
+.content{padding:16px;display:flex;flex-direction:column;gap:14px}
+.hero{background:linear-gradient(135deg,#4F46E5 0%,#7C3AED 100%);border-radius:var(--border-radius-lg);padding:18px 20px;color:#fff;position:relative;overflow:hidden}
+.hero-bg{position:absolute;right:-20px;top:-20px;width:120px;height:120px;border-radius:50%;background:rgba(255,255,255,0.05)}
+.hero-greeting{font-size:11px;opacity:0.8;margin-bottom:4px}
+.hero-name{font-size:17px;font-weight:500;margin-bottom:2px}
+.hero-sub{font-size:11px;opacity:0.75;margin-bottom:14px}
+.hero-stats{display:flex;gap:12px;margin-bottom:14px}
+.hero-stat{background:rgba(255,255,255,0.15);border-radius:8px;padding:8px 12px;text-align:center}
+.hero-stat-val{font-size:16px;font-weight:500}
+.hero-stat-label{font-size:9px;opacity:0.75;margin-top:2px}
+.hero-actions{display:flex;gap:8px;flex-wrap:wrap}
+.hero-btn{background:rgba(255,255,255,0.2);border:0.5px solid rgba(255,255,255,0.3);border-radius:6px;padding:6px 12px;color:#fff;font-size:11px;cursor:pointer;display:flex;align-items:center;gap:5px;transition:background 0.15s}
+.hero-btn:hover{background:rgba(255,255,255,0.3)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.card{background:var(--color-background-primary);border-radius:var(--border-radius-lg);border:0.5px solid var(--color-border-tertiary);padding:14px}
+.card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.card-title{font-size:12px;font-weight:500;color:var(--color-text-primary);display:flex;align-items:center;gap:6px}
+.card-title i{font-size:14px;color:#4F46E5}
+.card-link{font-size:11px;color:#4F46E5;cursor:pointer}
+.priority-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:0.5px solid var(--color-border-tertiary)}
+.priority-row:last-child{border-bottom:none;padding-bottom:0}
+.priority-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.p-critical{background:#EF4444}
+.p-medium{background:#F59E0B}
+.p-low{background:#10B981}
+.priority-info{flex:1}
+.priority-name{font-size:12px;color:var(--color-text-primary);font-weight:500}
+.priority-sub{font-size:10px;color:var(--color-text-secondary)}
+.priority-tag{font-size:10px;padding:2px 7px;border-radius:10px}
+.tag-critical{background:#FEF2F2;color:#DC2626}
+.tag-medium{background:#FFFBEB;color:#D97706}
+.tag-low{background:#F0FDF4;color:#16A34A}
+.ai-item{border:0.5px solid var(--color-border-tertiary);border-radius:8px;padding:10px;margin-bottom:8px}
+.ai-item:last-child{margin-bottom:0}
+.ai-item-header{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+.ai-badge{background:#EEF2FF;color:#4F46E5;font-size:9px;padding:2px 6px;border-radius:10px;font-weight:500}
+.ai-item-title{font-size:12px;font-weight:500;color:var(--color-text-primary)}
+.ai-item-action{font-size:11px;color:var(--color-text-secondary);margin-bottom:8px}
+.ai-item-footer{display:flex;align-items:center;justify-content:space-between}
+.ai-impact{font-size:10px;color:#10B981;font-weight:500}
+.btn-sm{padding:4px 10px;border-radius:5px;font-size:11px;border:0.5px solid #4F46E5;background:#EEF2FF;color:#4F46E5;cursor:pointer}
+.btn-sm:hover{background:#4F46E5;color:#fff}
+.funnel{display:flex;flex-direction:column;gap:5px}
+.funnel-stage{display:flex;align-items:center;gap:8px;cursor:pointer}
+.funnel-bar-wrap{flex:1;height:18px;background:var(--color-background-secondary);border-radius:4px;overflow:hidden}
+.funnel-bar{height:100%;border-radius:4px;transition:width 0.3s}
+.funnel-label{font-size:11px;color:var(--color-text-secondary);width:80px}
+.funnel-count{font-size:11px;font-weight:500;color:var(--color-text-primary);width:24px;text-align:right}
+.funnel-stage:hover .funnel-bar{filter:brightness(1.1)}
+.risk-item{border-left:3px solid #EF4444;padding:8px 10px;background:var(--color-background-secondary);border-radius:0 6px 6px 0;margin-bottom:8px}
+.risk-item:last-child{margin-bottom:0}
+.risk-company{font-size:12px;font-weight:500;color:var(--color-text-primary)}
+.risk-amount{font-size:16px;font-weight:500;color:#EF4444}
+.risk-reason{font-size:10px;color:var(--color-text-secondary);margin:2px 0 6px}
+.risk-actions{display:flex;gap:6px}
+.btn-danger{padding:3px 8px;border-radius:5px;font-size:10px;border:0.5px solid #EF4444;background:#FEF2F2;color:#DC2626;cursor:pointer}
+.btn-danger:hover{background:#EF4444;color:#fff}
+.team-row{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:0.5px solid var(--color-border-tertiary)}
+.team-row:last-child{border-bottom:none}
+.team-av{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:500;flex-shrink:0}
+.team-name{font-size:11px;font-weight:500;color:var(--color-text-primary)}
+.team-status{font-size:10px;color:var(--color-text-secondary)}
+.status-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.s-active{background:#10B981}
+.s-pending{background:#F59E0B}
+.s-waiting{background:#94A3B8}
+.s-done{background:#3B82F6}
+.exec-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.exec-card{background:var(--color-background-secondary);border-radius:8px;padding:10px;text-align:center}
+.exec-val{font-size:18px;font-weight:500;color:var(--color-text-primary)}
+.exec-label{font-size:9px;color:var(--color-text-secondary);margin-top:2px}
+.exec-highlight{border:1px solid #4F46E5}
+.quick-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.qa-btn{display:flex;align-items:center;gap:6px;padding:8px 10px;border-radius:7px;border:0.5px solid var(--color-border-secondary);background:transparent;cursor:pointer;font-size:11px;color:var(--color-text-secondary);transition:all 0.15s}
+.qa-btn:hover{background:#EEF2FF;color:#4F46E5;border-color:#C7D2FE}
+.qa-btn i{font-size:14px;color:#4F46E5}
+.notif-item{display:flex;align-items:flex-start;gap:8px;padding:8px 0;border-bottom:0.5px solid var(--color-border-tertiary)}
+.notif-item:last-child{border-bottom:none}
+.notif-icon{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.notif-icon.urgent{background:#FEF2F2;color:#DC2626}
+.notif-icon.info{background:#EFF6FF;color:#3B82F6}
+.notif-icon.warn{background:#FFFBEB;color:#D97706}
+.notif-title{font-size:11px;font-weight:500;color:var(--color-text-primary)}
+.notif-sub{font-size:10px;color:var(--color-text-secondary)}
+.notif-time{font-size:10px;color:var(--color-text-tertiary);margin-top:2px}
+.copilot-float{background:var(--color-background-primary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-lg);padding:14px}
+.copilot-header{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.copilot-icon{width:28px;height:28px;background:#4F46E5;border-radius:7px;display:flex;align-items:center;justify-content:center;color:#fff}
+.copilot-title{font-size:12px;font-weight:500;color:var(--color-text-primary)}
+.copilot-sub{font-size:10px;color:var(--color-text-secondary)}
+.copilot-chips{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px}
+.chip{padding:4px 9px;border-radius:10px;font-size:10px;background:var(--color-background-secondary);color:var(--color-text-secondary);border:0.5px solid var(--color-border-tertiary);cursor:pointer}
+.chip:hover{background:#EEF2FF;color:#4F46E5;border-color:#C7D2FE}
+.copilot-input{display:flex;gap:6px}
+.copilot-input input{flex:1;padding:6px 10px;border-radius:6px;border:0.5px solid var(--color-border-secondary);background:var(--color-background-secondary);font-size:11px;color:var(--color-text-primary);outline:none}
+.copilot-input button{padding:6px 10px;border-radius:6px;border:none;background:#4F46E5;color:#fff;font-size:11px;cursor:pointer}
+.section-divider{font-size:11px;font-weight:500;color:var(--color-text-secondary);padding:2px 0;display:flex;align-items:center;gap:8px}
+.section-divider::after{content:'';flex:1;height:0.5px;background:var(--color-border-tertiary)}
+</style>
+
+<h2 class="sr-only">PursuitPro Command Center — personalized dashboard showing today's priorities, AI recommendations, pipeline funnel, revenue risk, and team status</h2>
+
+<div class="dash">
+  <div class="sidebar">
+    <div class="logo">
+      <div class="logo-mark">P</div>
+      <div>
+        <div class="logo-text">PursuitPro</div>
+        <div class="logo-sub">Pursuit Management</div>
+      </div>
+    </div>
+    <div class="nav">
+      <div class="nav-item active"><i class="ti ti-layout-dashboard" aria-hidden="true"></i> Dashboard</div>
+      <div class="nav-item"><i class="ti ti-briefcase" aria-hidden="true"></i> Pursuits <span class="nav-badge-purple">48</span></div>
+      <div class="nav-item"><i class="ti ti-file-text" aria-hidden="true"></i> RFPs</div>
+      <div class="nav-item"><i class="ti ti-check-circle" aria-hidden="true"></i> My Tasks <span class="nav-badge">4</span></div>
+      <div class="nav-item"><i class="ti ti-calendar" aria-hidden="true"></i> Calendar</div>
+      <div style="margin:8px 0 4px"><div class="nav-label">Pursuit stages</div></div>
+      <div class="nav-item"><i class="ti ti-circle" style="color:#6B7280" aria-hidden="true"></i> Qualification</div>
+      <div class="nav-item"><i class="ti ti-circle" style="color:#3B82F6" aria-hidden="true"></i> RFI / RFP</div>
+      <div class="nav-item"><i class="ti ti-circle" style="color:#8B5CF6" aria-hidden="true"></i> Orals / BAFO</div>
+      <div class="nav-item"><i class="ti ti-circle" style="color:#10B981" aria-hidden="true"></i> Contract</div>
+      <div style="margin:8px 0 4px"><div class="nav-label">Tools</div></div>
+      <div class="nav-item"><i class="ti ti-robot" style="color:#4F46E5" aria-hidden="true"></i> AI Command Center <span class="nav-badge-purple">New</span></div>
+      <div class="nav-item"><i class="ti ti-book" aria-hidden="true"></i> Knowledge Hub</div>
+      <div class="nav-item"><i class="ti ti-chart-bar" aria-hidden="true"></i> Reports</div>
+      <div class="nav-item"><i class="ti ti-bell" aria-hidden="true"></i> Notifications <span class="nav-badge">12</span></div>
+    </div>
+    <div class="sidebar-user">
+      <div class="avatar">SJ</div>
+      <div>
+        <div class="user-name">Shrenik Jain</div>
+        <div class="user-role">Bid Manager</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-title">My Command Center</div>
+      <div class="topbar-right">
+        <button class="tb-btn"><i class="ti ti-search" aria-hidden="true"></i> Search</button>
+        <button class="tb-btn"><i class="ti ti-filter" aria-hidden="true"></i> Filter</button>
+        <button class="tb-btn tb-btn-primary" onclick="sendPrompt('Create a new pursuit in PursuitPro')"><i class="ti ti-plus" aria-hidden="true"></i> New pursuit</button>
+      </div>
+    </div>
+
+    <div class="content">
+      <div class="hero">
+        <div class="hero-bg"></div>
+        <div class="hero-greeting">Thursday, June 25, 2026</div>
+        <div class="hero-name">Good morning, Shrenik 👋</div>
+        <div class="hero-sub">You have 4 actions requiring attention today · Potential revenue impact: <strong>$8.2M</strong></div>
+        <div class="hero-stats">
+          <div class="hero-stat"><div class="hero-stat-val">4</div><div class="hero-stat-label">Actions today</div></div>
+          <div class="hero-stat"><div class="hero-stat-val">48</div><div class="hero-stat-label">Active pursuits</div></div>
+          <div class="hero-stat"><div class="hero-stat-val">3</div><div class="hero-stat-label">Approvals pending</div></div>
+          <div class="hero-stat"><div class="hero-stat-val">87%</div><div class="hero-stat-label">Top win prob.</div></div>
+        </div>
+        <div class="hero-actions">
+          <button class="hero-btn" onclick="sendPrompt('Show me the ABC Bank RFP that needs review')"><i class="ti ti-file-text" aria-hidden="true"></i> Review RFP</button>
+          <button class="hero-btn" onclick="sendPrompt('Open the PharmaCorp BAFO for approval')"><i class="ti ti-check" aria-hidden="true"></i> Approve BAFO</button>
+          <button class="hero-btn" onclick="sendPrompt('Run qualification scoring for my pending pursuits')"><i class="ti ti-chart-line" aria-hidden="true"></i> Run qualification</button>
+          <button class="hero-btn" onclick="sendPrompt('What should I prioritize today based on my pursuits?')"><i class="ti ti-robot" aria-hidden="true"></i> Ask Pursuit Copilot ↗</button>
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><i class="ti ti-list-check" aria-hidden="true"></i> Today's focus</div>
+            <span class="card-link" onclick="sendPrompt('Show all my tasks for today')">View all</span>
+          </div>
+          <div class="priority-row">
+            <div class="priority-dot p-critical"></div>
+            <div class="priority-info">
+              <div class="priority-name">ABC Bank RFP</div>
+              <div class="priority-sub">Submission due tomorrow · Owner: Shrenik</div>
+            </div>
+            <span class="priority-tag tag-critical">Critical</span>
+          </div>
+          <div class="priority-row">
+            <div class="priority-dot p-critical"></div>
+            <div class="priority-info">
+              <div class="priority-name">PharmaCorp BAFO</div>
+              <div class="priority-sub">Approval required · $2.5M at stake</div>
+            </div>
+            <span class="priority-tag tag-critical">Critical</span>
+          </div>
+          <div class="priority-row">
+            <div class="priority-dot p-medium"></div>
+            <div class="priority-info">
+              <div class="priority-name">Contract review – XYZ Insurance</div>
+              <div class="priority-sub">Pending 5 days · Legal waiting</div>
+            </div>
+            <span class="priority-tag tag-medium">Medium</span>
+          </div>
+          <div class="priority-row">
+            <div class="priority-dot p-medium"></div>
+            <div class="priority-info">
+              <div class="priority-name">CXO review deck</div>
+              <div class="priority-sub">Strategic account · Due Fri</div>
+            </div>
+            <span class="priority-tag tag-medium">Medium</span>
+          </div>
+          <div class="priority-row">
+            <div class="priority-dot p-low"></div>
+            <div class="priority-info">
+              <div class="priority-name">HealthCo compliance matrix</div>
+              <div class="priority-sub">7 more low-priority items</div>
+            </div>
+            <span class="priority-tag tag-low">Low</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><i class="ti ti-robot" aria-hidden="true"></i> Pursuit Copilot recommendations</div>
+            <span class="card-link" onclick="sendPrompt('Show all AI recommendations for my pursuits')">All recs</span>
+          </div>
+          <div class="ai-item">
+            <div class="ai-item-header"><span class="ai-badge">⚡ Urgent</span><span style="font-size:10px;color:var(--color-text-tertiary)">Due in 3 days</span></div>
+            <div class="ai-item-title">ABC Bank RFP</div>
+            <div class="ai-item-action">Suggested: Generate executive summary before submission</div>
+            <div class="ai-item-footer"><span class="ai-impact">Impact: $5M</span><button class="btn-sm" onclick="sendPrompt('Generate an executive summary for the ABC Bank RFP pursuit')">Generate ↗</button></div>
+          </div>
+          <div class="ai-item">
+            <div class="ai-item-header"><span class="ai-badge" style="background:#FFFBEB;color:#D97706">⚠ Review</span><span style="font-size:10px;color:var(--color-text-tertiary)">Score = 62</span></div>
+            <div class="ai-item-title">PharmaCorp qualification score low</div>
+            <div class="ai-item-action">Suggested: Schedule GO/NO-GO review with team</div>
+            <div class="ai-item-footer"><span class="ai-impact">Impact: $2.5M</span><button class="btn-sm" onclick="sendPrompt('Schedule a GO/NO-GO review for PharmaCorp pursuit')">Schedule ↗</button></div>
+          </div>
+          <div class="ai-item">
+            <div class="ai-item-header"><span class="ai-badge" style="background:#FEF2F2;color:#DC2626">🚨 Escalate</span><span style="font-size:10px;color:var(--color-text-tertiary)">5 days pending</span></div>
+            <div class="ai-item-title">XYZ Insurance contract stalled</div>
+            <div class="ai-item-action">Suggested: Escalate to legal team immediately</div>
+            <div class="ai-item-footer"><span class="ai-impact">Impact: $1.2M</span><button class="btn-sm" onclick="sendPrompt('Draft an escalation message to legal for XYZ Insurance contract review')">Escalate ↗</button></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><i class="ti ti-filter" aria-hidden="true"></i> Pursuit funnel</div>
+            <span class="card-link" onclick="sendPrompt('Show me detailed breakdown of all pursuit stages')">Details</span>
+          </div>
+          <div class="funnel">
+            <div class="funnel-stage" onclick="sendPrompt('List all pursuits in Qualification stage')">
+              <div class="funnel-label" style="font-size:11px;color:var(--color-text-secondary)">Qualification</div>
+              <div class="funnel-bar-wrap"><div class="funnel-bar" style="width:100%;background:#6B7280"></div></div>
+              <div class="funnel-count">18</div>
+            </div>
+            <div class="funnel-stage" onclick="sendPrompt('List all pursuits in RFI stage')">
+              <div class="funnel-label" style="font-size:11px;color:var(--color-text-secondary)">RFI</div>
+              <div class="funnel-bar-wrap"><div class="funnel-bar" style="width:67%;background:#3B82F6"></div></div>
+              <div class="funnel-count">12</div>
+            </div>
+            <div class="funnel-stage" onclick="sendPrompt('List all pursuits in RFP stage')">
+              <div class="funnel-label" style="font-size:11px;color:var(--color-text-secondary)">RFP</div>
+              <div class="funnel-bar-wrap"><div class="funnel-bar" style="width:44%;background:#8B5CF6"></div></div>
+              <div class="funnel-count">8</div>
+            </div>
+            <div class="funnel-stage" onclick="sendPrompt('List all pursuits in Orals stage')">
+              <div class="funnel-label" style="font-size:11px;color:var(--color-text-secondary)">Orals</div>
+              <div class="funnel-bar-wrap"><div class="funnel-bar" style="width:28%;background:#EC4899"></div></div>
+              <div class="funnel-count">5</div>
+            </div>
+            <div class="funnel-stage" onclick="sendPrompt('List all pursuits in BAFO stage')">
+              <div class="funnel-label" style="font-size:11px;color:var(--color-text-secondary)">BAFO</div>
+              <div class="funnel-bar-wrap"><div class="funnel-bar" style="width:17%;background:#F59E0B"></div></div>
+              <div class="funnel-count">3</div>
+            </div>
+            <div class="funnel-stage" onclick="sendPrompt('List all pursuits in Contract stage')">
+              <div class="funnel-label" style="font-size:11px;color:var(--color-text-secondary)">Contract</div>
+              <div class="funnel-bar-wrap"><div class="funnel-bar" style="width:11%;background:#10B981"></div></div>
+              <div class="funnel-count">2</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><i class="ti ti-alert-triangle" style="color:#EF4444" aria-hidden="true"></i> Revenue at risk</div>
+            <span class="card-link" onclick="sendPrompt('Show me all deals with revenue at risk and suggested actions')">All risks</span>
+          </div>
+          <div class="risk-item">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start">
+              <div class="risk-company">XYZ Insurance</div>
+              <div class="risk-amount">$3.2M</div>
+            </div>
+            <div class="risk-reason">Pending security review · Stalled 5 days</div>
+            <div class="risk-actions">
+              <button class="btn-danger" onclick="sendPrompt('Notify the security team about the XYZ Insurance contract review blocker')">Notify security ↗</button>
+              <button class="btn-sm" onclick="sendPrompt('Show full details for XYZ Insurance pursuit')">View pursuit</button>
+            </div>
+          </div>
+          <div class="risk-item" style="border-left-color:#F59E0B">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start">
+              <div class="risk-company">HealthCo Modernization</div>
+              <div class="risk-amount" style="color:#D97706">$1.8M</div>
+            </div>
+            <div class="risk-reason">Qualification score 58 · Decision due this week</div>
+            <div class="risk-actions">
+              <button class="btn-sm" onclick="sendPrompt('Run qualification analysis for HealthCo Modernization pursuit')">Re-qualify ↗</button>
+              <button class="btn-sm" onclick="sendPrompt('Show full details for HealthCo Modernization pursuit')">View pursuit</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><i class="ti ti-users" aria-hidden="true"></i> Bid team pulse</div>
+            <span class="card-link" onclick="sendPrompt('Show full team workload and availability')">Workload</span>
+          </div>
+          <div class="team-row">
+            <div class="team-av" style="background:#EEF2FF;color:#4F46E5">SJ</div>
+            <div style="flex:1"><div class="team-name">Sarah Johnson</div><div class="team-status">Working on technical response · ABC Bank</div></div>
+            <div class="status-dot s-active"></div>
+          </div>
+          <div class="team-row">
+            <div class="team-av" style="background:#F0FDF4;color:#16A34A">MR</div>
+            <div style="flex:1"><div class="team-name">Mike Rodriguez</div><div class="team-status">Review pending · PharmaCorp RFP</div></div>
+            <div class="status-dot s-pending"></div>
+          </div>
+          <div class="team-row">
+            <div class="team-av" style="background:#FEF2F2;color:#DC2626">LC</div>
+            <div style="flex:1"><div class="team-name">Legal Counsel</div><div class="team-status">Waiting for input · XYZ Insurance</div></div>
+            <div class="status-dot s-waiting"></div>
+          </div>
+          <div class="team-row">
+            <div class="team-av" style="background:#EFF6FF;color:#3B82F6">FT</div>
+            <div style="flex:1"><div class="team-name">Finance Team</div><div class="team-status">Approved pricing · PharmaCorp BAFO</div></div>
+            <div class="status-dot s-done"></div>
+          </div>
+          <div class="team-row">
+            <div class="team-av" style="background:#F5F3FF;color:#7C3AED">DW</div>
+            <div style="flex:1"><div class="team-name">David Williams</div><div class="team-status">Delivery review · HealthCo scope</div></div>
+            <div class="status-dot s-active"></div>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <div class="card" style="padding:12px">
+            <div class="card-header" style="margin-bottom:10px">
+              <div class="card-title"><i class="ti ti-radar" aria-hidden="true"></i> Executive radar</div>
+              <span style="font-size:9px;padding:2px 7px;background:#EEF2FF;color:#4F46E5;border-radius:10px">CXO view</span>
+            </div>
+            <div class="exec-grid">
+              <div class="exec-card"><div class="exec-val">$18.4M</div><div class="exec-label">Expected this quarter</div></div>
+              <div class="exec-card"><div class="exec-val">4</div><div class="exec-label">Deals need attention</div></div>
+              <div class="exec-card exec-highlight"><div class="exec-val" style="color:#4F46E5">87%</div><div class="exec-label">ABC Bank win prob.</div></div>
+              <div class="exec-card"><div class="exec-val" style="color:#EF4444">42%</div><div class="exec-label">XYZ at risk</div></div>
+            </div>
+          </div>
+          <div class="card" style="padding:12px">
+            <div class="card-header" style="margin-bottom:10px">
+              <div class="card-title"><i class="ti ti-bolt" aria-hidden="true"></i> Quick actions</div>
+            </div>
+            <div class="quick-actions">
+              <button class="qa-btn" onclick="sendPrompt('Create a new pursuit')"><i class="ti ti-plus" aria-hidden="true"></i> New pursuit</button>
+              <button class="qa-btn" onclick="sendPrompt('Upload an RFP document for a pursuit')"><i class="ti ti-upload" aria-hidden="true"></i> Upload RFP</button>
+              <button class="qa-btn" onclick="sendPrompt('Generate a proposal response for my active RFP')"><i class="ti ti-file-text" aria-hidden="true"></i> Generate response</button>
+              <button class="qa-btn" onclick="sendPrompt('Create a compliance matrix for my active pursuit')"><i class="ti ti-table" aria-hidden="true"></i> Compliance matrix</button>
+              <button class="qa-btn" onclick="sendPrompt('Create an executive summary for my latest pursuit')"><i class="ti ti-star" aria-hidden="true"></i> Exec summary</button>
+              <button class="qa-btn" onclick="sendPrompt('Show pending approvals across all pursuits')"><i class="ti ti-clock" aria-hidden="true"></i> Pending approvals</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title"><i class="ti ti-sparkles" style="color:#7C3AED" aria-hidden="true"></i> Ask Pursuit Copilot</div>
+          <span style="font-size:10px;color:var(--color-text-tertiary)">AI-powered · context-aware</span>
+        </div>
+        <div class="copilot-chips">
+          <span class="chip" onclick="sendPrompt('What should I prioritize today based on my pursuits and deadlines?')">What should I prioritize today?</span>
+          <span class="chip" onclick="sendPrompt('Which of my deals are most at risk and why?')">Which deals are at risk?</span>
+          <span class="chip" onclick="sendPrompt('Create win themes for the ABC Bank digital transformation pursuit')">Win themes for ABC Bank</span>
+          <span class="chip" onclick="sendPrompt('Generate an executive briefing for my top 3 pursuits')">Executive briefing</span>
+          <span class="chip" onclick="sendPrompt('Show all pending approvals across my pursuits')">Pending approvals</span>
+        </div>
+        <div class="copilot-input">
+          <input type="text" id="copilot-q" placeholder="Ask anything about your pursuits…" onkeydown="if(event.key==='Enter'){var v=this.value.trim();if(v){sendPrompt(v);this.value=''}}" />
+          <button onclick="var v=document.getElementById('copilot-q').value.trim();if(v){sendPrompt(v);document.getElementById('copilot-q').value=''}">Ask ↗</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
