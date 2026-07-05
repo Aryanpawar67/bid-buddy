@@ -1,24 +1,23 @@
 import { Check, Circle, AlertTriangle, MessageSquare, ArrowRight } from "lucide-react";
-import { STAGES, type StageKey, stageLabel, TEAM_LABEL, urgencyClass, fmtMoney } from "@/lib/bid-constants";
+import { STAGES, type StageKey, TEAM_LABEL } from "@/lib/bid-constants";
 import type { Bid } from "@/lib/bid-queries";
 import { useStageItems, useToggleDeliverable, useToggleQuestion, useUpdateBid } from "@/lib/bid-queries";
-import { StatusBadge } from "./BidCard";
-import { DealQualificationWorkspace } from "./DealQualificationWorkspace";
+import { DealQualificationWorkspace, type Tab } from "./DealQualificationWorkspace";
 
-const STAGE_BLURBS: Record<StageKey, string> = {
-  deal_qualification: "Assess strategic fit, capability, commercial feasibility and risk.",
-  rfi: "Respond to Request for Information. Clarify capabilities and gather client context.",
-  rfp: "Full proposal development across Pre-Sales, Legal, Finance, Product, and Engineering.",
-  orals: "Presentation and Q&A with the client evaluation panel.",
-  due_diligence: "Client review of security, compliance, financial, and legal standing.",
-  bafo: "Best and Final Offer. Revised commercial proposal after evaluation.",
-  contract_closure: "Finalise MSA, SOW, payment terms, and secure signatures.",
-  post_closure: "Handover to Customer Success, capture lessons learned, update repository.",
-};
 
-export function StageWorkspace({ bid, stage }: { bid: Bid; stage: StageKey }) {
+export function StageWorkspace({
+  bid,
+  stage,
+  activeTab,
+  onTabChange,
+}: {
+  bid: Bid;
+  stage: StageKey;
+  activeTab: Tab;
+  onTabChange: (t: Tab) => void;
+}) {
   if (stage === "deal_qualification") {
-    return <DealQualificationWorkspace bid={bid} />;
+    return <DealQualificationWorkspace bid={bid} activeTab={activeTab} onTabChange={onTabChange} />;
   }
 
   const items = useStageItems(bid.id, stage);
@@ -33,7 +32,6 @@ export function StageWorkspace({ bid, stage }: { bid: Bid; stage: StageKey }) {
     deliverables.filter((d) => d.status === "done").length +
     questions.filter((q) => q.status === "done").length;
   const pct = totalItems ? Math.round((doneItems / totalItems) * 100) : 0;
-  const u = urgencyClass(bid.deadline);
 
   const stageIdx = STAGES.findIndex((s) => s.key === stage);
   const currentIdx = STAGES.findIndex((s) => s.key === bid.stage);
@@ -41,7 +39,6 @@ export function StageWorkspace({ bid, stage }: { bid: Bid; stage: StageKey }) {
   async function advance() {
     const next = STAGES[currentIdx + 1];
     if (!next) return;
-    // Hard-block on Go/No-Go before RFI
     if (next.key === "rfi" && bid.gonogo_decision !== "go" && bid.gonogo_decision !== "conditional_go") {
       alert("Complete the Go / No-Go scorecard with a Go or Conditional Go before advancing to RFI.");
       return;
@@ -52,28 +49,6 @@ export function StageWorkspace({ bid, stage }: { bid: Bid; stage: StageKey }) {
   return (
     <div className="flex-1 min-w-0 overflow-y-auto">
       <div className="px-6 py-5 max-w-[1100px]">
-        {/* Header */}
-        <div className="flex items-start justify-between gap-4 mb-4">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <h1 className="text-[18px] font-medium">{stageLabel(stage)}</h1>
-              <StatusBadge stage={stage} bidStage={bid.stage} />
-            </div>
-            <p className="text-[12px] text-muted-foreground max-w-2xl">{STAGE_BLURBS[stage]}</p>
-          </div>
-          <div className="text-right">
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Deal value</div>
-            <div className="text-[18px] font-medium">{fmtMoney(bid.value)}</div>
-          </div>
-        </div>
-
-        {/* Metrics */}
-        <div className="grid grid-cols-3 gap-3 mb-4">
-          <Metric label="Deadline" value={new Date(bid.deadline).toLocaleDateString()} foot={u.label} footClass={u.className} />
-          <Metric label="Open items" value={`${totalItems - doneItems}`} foot={`${totalItems} total`} />
-          <Metric label="Progress" value={`${pct}%`} foot={`${doneItems} / ${totalItems} done`} />
-        </div>
-
         {/* Progress bar — RFI / RFP only */}
         {(stage === "rfi" || stage === "rfp") && (
           <div className="mb-4">
@@ -82,21 +57,6 @@ export function StageWorkspace({ bid, stage }: { bid: Bid; stage: StageKey }) {
             </div>
           </div>
         )}
-
-        {/* Bid details */}
-        <Card title="Bid details">
-          <KV label="Client" value={bid.client_name} />
-          <KV label="Title" value={bid.title} />
-          <KV label="Type" value={bid.type.toUpperCase()} />
-          <KV label="Portal" value={bid.procurement_portal ?? "—"} />
-          <KV label="Priority" value={bid.priority} />
-          {bid.gonogo_score !== null && (
-            <KV
-              label="Go/No-Go"
-              value={`${Math.round(bid.gonogo_score)} — ${bid.gonogo_decision?.replace("_", " ")}`}
-            />
-          )}
-        </Card>
 
         {/* Checklist: Deliverables */}
         <Card
@@ -149,25 +109,6 @@ export function StageWorkspace({ bid, stage }: { bid: Bid; stage: StageKey }) {
   );
 }
 
-function Metric({
-  label,
-  value,
-  foot,
-  footClass,
-}: {
-  label: string;
-  value: string;
-  foot?: string;
-  footClass?: string;
-}) {
-  return (
-    <div className="bg-card hairline border rounded-lg p-3">
-      <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
-      <div className="text-[18px] font-medium mt-1 leading-none">{value}</div>
-      {foot && <div className={`text-[10px] mt-1.5 ${footClass ?? "text-muted-foreground"}`}>{foot}</div>}
-    </div>
-  );
-}
 
 function Card({
   title,
@@ -189,14 +130,6 @@ function Card({
   );
 }
 
-function KV({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between py-1.5 text-[12px] hairline border-b last:border-b-0">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="font-medium capitalize">{value}</span>
-    </div>
-  );
-}
 
 function Empty({ children }: { children: React.ReactNode }) {
   return <div className="text-[12px] text-muted-foreground py-3 text-center">{children}</div>;

@@ -20,6 +20,7 @@ import { Route as AppNotificationsRouteImport } from './routes/_app/notification
 import { Route as AppHubspotRouteImport } from './routes/_app/hubspot'
 import { Route as AppDocsRouteImport } from './routes/_app/docs'
 import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
+import { Route as AppClosureRouteImport } from './routes/_app/closure'
 import { Route as AppCalendarRouteImport } from './routes/_app/calendar'
 import { Route as AppAnalyticsRouteImport } from './routes/_app/analytics'
 import { Route as AppAiRouteImport } from './routes/_app/ai'
@@ -79,6 +80,11 @@ const AppDashboardRoute = AppDashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => AppRoute,
 } as any)
+const AppClosureRoute = AppClosureRouteImport.update({
+  id: '/closure',
+  path: '/closure',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppCalendarRoute = AppCalendarRouteImport.update({
   id: '/calendar',
   path: '/calendar',
@@ -107,6 +113,7 @@ export interface FileRoutesByFullPath {
   '/ai': typeof AppAiRoute
   '/analytics': typeof AppAnalyticsRoute
   '/calendar': typeof AppCalendarRoute
+  '/closure': typeof AppClosureRoute
   '/dashboard': typeof AppDashboardRoute
   '/docs': typeof AppDocsRoute
   '/hubspot': typeof AppHubspotRoute
@@ -123,6 +130,7 @@ export interface FileRoutesByTo {
   '/ai': typeof AppAiRoute
   '/analytics': typeof AppAnalyticsRoute
   '/calendar': typeof AppCalendarRoute
+  '/closure': typeof AppClosureRoute
   '/dashboard': typeof AppDashboardRoute
   '/docs': typeof AppDocsRoute
   '/hubspot': typeof AppHubspotRoute
@@ -141,6 +149,7 @@ export interface FileRoutesById {
   '/_app/ai': typeof AppAiRoute
   '/_app/analytics': typeof AppAnalyticsRoute
   '/_app/calendar': typeof AppCalendarRoute
+  '/_app/closure': typeof AppClosureRoute
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/docs': typeof AppDocsRoute
   '/_app/hubspot': typeof AppHubspotRoute
@@ -159,6 +168,7 @@ export interface FileRouteTypes {
     | '/ai'
     | '/analytics'
     | '/calendar'
+    | '/closure'
     | '/dashboard'
     | '/docs'
     | '/hubspot'
@@ -175,6 +185,7 @@ export interface FileRouteTypes {
     | '/ai'
     | '/analytics'
     | '/calendar'
+    | '/closure'
     | '/dashboard'
     | '/docs'
     | '/hubspot'
@@ -192,6 +203,7 @@ export interface FileRouteTypes {
     | '/_app/ai'
     | '/_app/analytics'
     | '/_app/calendar'
+    | '/_app/closure'
     | '/_app/dashboard'
     | '/_app/docs'
     | '/_app/hubspot'
@@ -288,6 +300,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppDashboardRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/closure': {
+      id: '/_app/closure'
+      path: '/closure'
+      fullPath: '/closure'
+      preLoaderRoute: typeof AppClosureRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/calendar': {
       id: '/_app/calendar'
       path: '/calendar'
@@ -323,6 +342,7 @@ interface AppRouteChildren {
   AppAiRoute: typeof AppAiRoute
   AppAnalyticsRoute: typeof AppAnalyticsRoute
   AppCalendarRoute: typeof AppCalendarRoute
+  AppClosureRoute: typeof AppClosureRoute
   AppDashboardRoute: typeof AppDashboardRoute
   AppDocsRoute: typeof AppDocsRoute
   AppHubspotRoute: typeof AppHubspotRoute
@@ -337,6 +357,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppAiRoute: AppAiRoute,
   AppAnalyticsRoute: AppAnalyticsRoute,
   AppCalendarRoute: AppCalendarRoute,
+  AppClosureRoute: AppClosureRoute,
   AppDashboardRoute: AppDashboardRoute,
   AppDocsRoute: AppDocsRoute,
   AppHubspotRoute: AppHubspotRoute,
