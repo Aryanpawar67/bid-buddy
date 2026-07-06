@@ -39,7 +39,10 @@ export function DocPreviewModal({ doc, allDocs, onClose }: Props) {
     setPreviewLoading(true);
     getDocPreview({ data: { documentId: doc.id } })
       .then(setPreview)
-      .catch(() => toast.error("Failed to load preview"))
+      .catch((err) => {
+        console.error("getDocPreview error:", err);
+        toast.error("Failed to load preview");
+      })
       .finally(() => setPreviewLoading(false));
   }, [doc?.id]);
 
@@ -185,15 +188,25 @@ export function DocPreviewModal({ doc, allDocs, onClose }: Props) {
               </div>
             ) : preview ? (
               preview.type === "url" ? (
-                <iframe
-                  src={preview.value}
-                  className="w-full h-full border-0"
-                  title={doc.name}
-                />
+                <object
+                  data={preview.value}
+                  type="application/pdf"
+                  style={{ width: "100%", height: "100%", display: "block" }}
+                >
+                  <div className="h-full flex flex-col items-center justify-center gap-3 text-muted-foreground">
+                    <p className="text-[13px]">Your browser could not display this PDF inline.</p>
+                    <a
+                      href={preview.value}
+                      download={doc.name}
+                      className="text-[12px] text-primary underline"
+                    >
+                      Download {doc.name}
+                    </a>
+                  </div>
+                </object>
               ) : (
                 <iframe
                   srcDoc={`<style>body{font-family:sans-serif;font-size:13px;padding:20px;line-height:1.6}table{border-collapse:collapse;width:100%}td,th{border:1px solid #e8e6f0;padding:4px 8px;font-size:11px}</style>${preview.value}`}
-                  sandbox="allow-same-origin"
                   className="w-full h-full border-0 bg-white"
                   title={doc.name}
                 />

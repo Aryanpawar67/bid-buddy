@@ -457,101 +457,139 @@ function BidAssessmentTab({ bid }: { bid: Bid }) {
     return <Empty>Loading assessment…</Empty>;
   }
 
+  const SCORE_LABELS: Record<number, string> = {
+    1: "Low", 2: "Below Avg", 3: "Average", 4: "Above Avg", 5: "High",
+  };
+
+  const SCORE_COLORS: Record<number, string> = {
+    0: "var(--color-muted-foreground)",
+    1: "#b91c1c", 2: "#c2410c", 3: "#854d0e", 4: "#166534", 5: "#15803d",
+  };
+
+  const STAR_COLOR: Record<number, string> = {
+    0: "#d1d5db", 1: "#ef4444", 2: "#f97316", 3: "#eab308", 4: "#22c55e", 5: "#16a34a",
+  };
+
   return (
     <div>
-      {/* Score summary bar */}
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-[12px] text-muted-foreground">
-          Total: <span className="font-semibold text-foreground">{totalWeighted.toFixed(1)}</span> / 100
-        </span>
+      {/* Legend + save */}
+      <div className="flex items-center justify-between mb-3.5">
+        <div className="flex items-center gap-3">
+          <span className="text-[12px] text-muted-foreground">Score each parameter on a scale of 1 (Low) to 5 (High)</span>
+          <div className="flex items-center gap-2">
+            {[1,2,3,4,5].map((n) => (
+              <span key={n} className="flex items-center gap-1 text-[10px]" style={{ color: SCORE_COLORS[n] }}>
+                <span className="size-3 rounded-full inline-block" style={{ background: STAR_COLOR[n] }} />
+                {n} {SCORE_LABELS[n]}
+              </span>
+            ))}
+          </div>
+        </div>
         <button
           onClick={handleSave}
           disabled={!dirty || saveAssessment.isPending}
-          className="h-8 px-3.5 rounded-md bg-primary text-primary-foreground text-[12px] font-medium disabled:opacity-40 hover:opacity-90 transition-opacity"
+          className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-[12px] font-medium disabled:opacity-40 hover:opacity-90 transition-opacity"
         >
           {saveAssessment.isPending ? "Saving…" : "Save Assessment"}
         </button>
       </div>
 
-      {/* 2×5 score matrix */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-        {DEFAULT_CRITERIA.map((c) => {
-          const score = scores[c.id] ?? 0;
+      <div className="text-[12px] text-muted-foreground mb-2">
+        Total: <strong className="text-foreground">{totalWeighted.toFixed(1)}</strong> / 100
+      </div>
 
-          let tileBg: string;
-          let tileBorder: string;
-          let scoreColor: string;
-          let dotFill: string;
-
-          if (score === 0) {
-            tileBg = "var(--color-surface)";
-            tileBorder = "1.5px dashed var(--color-border-strong)";
-            scoreColor = "var(--color-muted-foreground)";
-            dotFill = "var(--color-border-strong)";
-          } else if (score >= 5) {
-            tileBg = "#f0fdf4"; tileBorder = "1px solid #16a34a"; scoreColor = "#15803d"; dotFill = "#16a34a";
-          } else if (score >= 4) {
-            tileBg = "#dcfce7"; tileBorder = "1px solid #4ade80"; scoreColor = "#166534"; dotFill = "#4ade80";
-          } else if (score === 3) {
-            tileBg = "#fefce8"; tileBorder = "1px solid #facc15"; scoreColor = "#854d0e"; dotFill = "#facc15";
-          } else if (score === 2) {
-            tileBg = "#fff7ed"; tileBorder = "1px solid #fb923c"; scoreColor = "#c2410c"; dotFill = "#fb923c";
-          } else {
-            tileBg = "#fef2f2"; tileBorder = "1px solid #f87171"; scoreColor = "#b91c1c"; dotFill = "#f87171";
-          }
-
-          return (
-            <div
-              key={c.id}
-              style={{
-                background: tileBg,
-                border: tileBorder,
-                borderRadius: 10,
-                padding: "10px 12px",
-                display: "flex",
-                flexDirection: "column",
-                gap: 4,
-              }}
-            >
-              <div style={{ fontSize: 10, fontWeight: 600, color: "var(--color-foreground)", lineHeight: 1.3, opacity: 0.7 }}>
-                {c.parameter}
-              </div>
-
-              <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-                <span style={{ fontSize: 26, fontWeight: 900, lineHeight: 1, color: scoreColor }}>
-                  {score > 0 ? score : "—"}
-                </span>
-                <span style={{ fontSize: 10, color: "var(--color-muted-foreground)" }}>/ 5</span>
-              </div>
-
-              {/* 5-dot score bar + click targets */}
-              <div style={{ display: "flex", gap: 4 }}>
-                {[1, 2, 3, 4, 5].map((n) => (
-                  <button
-                    key={n}
-                    type="button"
-                    onClick={() => setScore(c.id, n)}
-                    title={`Score ${n}`}
-                    style={{
-                      width: 14,
-                      height: 14,
-                      borderRadius: "50%",
-                      border: "none",
-                      cursor: "pointer",
-                      background: score >= n ? dotFill : "rgba(0,0,0,.1)",
-                      flexShrink: 0,
-                      padding: 0,
-                    }}
-                  />
-                ))}
-              </div>
-
-              <div style={{ fontSize: 9, color: "var(--color-muted-foreground)", marginTop: 2 }}>
-                Weight {Math.round(c.weight * 100)}%
-              </div>
-            </div>
-          );
-        })}
+      {/* Assessment table */}
+      <div className="bg-card hairline border rounded-xl overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-[12px]">
+            <thead>
+              <tr className="bg-muted/40 text-[10px] uppercase tracking-wider text-muted-foreground">
+                <th className="text-left px-3.5 py-2.5 font-medium w-8">#</th>
+                <th className="text-left px-3.5 py-2.5 font-medium">Assessment Parameter</th>
+                <th className="text-left px-3.5 py-2.5 font-medium hidden xl:table-cell">What should be assessed?</th>
+                <th className="text-center px-3.5 py-2.5 font-medium w-14">Weight</th>
+                <th className="text-center px-3.5 py-2.5 font-medium w-44">Score (1–5)</th>
+                <th className="text-left px-3.5 py-2.5 font-medium w-40 hidden lg:table-cell">Comments</th>
+                <th className="text-center px-3.5 py-2.5 font-medium w-24">Weighted</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y hairline divide-border">
+              {DEFAULT_CRITERIA.map((c, i) => {
+                const score = scores[c.id] ?? 0;
+                const weightedMax = c.weight * 100;
+                const weightedEarned = (score / 5) * weightedMax;
+                const starColor = STAR_COLOR[score] ?? STAR_COLOR[0];
+                const scoreColor = SCORE_COLORS[score] ?? SCORE_COLORS[0];
+                return (
+                  <tr key={c.id} className="hover:bg-muted/20 transition-colors">
+                    <td className="px-3.5 py-3 text-muted-foreground">{i + 1}</td>
+                    <td className="px-3.5 py-3 font-medium leading-snug">{c.parameter}</td>
+                    <td className="px-3.5 py-3 text-muted-foreground leading-relaxed text-[11px] hidden xl:table-cell">{c.focus}</td>
+                    <td className="px-3.5 py-3 text-center font-medium">{Math.round(c.weight * 100)}%</td>
+                    <td className="px-3.5 py-3">
+                      <div className="flex flex-col items-center gap-1">
+                        <div className="flex gap-1">
+                          {[1, 2, 3, 4, 5].map((n) => (
+                            <button
+                              key={n}
+                              type="button"
+                              onClick={() => setScore(c.id, n)}
+                              className="transition-transform hover:scale-110"
+                              style={{ background: "none", border: "none", padding: 0, cursor: "pointer", lineHeight: 1 }}
+                              aria-label={`Score ${n}`}
+                            >
+                              <svg width="18" height="18" viewBox="0 0 20 20">
+                                <path
+                                  d="M10 1l2.39 4.84 5.34.78-3.87 3.77.91 5.32L10 13.27l-4.77 2.44.91-5.32L2.27 6.62l5.34-.78z"
+                                  fill={score >= n ? starColor : "#e5e7eb"}
+                                  stroke={score >= n ? starColor : "#d1d5db"}
+                                  strokeWidth="0.5"
+                                />
+                              </svg>
+                            </button>
+                          ))}
+                        </div>
+                        {score > 0 && (
+                          <span className="text-[10px] font-medium" style={{ color: scoreColor }}>
+                            {score} – {SCORE_LABELS[score]}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-3.5 py-3 hidden lg:table-cell">
+                      <input
+                        type="text"
+                        value={comments[c.id] ?? ""}
+                        onChange={(e) => setComment(c.id, e.target.value)}
+                        placeholder="Add note…"
+                        className="w-full bg-transparent text-[11px] text-foreground placeholder:text-muted-foreground border-0 outline-none focus:ring-0 p-0"
+                      />
+                    </td>
+                    <td className="px-3.5 py-3 text-center">
+                      {score > 0 ? (
+                        <span className="font-medium" style={{ color: scoreColor }}>{weightedEarned.toFixed(1)}</span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                      <span className="text-muted-foreground text-[10px]">/{weightedMax.toFixed(0)}</span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot>
+              <tr className="bg-muted/40 font-medium">
+                <td colSpan={4} className="px-3.5 py-2.5 text-[11px] text-right uppercase tracking-wider text-muted-foreground">
+                  Total Weighted Score
+                </td>
+                <td colSpan={3} className="px-3.5 py-2.5 text-center text-[14px] font-semibold">
+                  {totalWeighted.toFixed(1)}
+                  <span className="text-[11px] text-muted-foreground font-normal"> / 100</span>
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
       </div>
     </div>
   );
