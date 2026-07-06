@@ -2,14 +2,16 @@ import { Bot, Activity } from "lucide-react";
 import { initials, fmtMoney, urgencyClass, stageLabel, type StageKey } from "@/lib/bid-constants";
 import type { Bid } from "@/lib/bid-queries";
 import { StageJourney } from "./StageJourney";
-import { TABS, type Tab } from "./DealQualificationWorkspace";
+
+export type TabDef = { key: string; label: string; icon: React.ElementType };
 
 type Props = {
   bid: Bid;
   viewStage: StageKey;
   onViewStage: (s: StageKey) => void;
-  activeTab: Tab;
-  onTabChange: (t: Tab) => void;
+  tabs: TabDef[];
+  activeTab: string;
+  onTabChange: (t: string) => void;
 };
 
 const DECISION_STYLE: Record<string, { bg: string; color: string; label: string }> = {
@@ -25,7 +27,7 @@ function avatarColor(name: string): string {
   return colors[Math.abs(hash) % colors.length];
 }
 
-export function BidHeaderBar({ bid, viewStage, onViewStage, activeTab, onTabChange }: Props) {
+export function BidHeaderBar({ bid, viewStage, onViewStage, tabs, activeTab, onTabChange }: Props) {
   const u = urgencyClass(bid.deadline);
   const av = initials(bid.client_name);
   const avBg = avatarColor(bid.client_name);
@@ -195,7 +197,7 @@ export function BidHeaderBar({ bid, viewStage, onViewStage, activeTab, onTabChan
           scrollbarWidth: "none",
         }}
       >
-        {TABS.map((t) => {
+        {tabs.map((t) => {
           const Icon = t.icon;
           const active = activeTab === t.key;
           return (

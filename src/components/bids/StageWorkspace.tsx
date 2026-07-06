@@ -3,6 +3,8 @@ import { STAGES, type StageKey, TEAM_LABEL } from "@/lib/bid-constants";
 import type { Bid } from "@/lib/bid-queries";
 import { useStageItems, useToggleDeliverable, useToggleQuestion, useUpdateBid } from "@/lib/bid-queries";
 import { DealQualificationWorkspace, type Tab } from "./DealQualificationWorkspace";
+import { RFIWorkspace } from "./RFIWorkspace";
+import { RFPWorkspace } from "./RFPWorkspace";
 
 
 export function StageWorkspace({
@@ -13,11 +15,17 @@ export function StageWorkspace({
 }: {
   bid: Bid;
   stage: StageKey;
-  activeTab: Tab;
-  onTabChange: (t: Tab) => void;
+  activeTab: string;
+  onTabChange: (t: string) => void;
 }) {
   if (stage === "deal_qualification") {
-    return <DealQualificationWorkspace bid={bid} activeTab={activeTab} onTabChange={onTabChange} />;
+    return <DealQualificationWorkspace bid={bid} activeTab={activeTab as Tab} onTabChange={onTabChange} />;
+  }
+  if (stage === "rfi") {
+    return <RFIWorkspace bid={bid} activeTab={activeTab} />;
+  }
+  if (stage === "rfp") {
+    return <RFPWorkspace bid={bid} activeTab={activeTab} />;
   }
 
   const items = useStageItems(bid.id, stage);
