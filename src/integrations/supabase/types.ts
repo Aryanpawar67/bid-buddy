@@ -240,6 +240,10 @@ export type Database = {
           gonogo_score: number | null
           hubspot_deal_id: string | null
           id: string
+          contact_name: string | null
+          contact_email: string | null
+          contact_phone: string | null
+          product_type: "TA" | "TM" | null
           orals_date: string | null
           owner_id: string | null
           priority: Database["public"]["Enums"]["priority_level"]
@@ -265,6 +269,10 @@ export type Database = {
           gonogo_score?: number | null
           hubspot_deal_id?: string | null
           id?: string
+          contact_name?: string | null
+          contact_email?: string | null
+          contact_phone?: string | null
+          product_type?: "TA" | "TM" | null
           orals_date?: string | null
           owner_id?: string | null
           priority?: Database["public"]["Enums"]["priority_level"]
@@ -290,6 +298,10 @@ export type Database = {
           gonogo_score?: number | null
           hubspot_deal_id?: string | null
           id?: string
+          contact_name?: string | null
+          contact_email?: string | null
+          contact_phone?: string | null
+          product_type?: "TA" | "TM" | null
           orals_date?: string | null
           owner_id?: string | null
           priority?: Database["public"]["Enums"]["priority_level"]

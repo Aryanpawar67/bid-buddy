@@ -285,6 +285,8 @@ export function AiChatPanel({
     (inputValue.trim().length > 0 || readyDocIds.length > 0);
   const showQuickActions = !isGlobal && !!activeBid && messages.length === 0 && !!sessionId;
   const isRfiRfpStage = activeBid?.stage === "rfi" || activeBid?.stage === "rfp";
+  const isRfpStage = activeBid?.stage === "rfp";
+  const isRfiStage = activeBid?.stage === "rfi";
   const quickActions = isRfiRfpStage ? QUICK_ACTIONS_RFI_RFP : QUICK_ACTIONS_GENERIC;
   const [proposalModalOpen, setProposalModalOpen] = useState(false);
   const [docsDrawerOpen, setDocsDrawerOpen] = useState(false);
@@ -411,8 +413,8 @@ export function AiChatPanel({
       {/* Input bar */}
       {sessionId && (
         <div className="shrink-0 px-4 py-3 border-t hairline border-border bg-card">
-          {/* Generate Proposal footer chip */}
-          {!isGlobal && isRfiRfpStage && canAttach && (
+          {/* Generate Proposal — RFP only */}
+          {!isGlobal && isRfpStage && canAttach && (
             <div className="flex gap-2 mb-2 flex-wrap">
               <button
                 onClick={() => setProposalModalOpen(true)}
@@ -421,6 +423,20 @@ export function AiChatPanel({
               >
                 ✦ Generate Proposal
               </button>
+            </div>
+          )}
+          {/* Generate RFI Response — coming soon (roadmap item) */}
+          {!isGlobal && isRfiStage && canAttach && (
+            <div className="flex gap-2 mb-2 flex-wrap">
+              <span
+                title="Auto-generate a filled RFI response document from your Q&A — coming in a future release"
+                className="text-[10px] px-3 py-1.5 rounded-full border hairline border-border text-muted-foreground bg-muted/30 cursor-not-allowed flex items-center gap-1 select-none"
+              >
+                ✦ Generate RFI Response
+                <span className="ml-1 text-[8px] font-semibold px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground uppercase tracking-wide">
+                  Coming Soon
+                </span>
+              </span>
             </div>
           )}
 

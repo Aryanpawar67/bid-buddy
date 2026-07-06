@@ -157,6 +157,10 @@ function BidDetailsTab({ bid }: { bid: Bid }) {
     deadline: bid.deadline.slice(0, 10),
     clarification_deadline: bid.clarification_deadline?.slice(0, 10) ?? "",
     orals_date: bid.orals_date?.slice(0, 10) ?? "",
+    product_type: bid.product_type ?? "",
+    contact_name: bid.contact_name ?? "",
+    contact_email: bid.contact_email ?? "",
+    contact_phone: bid.contact_phone ?? "",
   });
 
   function startEdit() {
@@ -170,6 +174,10 @@ function BidDetailsTab({ bid }: { bid: Bid }) {
       deadline: bid.deadline.slice(0, 10),
       clarification_deadline: bid.clarification_deadline?.slice(0, 10) ?? "",
       orals_date: bid.orals_date?.slice(0, 10) ?? "",
+      product_type: bid.product_type ?? "",
+      contact_name: bid.contact_name ?? "",
+      contact_email: bid.contact_email ?? "",
+      contact_phone: bid.contact_phone ?? "",
     });
     setEditing(true);
   }
@@ -187,6 +195,10 @@ function BidDetailsTab({ bid }: { bid: Bid }) {
         deadline: form.deadline,
         clarification_deadline: form.clarification_deadline || null,
         orals_date: form.orals_date || null,
+        product_type: (form.product_type as "TA" | "TM") || null,
+        contact_name: form.contact_name || null,
+        contact_email: form.contact_email || null,
+        contact_phone: form.contact_phone || null,
       },
     });
     setEditing(false);
@@ -223,6 +235,16 @@ function BidDetailsTab({ bid }: { bid: Bid }) {
               { value: "low", label: "Low" },
             ]}
           />
+          <EditKVSelect
+            label="Product"
+            value={form.product_type}
+            onChange={(v) => set("product_type", v)}
+            options={[
+              { value: "", label: "— not set —" },
+              { value: "TA", label: "TA — Talent Acquisition" },
+              { value: "TM", label: "TM — Talent Management" },
+            ]}
+          />
           <EditKV label="Portal" value={form.procurement_portal} onChange={(v) => set("procurement_portal", v)} placeholder="—" />
           <EditKV label="Deal Value" value={form.value} onChange={(v) => set("value", v)} type="number" />
         </Card>
@@ -230,6 +252,11 @@ function BidDetailsTab({ bid }: { bid: Bid }) {
           <EditKV label="Bid Deadline" value={form.deadline} onChange={(v) => set("deadline", v)} type="date" />
           <EditKV label="Clarification Deadline" value={form.clarification_deadline} onChange={(v) => set("clarification_deadline", v)} type="date" />
           <EditKV label="Orals Date" value={form.orals_date} onChange={(v) => set("orals_date", v)} type="date" />
+        </Card>
+        <Card title="Procurement Contact">
+          <EditKV label="Contact Name" value={form.contact_name} onChange={(v) => set("contact_name", v)} placeholder="e.g. Jane Smith" />
+          <EditKV label="Contact Email" value={form.contact_email} onChange={(v) => set("contact_email", v)} placeholder="e.g. jane@acme.com" />
+          <EditKV label="Contact Phone" value={form.contact_phone} onChange={(v) => set("contact_phone", v)} placeholder="optional" />
         </Card>
         <div className="flex justify-end gap-2">
           <button
@@ -264,6 +291,7 @@ function BidDetailsTab({ bid }: { bid: Bid }) {
         <KV label="Client" value={bid.client_name} />
         <KV label="Title" value={bid.title} />
         <KV label="Type" value={bid.type.toUpperCase()} />
+        {bid.product_type && <KV label="Product" value={bid.product_type === "TA" ? "TA — Talent Acquisition" : "TM — Talent Management"} />}
         <KV label="Priority" value={bid.priority} />
         <KV label="Portal" value={bid.procurement_portal ?? "—"} />
         <KV label="Deal Value" value={fmtMoney(bid.value)} />
@@ -277,6 +305,13 @@ function BidDetailsTab({ bid }: { bid: Bid }) {
           <KV label="Orals Date" value={new Date(bid.orals_date).toLocaleDateString()} />
         )}
       </Card>
+      {(bid.contact_name || bid.contact_email || bid.contact_phone) && (
+        <Card title="Procurement Contact">
+          {bid.contact_name && <KV label="Name" value={bid.contact_name} />}
+          {bid.contact_email && <KV label="Email" value={bid.contact_email} />}
+          {bid.contact_phone && <KV label="Phone" value={bid.contact_phone} />}
+        </Card>
+      )}
       {bid.gonogo_decision && (
         <Card title="Qualification Decision">
           <KV

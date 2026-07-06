@@ -15,6 +15,7 @@ const schema = z.object({
   client_name: z.string().trim().min(1).max(120),
   title: z.string().trim().min(1).max(160),
   type: z.enum(["rfp", "rfi", "rfq", "direct"]),
+  product_type: z.enum(["TA", "TM"]).optional().or(z.literal("")).transform((v) => v || undefined),
   procurement_portal: z.string().min(1),
   deadline: z.string().min(1),
   clarification_deadline: z.string().optional().or(z.literal("")),
@@ -22,6 +23,8 @@ const schema = z.object({
   value: z.coerce.number().min(0).max(1_000_000_000),
   priority: z.enum(["high", "medium", "low"]),
   hubspot_deal_id: z.string().optional().or(z.literal("")),
+  contact_name: z.string().optional().or(z.literal("")),
+  contact_email: z.string().optional().or(z.literal("")),
 });
 
 type FormData = z.infer<typeof schema>;
@@ -65,6 +68,7 @@ export function IntakeModal({
       client_name: data.client_name,
       title: data.title,
       type: data.type,
+      product_type: (data.product_type as "TA" | "TM" | undefined) ?? null,
       procurement_portal: data.procurement_portal,
       deadline: data.deadline,
       clarification_deadline: data.clarification_deadline || null,
@@ -72,6 +76,8 @@ export function IntakeModal({
       value: data.value,
       priority: data.priority,
       hubspot_deal_id: data.hubspot_deal_id || null,
+      contact_name: data.contact_name || null,
+      contact_email: data.contact_email || null,
       owner_id: user.id,
       created_by: user.id,
       stage: "deal_qualification" as const,
@@ -136,7 +142,14 @@ export function IntakeModal({
               <option value="direct">Direct</option>
             </select>
           </F>
-          <F label="Procurement portal">
+          <F label="Product (TA / TM)">
+            <select {...register("product_type")} className={inputCls}>
+              <option value="">— select —</option>
+              <option value="TA">TA — Talent Acquisition / Skills Assessment</option>
+              <option value="TM">TM — Talent Management / Skills Intelligence</option>
+            </select>
+          </F>
+          <F label="Procurement portal" className="col-span-2">
             <select {...register("procurement_portal")} className={inputCls}>
               {PORTALS.map((p) => (
                 <option key={p}>{p}</option>
@@ -164,6 +177,12 @@ export function IntakeModal({
           </F>
           <F label="HubSpot deal ID (optional)">
             <input {...register("hubspot_deal_id")} className={inputCls} />
+          </F>
+          <F label="Contact name (optional)">
+            <input {...register("contact_name")} placeholder="e.g. Jane Smith" className={inputCls} />
+          </F>
+          <F label="Contact email (optional)">
+            <input type="email" {...register("contact_email")} placeholder="e.g. jane@acme.com" className={inputCls} />
           </F>
           {/* Document attachments */}
           <div className="col-span-2">

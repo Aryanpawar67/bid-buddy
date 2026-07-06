@@ -146,7 +146,7 @@ async function buildProposalSystemBlocks(
   ] = await Promise.all([
     supabaseAdmin
       .from("bids")
-      .select("client_name, title, type, value, stage, deadline")
+      .select("client_name, title, type, product_type, contact_name, value, stage, deadline")
       .eq("id", bidId)
       .single(),
     supabaseAdmin
@@ -174,6 +174,8 @@ async function buildProposalSystemBlocks(
     parts.push(`Client: ${bid.client_name}`);
     parts.push(`Title: ${bid.title}`);
     parts.push(`Type: ${bid.type?.toUpperCase() ?? "RFP"}`);
+    if ((bid as any).product_type) parts.push(`Product: ${(bid as any).product_type}`);
+    if ((bid as any).contact_name) parts.push(`Procurement Contact: ${(bid as any).contact_name}`);
     parts.push(`Value: $${((bid.value ?? 0) / 1_000_000).toFixed(1)}M`);
     parts.push(`Stage: ${bid.stage}`);
     parts.push(`Deadline: ${bid.deadline}`);
@@ -223,7 +225,7 @@ function buildAuthorPrompt(chatText: string, includeSpoc: boolean): string {
   return `Author the variable content for an iMocha proposal based on all context in your system blocks.${chatSection}
 Output a single valid JSON object with this exact schema (no markdown, no code blocks, no extra text):
 {
-  "product": "TA or TM — TA for hiring/recruitment/assessment/candidates, TM for skills/competency/workforce development",
+  "product": "Use the Product field from Bid Metadata if present (TA or TM). Otherwise infer: TA for hiring/recruitment/assessment/candidates, TM for skills/competency/workforce development",
   "rfp_name": "bid title + iMocha Proposal",
   "customer_display_name": "client name exactly as it should appear throughout the document",${spocFields}
   "exec_summary": {
