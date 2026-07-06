@@ -5,7 +5,7 @@ export const STAGES = [
   { key: "orals", label: "Orals", short: "Orals" },
   { key: "due_diligence", label: "Due Diligence", short: "DD" },
   { key: "bafo", label: "BAFO", short: "BAFO" },
-  { key: "contract_closure", label: "Contract & Closure", short: "Contract" },
+  { key: "contract_closure", label: "Contract", short: "Contract" },
   { key: "post_closure", label: "Closure", short: "Closure" },
 ] as const;
 
