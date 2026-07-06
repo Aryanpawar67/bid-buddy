@@ -764,6 +764,11 @@ function QualificationResultTab({ bid }: { bid: Bid }) {
   const insights: QualificationInsights | undefined = assessmentData?.insights;
   const isLocked = !!bid.gonogo_decision;
   const hasScores = scoredCount > 0;
+  // Fallback: if no parameter scores exist but a locked gonogo_score is present,
+  // surface it rather than showing a contradictory "0 / Insufficient Data" next to
+  // a visible "Decision Locked: Go" card.
+  const displayScore = hasScores ? totalScore : (bid.gonogo_score ?? 0);
+  const usingFallbackScore = !hasScores && bid.gonogo_score !== null;
 
   const [docxViewer, setDocxViewer] = useState<{ url: string; filename: string } | null>(null);
   const openDocx = useCallback((url: string, filename: string) => setDocxViewer({ url, filename }), []);
@@ -787,15 +792,15 @@ function QualificationResultTab({ bid }: { bid: Bid }) {
   }, [isLoading, hasScores, !!insights, bid.id]);
 
   const bidStrength =
-    totalScore >= 75 ? "Strong" : totalScore >= 55 ? "Moderate" : totalScore >= 35 ? "Weak" : "Insufficient Data";
+    displayScore >= 75 ? "Strong" : displayScore >= 55 ? "Moderate" : displayScore >= 35 ? "Weak" : "Insufficient Data";
   const bidStrengthCls =
-    totalScore >= 75 ? "text-success-foreground" : totalScore >= 55 ? "text-warning-foreground" : "text-danger-foreground";
+    displayScore >= 75 ? "text-success-foreground" : displayScore >= 55 ? "text-warning-foreground" : displayScore > 0 ? "text-danger-foreground" : "text-muted-foreground";
 
   async function lockAs(d: "go" | "conditional_go" | "no_go") {
     await updateBid.mutateAsync({
       id: bid.id,
       patch: {
-        gonogo_score: totalScore,
+        gonogo_score: displayScore,
         gonogo_decision: d,
         gonogo_completed_at: new Date().toISOString(),
         gonogo_completed_by: user?.id ?? null,
@@ -819,13 +824,19 @@ function QualificationResultTab({ bid }: { bid: Bid }) {
         {/* Summary card */}
         <section className="bg-card hairline border rounded-xl p-4">
           <h3 className="text-[13px] font-medium mb-3">Overall Qualification Summary</h3>
+          {usingFallbackScore && (
+            <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/40 hairline border border-border text-[11px] text-muted-foreground">
+              <span className="shrink-0">ℹ</span>
+              Score recorded without individual parameter breakdown — fill the Bid Assessment tab to add detail.
+            </div>
+          )}
           <div className="flex items-center gap-5">
-            <ScoreGauge score={totalScore} />
+            <ScoreGauge score={displayScore} />
             <div className="grid grid-cols-2 gap-2 flex-1">
               {[
-                { label: "Total Parameters", value: "10" },
-                { label: "Avg Parameter Score", value: avgScore },
-                { label: "Score Achieved", value: `${totalScore}%` },
+                { label: "Total Parameters", value: hasScores ? "10" : "—" },
+                { label: "Avg Parameter Score", value: hasScores ? avgScore : "—" },
+                { label: "Score Achieved", value: `${displayScore}%` },
                 { label: "Bid Strength", value: bidStrength, valueCls: bidStrengthCls },
               ].map((m) => (
                 <div key={m.label} className="bg-muted/30 rounded-lg p-2.5">

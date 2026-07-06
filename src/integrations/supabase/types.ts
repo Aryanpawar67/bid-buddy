@@ -421,7 +421,7 @@ export type Database = {
         | "post_closure"
       bid_status: "active" | "submitted" | "won" | "lost" | "no_go" | "on_hold"
       bid_type: "rfp" | "rfi" | "rfq" | "direct"
-      deliverable_type: "document" | "approval" | "review" | "action"
+      deliverable_type: "document" | "approval" | "review" | "action" | "presentation" | "meeting" | "other"
       gonogo_decision: "go" | "conditional_go" | "no_go"
       priority_level: "high" | "medium" | "low"
       task_status: "pending" | "in_progress" | "done" | "blocked"
@@ -572,7 +572,7 @@ export const Constants = {
       ],
       bid_status: ["active", "submitted", "won", "lost", "no_go", "on_hold"],
       bid_type: ["rfp", "rfi", "rfq", "direct"],
-      deliverable_type: ["document", "approval", "review", "action"],
+      deliverable_type: ["document", "approval", "review", "action", "presentation", "meeting", "other"],
       gonogo_decision: ["go", "conditional_go", "no_go"],
       priority_level: ["high", "medium", "low"],
       task_status: ["pending", "in_progress", "done", "blocked"],

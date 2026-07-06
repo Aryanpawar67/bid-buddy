@@ -217,7 +217,7 @@ export function useBidTeam(bidId: string | undefined) {
     queryFn: async () => {
       const { data, error } = await (supabase as any)
         .from("bid_assignments")
-        .select("id, user_id, profiles(full_name, email), user_roles(role)")
+        .select("id, user_id, profiles!bid_assignments_user_id_fkey(full_name, email), user_roles(role)")
         .eq("bid_id", bidId!);
       if (error) throw error;
       return ((data ?? []) as any[]).map((row: any) => ({
@@ -316,7 +316,7 @@ export function useGenerateQualResult() {
       // Fetch team emails at click-time (not on render) to avoid CORS spam
       const { data: teamRows } = await (supabase as any)
         .from("bid_assignments")
-        .select("profiles(email)")
+        .select("profiles!bid_assignments_user_id_fkey(email)")
         .eq("bid_id", bidId);
       const teamEmails = ((teamRows ?? []) as any[])
         .map((r: any) => r.profiles?.email)
