@@ -75,7 +75,10 @@ function PipelinePage() {
             </div>
             <BidWorkspaceRail
               bid={selected}
-              isDealQual={(viewStage ?? selected.stage) === "deal_qualification"}
+              isDealQual={
+                (viewStage ?? selected.stage) === "deal_qualification" &&
+                activeTab === "qualification_result"
+              }
             />
           </div>
         </div>

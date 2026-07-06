@@ -224,21 +224,19 @@ export const getDocPreview = createServerFn({ method: "POST" })
 
     const ext = doc.name.split(".").pop()?.toLowerCase() ?? "";
 
-    if (ext === "pdf") {
-      const { data: urlData, error: urlErr } = await supabaseAdmin.storage
-        .from("bid-documents")
-        .createSignedUrl(doc.storage_path, 3600);
-      if (urlErr) throw urlErr;
-      return { type: "url" as const, value: urlData.signedUrl };
-    }
-
-    // DOCX / XLSX: convert to HTML server-side
+    // Download the file for all types so we avoid cross-origin embedding issues
     const { data: fileBlob, error: dlErr } = await supabaseAdmin.storage
       .from("bid-documents")
       .download(doc.storage_path);
-    if (dlErr || !fileBlob) throw new Error("Failed to download file");
+    if (dlErr || !fileBlob) throw new Error("Failed to download file from storage");
 
     const buffer = Buffer.from(await fileBlob.arrayBuffer());
+
+    if (ext === "pdf") {
+      // Return as base64 data URI — embeds inline, no CORS/CSP issues
+      const b64 = buffer.toString("base64");
+      return { type: "url" as const, value: `data:application/pdf;base64,${b64}` };
+    }
 
     if (ext === "docx") {
       const mammoth = await import("mammoth");
