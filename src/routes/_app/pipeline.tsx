@@ -3,10 +3,13 @@ import { useMemo, useState } from "react";
 import { useBids } from "@/lib/bid-queries";
 import type { StageKey } from "@/lib/bid-constants";
 import { PursuitRoster } from "@/components/bids/PursuitRoster";
-import { BidHeaderBar } from "@/components/bids/BidHeaderBar";
+import { BidHeaderBar, type TabDef } from "@/components/bids/BidHeaderBar";
 import { BidWorkspaceRail } from "@/components/bids/BidWorkspaceRail";
 import { StageWorkspace } from "@/components/bids/StageWorkspace";
-import type { Tab } from "@/components/bids/DealQualificationWorkspace";
+import { TABS as DQ_TABS } from "@/components/bids/DealQualificationWorkspace";
+import { RFI_TABS } from "@/components/bids/RFIWorkspace";
+import { RFP_TABS } from "@/components/bids/RFPWorkspace";
+import { LayoutList, Users, Activity, FileText } from "lucide-react";
 
 export const Route = createFileRoute("/_app/pipeline")({
   component: PipelinePage,
@@ -14,11 +17,30 @@ export const Route = createFileRoute("/_app/pipeline")({
 
 type Filter = "all" | "mine" | "legal" | "urgent";
 
+const GENERIC_TABS: TabDef[] = [
+  { key: "overview", label: "Overview", icon: LayoutList },
+  { key: "team", label: "Team", icon: Users },
+  { key: "documents", label: "Documents", icon: FileText },
+  { key: "activity_log", label: "Activity Log", icon: Activity },
+];
+
+function getTabsForStage(stage: StageKey): TabDef[] {
+  if (stage === "deal_qualification") return DQ_TABS as TabDef[];
+  if (stage === "rfi") return RFI_TABS;
+  if (stage === "rfp") return RFP_TABS;
+  return GENERIC_TABS;
+}
+
+function defaultTabForStage(stage: StageKey): string {
+  if (stage === "deal_qualification") return "bid_details";
+  return "overview";
+}
+
 function PipelinePage() {
   const { data: bids = [], isLoading } = useBids();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [viewStage, setViewStage] = useState<StageKey | null>(null);
-  const [activeTab, setActiveTab] = useState<Tab>("bid_details");
+  const [activeTab, setActiveTab] = useState<string>("bid_details");
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [rosterCollapsed, setRosterCollapsed] = useState(false);
@@ -35,6 +57,13 @@ function PipelinePage() {
   }, [bids, q, filter]);
 
   const selected = filtered.find((b) => b.id === selectedId) ?? filtered[0] ?? null;
+  const effectiveStage = viewStage ?? selected?.stage ?? "deal_qualification";
+  const tabs = getTabsForStage(effectiveStage);
+
+  function handleViewStage(s: StageKey) {
+    setViewStage(s);
+    setActiveTab(defaultTabForStage(s));
+  }
 
   return (
     <div className="h-full flex overflow-hidden">
@@ -42,9 +71,10 @@ function PipelinePage() {
         bids={isLoading ? [] : filtered}
         selectedId={selected?.id ?? null}
         onSelect={(id) => {
+          const bid = bids.find((b) => b.id === id);
           setSelectedId(id);
           setViewStage(null);
-          setActiveTab("bid_details");
+          setActiveTab(bid ? defaultTabForStage(bid.stage) : "overview");
           setRosterCollapsed(true);
         }}
         collapsed={rosterCollapsed}
@@ -59,8 +89,9 @@ function PipelinePage() {
         <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
           <BidHeaderBar
             bid={selected}
-            viewStage={viewStage ?? selected.stage}
-            onViewStage={setViewStage}
+            viewStage={effectiveStage}
+            onViewStage={handleViewStage}
+            tabs={tabs}
             activeTab={activeTab}
             onTabChange={setActiveTab}
           />
@@ -68,7 +99,7 @@ function PipelinePage() {
             <div className="flex-1 min-w-0 overflow-y-auto">
               <StageWorkspace
                 bid={selected}
-                stage={viewStage ?? selected.stage}
+                stage={effectiveStage}
                 activeTab={activeTab}
                 onTabChange={setActiveTab}
               />
@@ -76,7 +107,7 @@ function PipelinePage() {
             <BidWorkspaceRail
               bid={selected}
               isDealQual={
-                (viewStage ?? selected.stage) === "deal_qualification" &&
+                effectiveStage === "deal_qualification" &&
                 activeTab === "qualification_result"
               }
             />
