@@ -5,6 +5,8 @@ import { useStageItems, useToggleDeliverable, useToggleQuestion, useUpdateBid } 
 import { DealQualificationWorkspace, type Tab } from "./DealQualificationWorkspace";
 import { RFIWorkspace } from "./RFIWorkspace";
 import { RFPWorkspace } from "./RFPWorkspace";
+import { BAFOWorkspace } from "./BAFOWorkspace";
+import { ContractWorkspace } from "./ContractWorkspace";
 
 
 export function StageWorkspace({
@@ -21,12 +23,10 @@ export function StageWorkspace({
   if (stage === "deal_qualification") {
     return <DealQualificationWorkspace bid={bid} activeTab={activeTab as Tab} onTabChange={onTabChange} />;
   }
-  if (stage === "rfi") {
-    return <RFIWorkspace bid={bid} activeTab={activeTab} />;
-  }
-  if (stage === "rfp") {
-    return <RFPWorkspace bid={bid} activeTab={activeTab} />;
-  }
+  if (stage === "rfi") return <RFIWorkspace bid={bid} activeTab={activeTab} />;
+  if (stage === "rfp") return <RFPWorkspace bid={bid} activeTab={activeTab} />;
+  if (stage === "bafo") return <BAFOWorkspace bid={bid} activeTab={activeTab} />;
+  if (stage === "contract_closure") return <ContractWorkspace bid={bid} activeTab={activeTab} />;
 
   const items = useStageItems(bid.id, stage);
   const toggleD = useToggleDeliverable();

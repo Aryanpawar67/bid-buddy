@@ -9,6 +9,8 @@ import { StageWorkspace } from "@/components/bids/StageWorkspace";
 import { TABS as DQ_TABS } from "@/components/bids/DealQualificationWorkspace";
 import { RFI_TABS } from "@/components/bids/RFIWorkspace";
 import { RFP_TABS } from "@/components/bids/RFPWorkspace";
+import { BAFO_TABS } from "@/components/bids/BAFOWorkspace";
+import { CONTRACT_TABS } from "@/components/bids/ContractWorkspace";
 import { LayoutList, Users, Activity, FileText } from "lucide-react";
 
 export const Route = createFileRoute("/_app/pipeline")({
@@ -28,6 +30,8 @@ function getTabsForStage(stage: StageKey): TabDef[] {
   if (stage === "deal_qualification") return DQ_TABS as TabDef[];
   if (stage === "rfi") return RFI_TABS;
   if (stage === "rfp") return RFP_TABS;
+  if (stage === "bafo") return BAFO_TABS;
+  if (stage === "contract_closure") return CONTRACT_TABS;
   return GENERIC_TABS;
 }
 
