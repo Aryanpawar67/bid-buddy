@@ -1,10 +1,12 @@
+import { useState } from "react";
 import {
   Check, Circle, AlertTriangle, CheckCircle2,
-  Users, Activity, LayoutList, FileText, DollarSign, Handshake,
+  Users, Activity, LayoutList, FileText, DollarSign, Handshake, Plus,
 } from "lucide-react";
 import type { Bid } from "@/lib/bid-queries";
-import { useStageItems, useToggleDeliverable, useToggleQuestion, useBidTeam, useBidActivity } from "@/lib/bid-queries";
+import { useStageItems, useToggleDeliverable, useToggleQuestion, useBidTeam, useBidActivity, useCreateDeliverable } from "@/lib/bid-queries";
 import { initials } from "@/lib/bid-constants";
+import { AdvanceStageFooter } from "./AdvanceStageFooter";
 import type { TabDef } from "./BidHeaderBar";
 
 export const BAFO_TABS: TabDef[] = [
@@ -33,7 +35,7 @@ const STATUS_STYLE: Record<string, { bg: string; color: string; label: string }>
   pending:     { bg: "var(--color-muted)", color: "var(--color-muted-foreground)", label: "Not Started" },
 };
 
-export function BAFOWorkspace({ bid, activeTab }: { bid: Bid; activeTab: string }) {
+export function BAFOWorkspace({ bid, activeTab, onTabChange: _onTabChange }: { bid: Bid; activeTab: string; onTabChange: (t: string) => void }) {
   const items     = useStageItems(bid.id, "bafo");
   const { data: team = [] }     = useBidTeam(bid.id);
   const { data: activity = [] } = useBidActivity(bid.id);
@@ -84,6 +86,7 @@ export function BAFOWorkspace({ bid, activeTab }: { bid: Bid; activeTab: string 
             </ul>
           )}
         </div>
+        <AdvanceStageFooter bid={bid} stage="bafo" />
       </div>
     );
   }
@@ -110,6 +113,7 @@ export function BAFOWorkspace({ bid, activeTab }: { bid: Bid; activeTab: string 
             </ul>
           )}
         </div>
+        <AdvanceStageFooter bid={bid} stage="bafo" />
       </div>
     );
   }
@@ -267,7 +271,7 @@ export function BAFOWorkspace({ bid, activeTab }: { bid: Bid; activeTab: string 
         </div>
 
         {deliverables.length === 0 ? (
-          <div className="py-10 text-center text-[12px] text-muted-foreground">No tasks added for this stage yet.</div>
+          <div className="py-8 text-center text-[12px] text-muted-foreground">No tasks added for this stage yet.</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-[12px]">
@@ -322,6 +326,69 @@ export function BAFOWorkspace({ bid, activeTab }: { bid: Bid; activeTab: string 
             </table>
           </div>
         )}
+        <BAFOAddDeliverableInline bidId={bid.id} />
+      </div>
+      <AdvanceStageFooter bid={bid} stage="bafo" />
+    </div>
+  );
+}
+
+// ── BAFOAddDeliverableInline ──────────────────────────────────────────────────
+
+function BAFOAddDeliverableInline({ bidId }: { bidId: string }) {
+  const [open, setOpen] = useState(false);
+  const [label, setLabel] = useState("");
+  const [type, setType] = useState("document");
+  const [team, setTeam] = useState<"pre_sales" | "legal" | "finance">("pre_sales");
+  const create = useCreateDeliverable();
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="w-full py-2.5 text-[11px] text-primary font-medium hover:bg-muted/30 transition-colors flex items-center gap-1.5 justify-center border-t hairline border-border"
+      >
+        <Plus className="size-3.5" /> Add task
+      </button>
+    );
+  }
+
+  return (
+    <div className="px-4 py-3 border-t hairline border-border bg-muted/20">
+      <input
+        value={label}
+        onChange={(e) => setLabel(e.target.value)}
+        placeholder="Task name…"
+        className="w-full text-[12px] bg-card hairline border rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-ring"
+      />
+      <div className="flex items-center gap-2 mt-2">
+        <select value={type} onChange={(e) => setType(e.target.value)}
+          className="h-7 px-2 text-[11px] bg-card hairline border rounded-md">
+          <option value="document">Document</option>
+          <option value="review">Review</option>
+          <option value="approval">Approval</option>
+          <option value="other">Other</option>
+        </select>
+        <select value={team} onChange={(e) => setTeam(e.target.value as "pre_sales" | "legal" | "finance")}
+          className="h-7 px-2 text-[11px] bg-card hairline border rounded-md">
+          <option value="pre_sales">Pre-Sales</option>
+          <option value="legal">Legal</option>
+          <option value="finance">Finance</option>
+        </select>
+        <button
+          onClick={async () => {
+            if (!label.trim()) return;
+            await create.mutateAsync({ bidId, stage: "bafo", label: label.trim(), assignedTeam: team, type });
+            setLabel(""); setOpen(false);
+          }}
+          disabled={!label.trim() || create.isPending}
+          className="h-7 px-3 rounded-md bg-primary text-primary-foreground text-[11px] font-medium disabled:opacity-50"
+        >
+          {create.isPending ? "…" : "Add"}
+        </button>
+        <button onClick={() => { setLabel(""); setOpen(false); }} className="h-7 px-3 rounded-md hairline border text-[11px]">
+          Cancel
+        </button>
       </div>
     </div>
   );

@@ -19,6 +19,9 @@ const MODEL_STORAGE_KEY = "bid-compass:ai-model";
 const DEFAULT_MODEL = "claude-sonnet-4-6";
 
 export const Route = createFileRoute("/_app/ai")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    bidId: typeof search.bidId === "string" ? search.bidId : undefined,
+  }),
   component: AiPage,
 });
 
@@ -26,6 +29,7 @@ function AiPage() {
   const { user } = useCurrentUser();
   const { data: bids = [] } = useBids();
   const { open: configureOpen, setOpen: setConfigureOpen } = useAiConfigure();
+  const { bidId: initialBidId } = Route.useSearch();
 
   const [mode, setMode] = useState<AiMode>("bid");
   const [selectedBidId, setSelectedBidId] = useState<string | null>(null);
@@ -65,6 +69,14 @@ function AiPage() {
     mode === "global" ? null : selectedBidId,
     model
   );
+
+  // Seed bid from URL search param on mount
+  useEffect(() => {
+    if (initialBidId && !selectedBidId) {
+      setMode("bid");
+      setSelectedBidId(initialBidId);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-select most recent session when bid sessions load
   useEffect(() => {

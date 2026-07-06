@@ -23,10 +23,10 @@ export function StageWorkspace({
   if (stage === "deal_qualification") {
     return <DealQualificationWorkspace bid={bid} activeTab={activeTab as Tab} onTabChange={onTabChange} />;
   }
-  if (stage === "rfi") return <RFIWorkspace bid={bid} activeTab={activeTab} />;
-  if (stage === "rfp") return <RFPWorkspace bid={bid} activeTab={activeTab} />;
-  if (stage === "bafo") return <BAFOWorkspace bid={bid} activeTab={activeTab} />;
-  if (stage === "contract_closure") return <ContractWorkspace bid={bid} activeTab={activeTab} />;
+  if (stage === "rfi") return <RFIWorkspace bid={bid} activeTab={activeTab} onTabChange={onTabChange} />;
+  if (stage === "rfp") return <RFPWorkspace bid={bid} activeTab={activeTab} onTabChange={onTabChange} />;
+  if (stage === "bafo") return <BAFOWorkspace bid={bid} activeTab={activeTab} onTabChange={onTabChange} />;
+  if (stage === "contract_closure") return <ContractWorkspace bid={bid} activeTab={activeTab} onTabChange={onTabChange} />;
 
   const items = useStageItems(bid.id, stage);
   const toggleD = useToggleDeliverable();

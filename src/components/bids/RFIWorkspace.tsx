@@ -1,8 +1,18 @@
-import { Check, Circle, AlertTriangle, MessageSquare, Users, FileText, Activity, LayoutList, Clock, CheckCircle2 } from "lucide-react";
+import { useState } from "react";
+import { Check, Circle, AlertTriangle, MessageSquare, Users, FileText, Activity, LayoutList, Clock, CheckCircle2, Plus, X, UserPlus } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import type { Bid } from "@/lib/bid-queries";
-import { useStageItems, useToggleQuestion, useToggleDeliverable, useBidTeam, useBidActivity } from "@/lib/bid-queries";
+import {
+  useStageItems, useToggleQuestion, useToggleDeliverable, useBidTeam, useBidActivity,
+  useCreateQuestion, useUpdateQuestionResponse, useTeamMembers,
+} from "@/lib/bid-queries";
+import { supabase } from "@/integrations/supabase/client";
 import { initials } from "@/lib/bid-constants";
+import { useQueryClient } from "@tanstack/react-query";
+import { useDocuments, type BidDocument } from "@/lib/doc-queries";
+import { DocPreviewModal } from "@/components/docs/DocPreviewModal";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { AdvanceStageFooter } from "./AdvanceStageFooter";
 import type { TabDef } from "./BidHeaderBar";
 
 export type RFITab = "overview" | "questionnaire" | "team" | "activity_log";
@@ -25,10 +35,15 @@ function avatarColor(name: string): string {
   return colors[Math.abs(hash) % colors.length];
 }
 
-export function RFIWorkspace({ bid, activeTab }: { bid: Bid; activeTab: string }) {
+export function RFIWorkspace({ bid, activeTab, onTabChange }: {
+  bid: Bid;
+  activeTab: string;
+  onTabChange: (t: string) => void;
+}) {
   const items = useStageItems(bid.id, "rfi");
   const { data: team = [] } = useBidTeam(bid.id);
   const { data: activity = [] } = useBidActivity(bid.id);
+  const [docPanelOpen, setDocPanelOpen] = useState(false);
 
   const questions = items.data?.questions ?? [];
   const deliverables = items.data?.deliverables ?? [];
@@ -42,28 +57,54 @@ export function RFIWorkspace({ bid, activeTab }: { bid: Bid; activeTab: string }
   const pct = total ? Math.round((answered / total) * 100) : 0;
 
   const dl = daysLeft(bid.deadline);
-  const health = pct >= 70 ? "On Track" : pct >= 40 ? "Needs Attention" : "At Risk";
-  const healthColor = pct >= 70 ? "#16a34a" : pct >= 40 ? "#d97706" : "#dc2626";
-  const healthBg = pct >= 70 ? "#dcfce7" : pct >= 40 ? "#fef9c3" : "#fee2e2";
+  const clarDays = (bid as any).clarification_deadline
+    ? Math.ceil((new Date((bid as any).clarification_deadline).getTime() - Date.now()) / 86400000)
+    : null;
+
+  const health = total === 0 ? "Not Started" : pct >= 70 ? "On Track" : pct >= 40 ? "Needs Attention" : "At Risk";
+  const healthColor = total === 0 ? "var(--color-muted-foreground)" : pct >= 70 ? "#16a34a" : pct >= 40 ? "#d97706" : "#dc2626";
+  const healthBg = total === 0 ? "var(--color-muted)" : pct >= 70 ? "#dcfce7" : pct >= 40 ? "#fef9c3" : "#fee2e2";
 
   if (activeTab === "questionnaire") {
     return (
-      <div className="px-6 py-5 max-w-[900px]">
-        <div className="bg-card hairline border rounded-xl overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b hairline border-border">
-            <h3 className="text-[13px] font-semibold">RFI Questions</h3>
-            <span className="text-[11px] text-muted-foreground">{answered}/{total} answered</span>
+      <div className="px-6 py-5 max-w-[1100px]">
+        <div className="flex gap-4 items-start">
+          <div className="flex-1 min-w-0 bg-card hairline border rounded-xl overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b hairline border-border">
+              <h3 className="text-[13px] font-semibold">RFI Questions</h3>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-muted-foreground">{answered}/{total} answered</span>
+                <button
+                  onClick={() => setDocPanelOpen((o) => !o)}
+                  title="Toggle documents"
+                  className={`p-1 rounded hover:bg-muted ${docPanelOpen ? "text-primary" : "text-muted-foreground"}`}
+                >
+                  <FileText className="size-3.5" />
+                </button>
+              </div>
+            </div>
+            {questions.length === 0 ? (
+              <div className="py-8 text-center text-[12px] text-muted-foreground">No questions added for this stage yet.</div>
+            ) : (
+              <ul className="divide-y hairline divide-border">
+                {questions.map((q, i) => (
+                  <QuestionRow
+                    key={q.id}
+                    num={i + 1}
+                    question={q}
+                    onCycle={() => {
+                      const next = q.status === "pending" ? "in_progress" : q.status === "in_progress" ? "done" : "pending";
+                      toggleQ.mutate({ id: q.id, status: next });
+                    }}
+                  />
+                ))}
+              </ul>
+            )}
+            <AddQuestionInline bidId={bid.id} stage="rfi" />
           </div>
-          {questions.length === 0 ? (
-            <div className="py-10 text-center text-[12px] text-muted-foreground">No questions added for this stage yet.</div>
-          ) : (
-            <ul className="divide-y hairline divide-border">
-              {questions.map((q, i) => (
-                <QuestionRow key={q.id} num={i + 1} question={q} onToggle={(next) => toggleQ.mutate({ id: q.id, status: next })} />
-              ))}
-            </ul>
-          )}
+          {docPanelOpen && <DocQuickPanel bidId={bid.id} onClose={() => setDocPanelOpen(false)} />}
         </div>
+        <AdvanceStageFooter bid={bid} stage="rfi" />
       </div>
     );
   }
@@ -72,33 +113,21 @@ export function RFIWorkspace({ bid, activeTab }: { bid: Bid; activeTab: string }
     return (
       <div className="px-6 py-5 max-w-[700px]">
         <div className="bg-card hairline border rounded-xl overflow-hidden">
-          <div className="px-4 py-3 border-b hairline border-border">
+          <div className="flex items-center justify-between px-4 py-3 border-b hairline border-border">
             <h3 className="text-[13px] font-semibold">Team Members</h3>
+            <AssignMemberPopover bidId={bid.id} assignedUserIds={team.map((m) => m.user_id)} />
           </div>
           {team.length === 0 ? (
             <div className="py-10 text-center text-[12px] text-muted-foreground">No team members assigned yet.</div>
           ) : (
             <ul className="divide-y hairline divide-border">
               {team.map((m) => (
-                <li key={m.user_id} className="flex items-center gap-3 px-4 py-3">
-                  <div
-                    className="size-8 rounded-full flex items-center justify-center text-[11px] font-bold text-white shrink-0"
-                    style={{ background: avatarColor(m.full_name) }}
-                  >
-                    {initials(m.full_name)}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-[13px] font-medium leading-tight">{m.full_name}</div>
-                    <div className="text-[11px] text-muted-foreground">{m.email}</div>
-                  </div>
-                  <span className="ml-auto text-[10px] font-semibold px-2 py-0.5 rounded bg-primary/10 text-primary capitalize">
-                    {m.role.replace(/_/g, " ")}
-                  </span>
-                </li>
+                <TeamMemberRow key={m.user_id} member={m} bidId={bid.id} />
               ))}
             </ul>
           )}
         </div>
+        <AdvanceStageFooter bid={bid} stage="rfi" />
       </div>
     );
   }
@@ -128,6 +157,7 @@ export function RFIWorkspace({ bid, activeTab }: { bid: Bid; activeTab: string }
             </ul>
           )}
         </div>
+        <AdvanceStageFooter bid={bid} stage="rfi" />
       </div>
     );
   }
@@ -135,6 +165,18 @@ export function RFIWorkspace({ bid, activeTab }: { bid: Bid; activeTab: string }
   // Overview tab
   return (
     <div className="px-6 py-5 max-w-[1100px]">
+      {/* Clarification deadline alert */}
+      {clarDays !== null && clarDays <= 3 && (
+        <div className="mb-4 flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/30 border hairline border-amber-400 text-[11px] text-amber-700 dark:text-amber-400">
+          <AlertTriangle className="size-3.5 shrink-0" />
+          <span>
+            Clarification deadline {clarDays <= 0 ? "is overdue" : `in ${clarDays}d`} — questions due to{" "}
+            <strong>{(bid as any).contact_name ?? "the client"}</strong> by{" "}
+            {new Date((bid as any).clarification_deadline!).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+          </span>
+        </div>
+      )}
+
       {/* Stats row */}
       <div className="grid grid-cols-4 gap-3 mb-5">
         {/* Progress donut */}
@@ -166,6 +208,19 @@ export function RFIWorkspace({ bid, activeTab }: { bid: Bid; activeTab: string }
             <KV label="Answered" value={String(answered)} />
             <KV label="In Progress" value={String(inProgress)} />
             <KV label="Pending" value={String(pending)} />
+            {(bid as any).clarification_deadline && (
+              <>
+                <KV
+                  label="Clarif. Deadline"
+                  value={new Date((bid as any).clarification_deadline).toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" })}
+                />
+                <KV
+                  label="Clarif. Time Left"
+                  value={clarDays! <= 0 ? `${Math.abs(clarDays!)}d over` : `${clarDays}d left`}
+                  urgent={clarDays! <= 5}
+                />
+              </>
+            )}
           </div>
         </div>
 
@@ -179,8 +234,8 @@ export function RFIWorkspace({ bid, activeTab }: { bid: Bid; activeTab: string }
             {health}
           </span>
           <div className="flex flex-col gap-1.5 mt-auto">
-            <HealthCheck label="Questions assigned" ok={total > 0} />
-            <HealthCheck label="Responses on schedule" ok={pct >= 40} />
+            <HealthCheck label={total === 0 ? "Add your first question to begin" : "Questions assigned"} ok={total > 0} />
+            <HealthCheck label="Responses on schedule" ok={total > 0 && pct >= 40} />
             <HealthCheck label="Deadline not overdue" ok={dl >= 0} />
           </div>
         </div>
@@ -210,6 +265,7 @@ export function RFIWorkspace({ bid, activeTab }: { bid: Bid; activeTab: string }
           <div className="ml-auto flex items-center gap-2">
             <Link
               to="/ai"
+              search={{ bidId: bid.id }}
               className="h-8 px-3.5 rounded-md bg-primary text-primary-foreground text-[11px] font-semibold hover:opacity-90 transition-opacity inline-flex items-center gap-1.5"
             >
               <MessageSquare className="size-3.5" />
@@ -237,14 +293,27 @@ export function RFIWorkspace({ bid, activeTab }: { bid: Bid; activeTab: string }
         ) : (
           <ul className="divide-y hairline divide-border">
             {questions.slice(0, 8).map((q, i) => (
-              <QuestionRow key={q.id} num={i + 1} question={q} onToggle={(next) => toggleQ.mutate({ id: q.id, status: next })} />
+              <QuestionRow
+                key={q.id}
+                num={i + 1}
+                question={q}
+                onCycle={() => {
+                  const next = q.status === "pending" ? "in_progress" : q.status === "in_progress" ? "done" : "pending";
+                  toggleQ.mutate({ id: q.id, status: next });
+                }}
+              />
             ))}
           </ul>
         )}
-        {questions.length > 8 && (
-          <div className="px-4 py-2.5 border-t hairline border-border text-[11px] text-primary font-medium cursor-pointer hover:bg-muted/40">
+        {questions.length > 8 ? (
+          <button
+            onClick={() => onTabChange("questionnaire")}
+            className="w-full px-4 py-2.5 border-t hairline border-border text-[11px] text-primary font-medium hover:bg-muted/40 text-left"
+          >
             View all {questions.length} questions →
-          </div>
+          </button>
+        ) : (
+          <AddQuestionInline bidId={bid.id} stage="rfi" />
         )}
       </div>
 
@@ -281,50 +350,271 @@ export function RFIWorkspace({ bid, activeTab }: { bid: Bid; activeTab: string }
           </ul>
         </div>
       )}
+
+      <AdvanceStageFooter bid={bid} stage="rfi" />
     </div>
   );
 }
 
-function QuestionRow({ num, question, onToggle }: {
+// ── QuestionRow ───────────────────────────────────────────────────────────────
+
+function QuestionRow({ num, question, onCycle }: {
   num: number;
   question: any;
-  onToggle: (next: "pending" | "done") => void;
+  onCycle: () => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const [draft, setDraft] = useState(question.response_text ?? "");
+  const updateResponse = useUpdateQuestionResponse();
+
   const done = question.status === "done";
   const inProg = question.status === "in_progress";
+
   return (
-    <li className="flex items-start gap-3 px-4 py-3 hover:bg-muted/20 transition-colors">
-      <span className="text-[10px] text-muted-foreground w-5 shrink-0 mt-0.5">{num}</span>
-      <button
-        onClick={() => onToggle(done ? "pending" : "done")}
-        className={[
-          "size-[18px] rounded-full flex items-center justify-center shrink-0 mt-0.5 hairline border transition-colors",
-          done ? "bg-success-soft border-[#97C459]" : inProg ? "border-[#f59e0b] bg-yellow-50" : "border-dashed border-border-strong",
-        ].join(" ")}
-      >
-        {done && <Check className="size-3 text-success-foreground" strokeWidth={2.5} />}
-        {inProg && <div className="size-2 rounded-full bg-yellow-400" />}
-        {!done && !inProg && <Circle className="size-2 text-muted-foreground/40" />}
-      </button>
-      <div className="flex-1 min-w-0">
-        <div className={`text-[12.5px] leading-snug ${done ? "line-through text-muted-foreground" : ""}`}>
-          {question.question_text}
-        </div>
-        <div className="flex items-center gap-2 mt-1">
-          <span className={[
-            "text-[9px] font-semibold px-1.5 py-0.5 rounded",
-            done ? "bg-success-soft text-success-foreground" : inProg ? "bg-yellow-100 text-yellow-700" : "bg-muted text-muted-foreground"
-          ].join(" ")}>
-            {done ? "Answered" : inProg ? "In Progress" : "Pending"}
-          </span>
-          {question.assigned_team && (
-            <span className="text-[10px] text-muted-foreground">{question.assigned_team.replace(/_/g, " ")}</span>
-          )}
+    <li className="px-4 py-3 hover:bg-muted/20 transition-colors">
+      <div className="flex items-start gap-3">
+        <span className="text-[10px] text-muted-foreground w-5 shrink-0 mt-0.5">{num}</span>
+        <button
+          onClick={(e) => { e.stopPropagation(); onCycle(); }}
+          className={[
+            "size-[18px] rounded-full flex items-center justify-center shrink-0 mt-0.5 hairline border transition-colors",
+            done ? "bg-success-soft border-[#97C459]" : inProg ? "border-amber-400 bg-amber-50 dark:bg-amber-950/30" : "border-dashed border-border-strong",
+          ].join(" ")}
+        >
+          {done && <Check className="size-3 text-success-foreground" strokeWidth={2.5} />}
+          {inProg && <div className="size-2 rounded-full bg-amber-400" />}
+          {!done && !inProg && <Circle className="size-2 text-muted-foreground/40" />}
+        </button>
+        <div className="flex-1 min-w-0">
+          <button
+            onClick={() => setExpanded((o) => !o)}
+            className="text-left w-full"
+          >
+            <div className={`text-[12.5px] leading-snug ${done ? "line-through text-muted-foreground" : ""}`}>
+              {question.question_text}
+            </div>
+          </button>
+          <div className="flex items-center gap-2 mt-1">
+            <span className={[
+              "text-[9px] font-semibold px-1.5 py-0.5 rounded",
+              done ? "bg-success-soft text-success-foreground" : inProg ? "bg-amber-100 text-amber-700" : "bg-muted text-muted-foreground"
+            ].join(" ")}>
+              {done ? "Answered" : inProg ? "In Progress" : "Pending"}
+            </span>
+            {question.assigned_team && (
+              <span className="text-[10px] text-muted-foreground">{question.assigned_team.replace(/_/g, " ")}</span>
+            )}
+            {question.response_text && (
+              <FileText className="size-3 text-muted-foreground" />
+            )}
+          </div>
         </div>
       </div>
+      {expanded && (
+        <div className="mt-2 ml-8">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Your response</div>
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="Draft your response here… (auto-saves on blur)"
+            className="w-full text-[12px] bg-muted/30 hairline border rounded-md p-2 resize-none min-h-[5rem] focus:outline-none focus:ring-1 focus:ring-ring"
+            onBlur={() => {
+              if (draft !== (question.response_text ?? "")) {
+                const nextStatus = question.status === "pending" && draft.trim() ? "in_progress" : undefined;
+                updateResponse.mutate({ id: question.id, responseText: draft, status: nextStatus });
+              }
+            }}
+          />
+          <button onClick={() => setExpanded(false)} className="mt-1 text-[10px] text-muted-foreground hover:text-foreground">
+            ▲ Collapse
+          </button>
+        </div>
+      )}
     </li>
   );
 }
+
+// ── AddQuestionInline ─────────────────────────────────────────────────────────
+
+function AddQuestionInline({ bidId, stage }: { bidId: string; stage: "rfi" | "rfp" | "bafo" | "contract_closure" | "deal_qualification" | "orals" | "due_diligence" | "post_closure" }) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+  const [team, setTeam] = useState<"pre_sales" | "legal" | "finance">("pre_sales");
+  const create = useCreateQuestion();
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="w-full py-2.5 text-[11px] text-primary font-medium hover:bg-muted/30 transition-colors flex items-center gap-1.5 justify-center border-t hairline border-border"
+      >
+        <Plus className="size-3.5" /> Add question
+      </button>
+    );
+  }
+
+  return (
+    <div className="px-4 py-3 border-t hairline border-border bg-muted/20">
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder="Enter question text…"
+        className="w-full text-[12px] bg-card hairline border rounded-md p-2 resize-none h-16 focus:outline-none focus:ring-2 focus:ring-ring"
+      />
+      <div className="flex items-center gap-2 mt-2">
+        <select
+          value={team}
+          onChange={(e) => setTeam(e.target.value as "pre_sales" | "legal" | "finance")}
+          className="h-7 px-2 text-[11px] bg-card hairline border rounded-md"
+        >
+          <option value="pre_sales">Pre-Sales</option>
+          <option value="legal">Legal</option>
+          <option value="finance">Finance</option>
+        </select>
+        <button
+          onClick={async () => {
+            if (!text.trim()) return;
+            await create.mutateAsync({ bidId, stage, questionText: text.trim(), assignedTeam: team });
+            setText("");
+            setOpen(false);
+          }}
+          disabled={!text.trim() || create.isPending}
+          className="h-7 px-3 rounded-md bg-primary text-primary-foreground text-[11px] font-medium disabled:opacity-50"
+        >
+          {create.isPending ? "…" : "Add"}
+        </button>
+        <button onClick={() => { setText(""); setOpen(false); }} className="h-7 px-3 rounded-md hairline border text-[11px]">
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── DocQuickPanel ─────────────────────────────────────────────────────────────
+
+function DocQuickPanel({ bidId, onClose }: { bidId: string; onClose: () => void }) {
+  const { data: docs = [] } = useDocuments({ bidId });
+  const [preview, setPreview] = useState<BidDocument | null>(null);
+
+  return (
+    <>
+      <div className="w-60 shrink-0 bg-card hairline border rounded-xl overflow-hidden flex flex-col">
+        <div className="flex items-center justify-between px-3 py-2.5 border-b hairline border-border">
+          <span className="text-[11px] font-semibold">Documents ({docs.length})</span>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+            <X className="size-3.5" />
+          </button>
+        </div>
+        <div className="overflow-y-auto flex-1">
+          {docs.length === 0 ? (
+            <div className="py-6 text-center text-[11px] text-muted-foreground">No documents.</div>
+          ) : (
+            <ul className="divide-y hairline divide-border">
+              {docs.map((d) => (
+                <li key={d.id}>
+                  <button
+                    onClick={() => setPreview(d)}
+                    className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-muted/30 text-left"
+                  >
+                    <FileText className="size-3.5 text-muted-foreground shrink-0" />
+                    <span className="text-[11px] truncate">{d.name}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+      {preview && <DocPreviewModal doc={preview} allDocs={docs} onClose={() => setPreview(null)} />}
+    </>
+  );
+}
+
+// ── AssignMemberPopover ───────────────────────────────────────────────────────
+
+function AssignMemberPopover({ bidId, assignedUserIds }: { bidId: string; assignedUserIds: string[] }) {
+  const { data: members = [] } = useTeamMembers();
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+
+  const unassigned = members.filter((m) => !assignedUserIds.includes(m.user_id));
+
+  async function assign(userId: string) {
+    await (supabase as any).from("bid_assignments").insert({ bid_id: bidId, user_id: userId });
+    qc.invalidateQueries({ queryKey: ["bid-team", bidId] });
+    setOpen(false);
+  }
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button className="h-7 px-3 rounded-md hairline border text-[11px] font-medium hover:bg-muted inline-flex items-center gap-1.5">
+          <UserPlus className="size-3.5" /> Assign member
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64 p-1">
+        {unassigned.length === 0 ? (
+          <div className="py-4 text-center text-[11px] text-muted-foreground">All team members already assigned.</div>
+        ) : (
+          <ul>
+            {unassigned.map((m) => (
+              <li key={m.user_id}>
+                <button
+                  onClick={() => assign(m.user_id)}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/50 rounded-md text-left"
+                >
+                  <div className="size-6 rounded-full bg-primary/20 text-primary text-[10px] font-bold flex items-center justify-center shrink-0">
+                    {initials(m.full_name)}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-[12px] font-medium truncate">{m.full_name}</div>
+                    <div className="text-[10px] text-muted-foreground capitalize">{m.primary_role.replace(/_/g, " ")}</div>
+                  </div>
+                  <UserPlus className="size-3 text-muted-foreground ml-auto shrink-0" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+// ── TeamMemberRow ─────────────────────────────────────────────────────────────
+
+function TeamMemberRow({ member, bidId }: { member: any; bidId: string }) {
+  const qc = useQueryClient();
+
+  async function remove() {
+    await (supabase as any).from("bid_assignments").delete().eq("id", member.assignment_id);
+    qc.invalidateQueries({ queryKey: ["bid-team", bidId] });
+  }
+
+  return (
+    <li className="flex items-center gap-3 px-4 py-3">
+      <div
+        className="size-8 rounded-full flex items-center justify-center text-[11px] font-bold text-white shrink-0"
+        style={{ background: avatarColor(member.full_name) }}
+      >
+        {initials(member.full_name)}
+      </div>
+      <div className="min-w-0">
+        <div className="text-[13px] font-medium leading-tight">{member.full_name}</div>
+        <div className="text-[11px] text-muted-foreground">{member.email}</div>
+      </div>
+      <span className="ml-auto text-[10px] font-semibold px-2 py-0.5 rounded bg-primary/10 text-primary capitalize">
+        {member.role.replace(/_/g, " ")}
+      </span>
+      <button onClick={remove} className="text-muted-foreground hover:text-destructive transition-colors ml-1">
+        <X className="size-3.5" />
+      </button>
+    </li>
+  );
+}
+
+// ── Shared primitives ─────────────────────────────────────────────────────────
 
 function KV({ label, value, urgent }: { label: string; value: string; urgent?: boolean }) {
   return (

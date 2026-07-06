@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { DocxViewerModal } from "@/components/docs/DocxViewerModal";
-import { Lock, CheckCircle2, Users, ClipboardList, BarChart3, Activity, RefreshCw, FileText, Eye, Mail } from "lucide-react";
+import { Lock, CheckCircle2, Users, ClipboardList, BarChart3, Activity, RefreshCw, FileText, Eye, Mail, UserPlus, X } from "lucide-react";
 import { initials, urgencyClass, fmtMoney } from "@/lib/bid-constants";
 import type { Bid, AssessmentData, QualificationInsights } from "@/lib/bid-queries";
 import { useDocuments, type BidDocument, type DocType } from "@/lib/doc-queries";
@@ -15,7 +15,11 @@ import {
   useGenerateQualificationInsights,
   useGenerateQualResult,
   useGenerateDealBrief,
+  useTeamMembers,
 } from "@/lib/bid-queries";
+import { supabase } from "@/integrations/supabase/client";
+import { useQueryClient } from "@tanstack/react-query";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useCurrentUser } from "@/lib/auth";
 
 export const DEFAULT_CRITERIA = [
@@ -375,9 +379,22 @@ function BidDetailsTab({ bid }: { bid: Bid }) {
 
 function BidTeamTab({ bid }: { bid: Bid }) {
   const { data: members = [], isLoading } = useBidTeam(bid.id);
+  const qc = useQueryClient();
+
+  async function removeMember(assignmentId: string) {
+    await (supabase as any).from("bid_assignments").delete().eq("id", assignmentId);
+    qc.invalidateQueries({ queryKey: ["bid-team", bid.id] });
+  }
 
   return (
-    <Card title="Assigned Team Members" subtitle={`${members.length} member${members.length !== 1 ? "s" : ""}`}>
+    <section className="bg-card hairline border rounded-xl p-3.5 mb-3.5">
+      <header className="flex items-center justify-between mb-2.5">
+        <div>
+          <h3 className="text-[13px] font-medium">Assigned Team Members</h3>
+          <span className="text-[11px] text-muted-foreground">{members.length} member{members.length !== 1 ? "s" : ""}</span>
+        </div>
+        <DQAssignMemberPopover bidId={bid.id} assignedUserIds={members.map((m) => m.user_id)} />
+      </header>
       {isLoading ? (
         <Empty>Loading…</Empty>
       ) : members.length === 0 ? (
@@ -389,6 +406,7 @@ function BidTeamTab({ bid }: { bid: Bid }) {
               <th className="text-left py-2 font-medium">Member</th>
               <th className="text-left py-2 font-medium">Role</th>
               <th className="text-left py-2 font-medium">Email</th>
+              <th className="w-8"></th>
             </tr>
           </thead>
           <tbody className="divide-y hairline divide-border">
@@ -404,12 +422,64 @@ function BidTeamTab({ bid }: { bid: Bid }) {
                 </td>
                 <td className="py-2.5 capitalize text-muted-foreground">{m.role.replace(/_/g, " ")}</td>
                 <td className="py-2.5 text-muted-foreground">{m.email || "—"}</td>
+                <td className="py-2.5">
+                  <button onClick={() => removeMember(m.assignment_id)}
+                    className="text-muted-foreground hover:text-destructive transition-colors">
+                    <X className="size-3.5" />
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       )}
-    </Card>
+    </section>
+  );
+}
+
+function DQAssignMemberPopover({ bidId, assignedUserIds }: { bidId: string; assignedUserIds: string[] }) {
+  const { data: members = [] } = useTeamMembers();
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const unassigned = members.filter((m) => !assignedUserIds.includes(m.user_id));
+
+  async function assign(userId: string) {
+    await (supabase as any).from("bid_assignments").insert({ bid_id: bidId, user_id: userId });
+    qc.invalidateQueries({ queryKey: ["bid-team", bidId] });
+    setOpen(false);
+  }
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button className="h-7 px-3 rounded-md hairline border text-[11px] font-medium hover:bg-muted inline-flex items-center gap-1.5">
+          <UserPlus className="size-3.5" /> Assign member
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64 p-1">
+        {unassigned.length === 0 ? (
+          <div className="py-4 text-center text-[11px] text-muted-foreground">All members already assigned.</div>
+        ) : (
+          <ul>
+            {unassigned.map((m) => (
+              <li key={m.user_id}>
+                <button onClick={() => assign(m.user_id)}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/50 rounded-md text-left">
+                  <div className="size-6 rounded-full bg-primary/20 text-primary text-[10px] font-bold flex items-center justify-center shrink-0">
+                    {initials(m.full_name)}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-[12px] font-medium truncate">{m.full_name}</div>
+                    <div className="text-[10px] text-muted-foreground capitalize">{m.primary_role.replace(/_/g, " ")}</div>
+                  </div>
+                  <UserPlus className="size-3 text-muted-foreground ml-auto shrink-0" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </PopoverContent>
+    </Popover>
   );
 }
 

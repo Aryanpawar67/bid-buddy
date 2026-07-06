@@ -1,11 +1,16 @@
+import { useState } from "react";
 import {
   Check, Circle, AlertTriangle, MessageSquare, Users, Activity,
-  LayoutList, CheckCircle2, Sparkles, BookOpen, FileText, ArrowRight,
+  LayoutList, CheckCircle2, Sparkles, BookOpen, FileText, ArrowRight, Plus, UserPlus, X,
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import type { Bid } from "@/lib/bid-queries";
-import { useStageItems, useToggleQuestion, useToggleDeliverable, useBidTeam, useBidActivity } from "@/lib/bid-queries";
+import { useStageItems, useToggleQuestion, useToggleDeliverable, useBidTeam, useBidActivity, useCreateQuestion, useUpdateQuestionResponse, useTeamMembers } from "@/lib/bid-queries";
 import { initials } from "@/lib/bid-constants";
+import { supabase } from "@/integrations/supabase/client";
+import { useQueryClient } from "@tanstack/react-query";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { AdvanceStageFooter } from "./AdvanceStageFooter";
 import type { TabDef } from "./BidHeaderBar";
 
 export type RFPTab = "overview" | "clarifications" | "team" | "activity_log";
@@ -35,7 +40,7 @@ const STATUS_STYLE: Record<string, { bg: string; color: string; label: string }>
   pending:     { bg: "var(--color-muted)", color: "var(--color-muted-foreground)", label: "Pending" },
 };
 
-export function RFPWorkspace({ bid, activeTab }: { bid: Bid; activeTab: string }) {
+export function RFPWorkspace({ bid, activeTab, onTabChange }: { bid: Bid; activeTab: string; onTabChange: (t: string) => void }) {
   const items = useStageItems(bid.id, "rfp");
   const { data: team = [] } = useBidTeam(bid.id);
   const { data: activity = [] } = useBidActivity(bid.id);
@@ -52,9 +57,9 @@ export function RFPWorkspace({ bid, activeTab }: { bid: Bid; activeTab: string }
   const pct = totalSections ? Math.round((completedSections / totalSections) * 100) : 0;
 
   const dl = daysLeft(bid.deadline);
-  const health = pct >= 70 ? "On Track" : pct >= 40 ? "Needs Attention" : "At Risk";
-  const healthColor = pct >= 70 ? "#16a34a" : pct >= 40 ? "#d97706" : "#dc2626";
-  const healthBg = pct >= 70 ? "#dcfce7" : pct >= 40 ? "#fef9c3" : "#fee2e2";
+  const health = totalSections === 0 ? "Not Started" : pct >= 70 ? "On Track" : pct >= 40 ? "Needs Attention" : "At Risk";
+  const healthColor = totalSections === 0 ? "var(--color-muted-foreground)" : pct >= 70 ? "#16a34a" : pct >= 40 ? "#d97706" : "#dc2626";
+  const healthBg = totalSections === 0 ? "var(--color-muted)" : pct >= 70 ? "#dcfce7" : pct >= 40 ? "#fef9c3" : "#fee2e2";
 
   if (activeTab === "clarifications") {
     return (
@@ -69,6 +74,7 @@ export function RFPWorkspace({ bid, activeTab }: { bid: Bid; activeTab: string }
           </div>
           <Link
             to="/ai"
+            search={{ bidId: bid.id }}
             className="h-8 px-3.5 rounded-md bg-primary text-primary-foreground text-[11px] font-semibold hover:opacity-90 transition-opacity shrink-0 inline-flex items-center gap-1.5"
           >
             Open RFx Responder <ArrowRight className="size-3" />
@@ -83,7 +89,7 @@ export function RFPWorkspace({ bid, activeTab }: { bid: Bid; activeTab: string }
             </span>
           </div>
           {questions.length === 0 ? (
-            <div className="py-10 text-center text-[12px] text-muted-foreground">No clarification questions added yet.</div>
+            <div className="py-8 text-center text-[12px] text-muted-foreground">No clarification questions added yet.</div>
           ) : (
             <ul className="divide-y hairline divide-border">
               {questions.map((q, i) => {
@@ -93,14 +99,17 @@ export function RFPWorkspace({ bid, activeTab }: { bid: Bid; activeTab: string }
                   <li key={q.id} className="flex items-start gap-3 px-4 py-3 hover:bg-muted/20 transition-colors">
                     <span className="text-[10px] text-muted-foreground w-5 shrink-0 mt-0.5">{i + 1}</span>
                     <button
-                      onClick={() => toggleQ.mutate({ id: q.id, status: done ? "pending" : "done" })}
+                      onClick={() => {
+                        const next = q.status === "pending" ? "in_progress" : q.status === "in_progress" ? "done" : "pending";
+                        toggleQ.mutate({ id: q.id, status: next });
+                      }}
                       className={[
                         "size-[18px] rounded-full flex items-center justify-center shrink-0 mt-0.5 hairline border transition-colors",
-                        done ? "bg-success-soft border-[#97C459]" : inProg ? "border-[#f59e0b] bg-yellow-50" : "border-dashed border-border-strong",
+                        done ? "bg-success-soft border-[#97C459]" : inProg ? "border-amber-400 bg-amber-50 dark:bg-amber-950/30" : "border-dashed border-border-strong",
                       ].join(" ")}
                     >
                       {done && <Check className="size-3 text-success-foreground" strokeWidth={2.5} />}
-                      {inProg && <div className="size-2 rounded-full bg-yellow-400" />}
+                      {inProg && <div className="size-2 rounded-full bg-amber-400" />}
                       {!done && !inProg && <Circle className="size-2 text-muted-foreground/40" />}
                     </button>
                     <div className="flex-1 min-w-0">
@@ -110,13 +119,14 @@ export function RFPWorkspace({ bid, activeTab }: { bid: Bid; activeTab: string }
                       <div className="flex items-center gap-2 mt-1">
                         <span className={[
                           "text-[9px] font-semibold px-1.5 py-0.5 rounded",
-                          done ? "bg-success-soft text-success-foreground" : inProg ? "bg-blue-100 text-blue-700" : "bg-muted text-muted-foreground"
+                          done ? "bg-success-soft text-success-foreground" : inProg ? "bg-amber-100 text-amber-700" : "bg-muted text-muted-foreground"
                         ].join(" ")}>
                           {done ? "Answered" : inProg ? "Drafting" : "Pending"}
                         </span>
                         {q.assigned_team && (
                           <span className="text-[10px] text-muted-foreground">{q.assigned_team.replace(/_/g, " ")}</span>
                         )}
+                        {q.response_text && <FileText className="size-3 text-muted-foreground" />}
                       </div>
                     </div>
                   </li>
@@ -124,7 +134,9 @@ export function RFPWorkspace({ bid, activeTab }: { bid: Bid; activeTab: string }
               })}
             </ul>
           )}
+          <RFPAddQuestionInline bidId={bid.id} />
         </div>
+        <AdvanceStageFooter bid={bid} stage="rfp" />
       </div>
     );
   }
@@ -133,33 +145,21 @@ export function RFPWorkspace({ bid, activeTab }: { bid: Bid; activeTab: string }
     return (
       <div className="px-6 py-5 max-w-[700px]">
         <div className="bg-card hairline border rounded-xl overflow-hidden">
-          <div className="px-4 py-3 border-b hairline border-border">
+          <div className="flex items-center justify-between px-4 py-3 border-b hairline border-border">
             <h3 className="text-[13px] font-semibold">Proposal Team</h3>
+            <RFPAssignMemberPopover bidId={bid.id} assignedUserIds={team.map((m) => m.user_id)} />
           </div>
           {team.length === 0 ? (
             <div className="py-10 text-center text-[12px] text-muted-foreground">No team members assigned yet.</div>
           ) : (
             <ul className="divide-y hairline divide-border">
               {team.map((m) => (
-                <li key={m.user_id} className="flex items-center gap-3 px-4 py-3">
-                  <div
-                    className="size-8 rounded-full flex items-center justify-center text-[11px] font-bold text-white shrink-0"
-                    style={{ background: avatarColor(m.full_name) }}
-                  >
-                    {initials(m.full_name)}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-[13px] font-medium leading-tight">{m.full_name}</div>
-                    <div className="text-[11px] text-muted-foreground">{m.email}</div>
-                  </div>
-                  <span className="ml-auto text-[10px] font-semibold px-2 py-0.5 rounded bg-primary/10 text-primary capitalize">
-                    {m.role.replace(/_/g, " ")}
-                  </span>
-                </li>
+                <RFPTeamMemberRow key={m.user_id} member={m} bidId={bid.id} />
               ))}
             </ul>
           )}
         </div>
+        <AdvanceStageFooter bid={bid} stage="rfp" />
       </div>
     );
   }
@@ -187,6 +187,7 @@ export function RFPWorkspace({ bid, activeTab }: { bid: Bid; activeTab: string }
             </ul>
           )}
         </div>
+        <AdvanceStageFooter bid={bid} stage="rfp" />
       </div>
     );
   }
@@ -265,6 +266,7 @@ export function RFPWorkspace({ bid, activeTab }: { bid: Bid; activeTab: string }
           </div>
           <Link
             to="/ai"
+            search={{ bidId: bid.id }}
             className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-[12px] font-semibold hover:opacity-90 transition-opacity shrink-0 inline-flex items-center gap-2"
           >
             Open RFx Responder <ArrowRight className="size-3.5" />
@@ -280,6 +282,7 @@ export function RFPWorkspace({ bid, activeTab }: { bid: Bid; activeTab: string }
             <Link
               key={action.label}
               to="/ai"
+              search={{ bidId: bid.id }}
               className="flex items-center gap-2.5 p-2.5 rounded-lg bg-card/80 hairline border border-border hover:bg-card transition-colors"
             >
               <div className="size-7 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
@@ -412,7 +415,149 @@ export function RFPWorkspace({ bid, activeTab }: { bid: Bid; activeTab: string }
           </div>
         </div>
       )}
+      <AdvanceStageFooter bid={bid} stage="rfp" />
     </div>
+  );
+}
+
+// ── RFPAddQuestionInline ──────────────────────────────────────────────────────
+
+function RFPAddQuestionInline({ bidId }: { bidId: string }) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+  const [team, setTeam] = useState<"pre_sales" | "legal" | "finance">("pre_sales");
+  const create = useCreateQuestion();
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="w-full py-2.5 text-[11px] text-primary font-medium hover:bg-muted/30 transition-colors flex items-center gap-1.5 justify-center border-t hairline border-border"
+      >
+        <Plus className="size-3.5" /> Add question
+      </button>
+    );
+  }
+
+  return (
+    <div className="px-4 py-3 border-t hairline border-border bg-muted/20">
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder="Enter clarification question…"
+        className="w-full text-[12px] bg-card hairline border rounded-md p-2 resize-none h-16 focus:outline-none focus:ring-2 focus:ring-ring"
+      />
+      <div className="flex items-center gap-2 mt-2">
+        <select
+          value={team}
+          onChange={(e) => setTeam(e.target.value as "pre_sales" | "legal" | "finance")}
+          className="h-7 px-2 text-[11px] bg-card hairline border rounded-md"
+        >
+          <option value="pre_sales">Pre-Sales</option>
+          <option value="legal">Legal</option>
+          <option value="finance">Finance</option>
+        </select>
+        <button
+          onClick={async () => {
+            if (!text.trim()) return;
+            await create.mutateAsync({ bidId, stage: "rfp", questionText: text.trim(), assignedTeam: team });
+            setText(""); setOpen(false);
+          }}
+          disabled={!text.trim() || create.isPending}
+          className="h-7 px-3 rounded-md bg-primary text-primary-foreground text-[11px] font-medium disabled:opacity-50"
+        >
+          {create.isPending ? "…" : "Add"}
+        </button>
+        <button onClick={() => { setText(""); setOpen(false); }} className="h-7 px-3 rounded-md hairline border text-[11px]">
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── RFPAssignMemberPopover ────────────────────────────────────────────────────
+
+function RFPAssignMemberPopover({ bidId, assignedUserIds }: { bidId: string; assignedUserIds: string[] }) {
+  const { data: members = [] } = useTeamMembers();
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const unassigned = members.filter((m) => !assignedUserIds.includes(m.user_id));
+
+  async function assign(userId: string) {
+    await (supabase as any).from("bid_assignments").insert({ bid_id: bidId, user_id: userId });
+    qc.invalidateQueries({ queryKey: ["bid-team", bidId] });
+    setOpen(false);
+  }
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button className="h-7 px-3 rounded-md hairline border text-[11px] font-medium hover:bg-muted inline-flex items-center gap-1.5">
+          <UserPlus className="size-3.5" /> Assign member
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64 p-1">
+        {unassigned.length === 0 ? (
+          <div className="py-4 text-center text-[11px] text-muted-foreground">All members already assigned.</div>
+        ) : (
+          <ul>
+            {unassigned.map((m) => (
+              <li key={m.user_id}>
+                <button onClick={() => assign(m.user_id)}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/50 rounded-md text-left">
+                  <div className="size-6 rounded-full bg-primary/20 text-primary text-[10px] font-bold flex items-center justify-center shrink-0">
+                    {initials(m.full_name)}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-[12px] font-medium truncate">{m.full_name}</div>
+                    <div className="text-[10px] text-muted-foreground capitalize">{m.primary_role.replace(/_/g, " ")}</div>
+                  </div>
+                  <UserPlus className="size-3 text-muted-foreground ml-auto shrink-0" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+// ── RFPTeamMemberRow ──────────────────────────────────────────────────────────
+
+function RFPTeamMemberRow({ member, bidId }: { member: any; bidId: string }) {
+  const qc = useQueryClient();
+
+  function avatarColor(name: string): string {
+    const colors = ["#491AEB", "#0891b2", "#16a34a", "#d97706", "#dc2626", "#7c3aed", "#db2777"];
+    let hash = 0;
+    for (const c of name) hash = (hash * 31 + c.charCodeAt(0)) & 0xffffffff;
+    return colors[Math.abs(hash) % colors.length];
+  }
+
+  async function remove() {
+    await (supabase as any).from("bid_assignments").delete().eq("id", member.assignment_id);
+    qc.invalidateQueries({ queryKey: ["bid-team", bidId] });
+  }
+
+  return (
+    <li className="flex items-center gap-3 px-4 py-3">
+      <div className="size-8 rounded-full flex items-center justify-center text-[11px] font-bold text-white shrink-0"
+        style={{ background: avatarColor(member.full_name) }}>
+        {initials(member.full_name)}
+      </div>
+      <div className="min-w-0">
+        <div className="text-[13px] font-medium leading-tight">{member.full_name}</div>
+        <div className="text-[11px] text-muted-foreground">{member.email}</div>
+      </div>
+      <span className="ml-auto text-[10px] font-semibold px-2 py-0.5 rounded bg-primary/10 text-primary capitalize">
+        {member.role.replace(/_/g, " ")}
+      </span>
+      <button onClick={remove} className="text-muted-foreground hover:text-destructive transition-colors ml-1">
+        <X className="size-3.5" />
+      </button>
+    </li>
   );
 }
 

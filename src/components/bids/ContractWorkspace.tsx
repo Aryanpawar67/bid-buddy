@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Check, Circle, AlertTriangle, CheckCircle2,
   Users, Activity, LayoutList, FileText, Milestone, Sparkles, ArrowRight,
@@ -5,9 +6,13 @@ import {
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import type { Bid } from "@/lib/bid-queries";
-import { useStageItems, useToggleDeliverable, useToggleQuestion, useBidTeam, useBidActivity } from "@/lib/bid-queries";
+import { useStageItems, useToggleDeliverable, useToggleQuestion, useBidTeam, useBidActivity, useUpdateBid } from "@/lib/bid-queries";
 import { useDocuments } from "@/lib/doc-queries";
+import { supabase } from "@/integrations/supabase/client";
+import { useCurrentUser } from "@/lib/auth";
 import { initials, fmtMoney } from "@/lib/bid-constants";
+import { AdvanceStageFooter } from "./AdvanceStageFooter";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { TabDef } from "./BidHeaderBar";
 
 export const CONTRACT_TABS: TabDef[] = [
@@ -65,11 +70,12 @@ const EXT_COLORS: Record<string, { bg: string; color: string }> = {
   default: { bg: "var(--color-muted)", color: "var(--color-muted-foreground)" },
 };
 
-export function ContractWorkspace({ bid, activeTab }: { bid: Bid; activeTab: string }) {
+export function ContractWorkspace({ bid, activeTab, onTabChange: _onTabChange }: { bid: Bid; activeTab: string; onTabChange: (t: string) => void }) {
   const items     = useStageItems(bid.id, "contract_closure");
   const { data: team = [] }     = useBidTeam(bid.id);
   const { data: activity = [] } = useBidActivity(bid.id);
-  const { data: docs = [] }     = useDocuments(bid.id) as { data: any[] };
+  const { data: docs = [] }     = useDocuments({ bidId: bid.id });
+  const [closeout, setCloseout] = useState<"won" | "lost" | null>(null);
   const toggleD = useToggleDeliverable();
   const toggleQ = useToggleQuestion();
 
@@ -308,7 +314,7 @@ export function ContractWorkspace({ bid, activeTab }: { bid: Bid; activeTab: str
           </div>
         </div>
 
-        {/* Approvals */}
+        {/* Approvals + close-out */}
         <div className="bg-card hairline border rounded-xl p-4">
           <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-3">Approvals</div>
           <div className="flex flex-col gap-2">
@@ -329,6 +335,19 @@ export function ContractWorkspace({ bid, activeTab }: { bid: Bid; activeTab: str
               </div>
             ))}
           </div>
+          {(bid.status === "active" || bid.status === "submitted") && (
+            <div className="flex items-center gap-2 mt-3 pt-3 border-t hairline border-border">
+              <button onClick={() => setCloseout("won")}
+                className="h-7 px-3 rounded-md bg-green-600 text-white text-[11px] font-semibold hover:bg-green-700">
+                Mark as Won
+              </button>
+              <button onClick={() => setCloseout("lost")}
+                className="h-7 px-3 rounded-md hairline border border-destructive text-destructive text-[11px] font-semibold hover:bg-destructive/10">
+                Mark as Lost
+              </button>
+            </div>
+          )}
+          {closeout && <CloseoutModal bid={bid} outcome={closeout} onClose={() => setCloseout(null)} />}
         </div>
       </div>
 
@@ -403,7 +422,7 @@ export function ContractWorkspace({ bid, activeTab }: { bid: Bid; activeTab: str
               <p className="text-[11px] text-muted-foreground leading-relaxed">
                 Use the RFx Responder to analyse contract clauses, review obligations, flag risks, and draft redline responses.
               </p>
-              <Link to="/ai"
+              <Link to="/ai" search={{ bidId: bid.id }}
                 className="w-full h-9 rounded-lg bg-primary text-primary-foreground text-[11px] font-semibold hover:opacity-90 transition-opacity inline-flex items-center justify-center gap-2">
                 <Sparkles className="size-3.5" />
                 Open Legal AI Assistant
@@ -419,7 +438,7 @@ export function ContractWorkspace({ bid, activeTab }: { bid: Bid; activeTab: str
                   "Summarise indemnification clause",
                   "Are there any missing clauses?",
                 ].map(q => (
-                  <Link key={q} to="/ai"
+                  <Link key={q} to="/ai" search={{ bidId: bid.id }}
                     className="flex items-center gap-2 p-2.5 rounded-lg bg-background hairline border border-border hover:bg-muted/50 transition-colors text-[11px] font-medium">
                     {q}
                     <ArrowRight className="size-3 ml-auto text-muted-foreground shrink-0" />
@@ -468,7 +487,76 @@ export function ContractWorkspace({ bid, activeTab }: { bid: Bid; activeTab: str
           </div>
         </div>
       </div>
+      <AdvanceStageFooter bid={bid} stage="contract_closure" />
     </div>
+  );
+}
+
+// ── CloseoutModal ─────────────────────────────────────────────────────────────
+
+function CloseoutModal({ bid, outcome, onClose }: { bid: Bid; outcome: "won" | "lost"; onClose: () => void }) {
+  const updateBid = useUpdateBid();
+  const { user } = useCurrentUser();
+  const [finalValue, setFinalValue] = useState(String(bid.value));
+  const [reasonLost, setReasonLost] = useState("");
+
+  async function confirm() {
+    await updateBid.mutateAsync({
+      id: bid.id,
+      patch: { status: outcome, value: parseFloat(finalValue) || bid.value },
+    });
+    await (supabase as any).from("bid_activity_log").insert({
+      bid_id: bid.id,
+      user_id: user?.id ?? null,
+      action: outcome === "won" ? "bid_won" : "bid_lost",
+      metadata: { reason_lost: reasonLost || null, final_value: parseFloat(finalValue) },
+    });
+    onClose();
+  }
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="text-[14px]">
+            {outcome === "won" ? "Mark as Won" : "Mark as Lost"}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 text-[12px]">
+          <label className="block">
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+              Final contract value (USD)
+            </div>
+            <input type="number" value={finalValue} onChange={(e) => setFinalValue(e.target.value)}
+              className="w-full h-8 px-2 rounded-md hairline border bg-card text-[12px] focus:outline-none focus:ring-2 focus:ring-ring" />
+          </label>
+          {outcome === "lost" && (
+            <label className="block">
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+                Reason lost (optional)
+              </div>
+              <textarea value={reasonLost} onChange={(e) => setReasonLost(e.target.value)}
+                placeholder="e.g. Lost to competitor on pricing…"
+                className="w-full h-16 px-2 py-1.5 rounded-md hairline border bg-card text-[12px] resize-none focus:outline-none focus:ring-2 focus:ring-ring" />
+            </label>
+          )}
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <button onClick={onClose} className="h-8 px-3 rounded-md hairline border text-[12px]">Cancel</button>
+          <button
+            onClick={confirm}
+            disabled={updateBid.isPending}
+            className={`h-8 px-3 rounded-md text-[12px] font-semibold disabled:opacity-50 ${
+              outcome === "won"
+                ? "bg-green-600 text-white hover:bg-green-700"
+                : "bg-destructive text-destructive-foreground hover:opacity-90"
+            }`}
+          >
+            {updateBid.isPending ? "…" : outcome === "won" ? "Confirm Won ✓" : "Confirm Lost ✗"}
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

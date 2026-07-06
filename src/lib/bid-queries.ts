@@ -345,6 +345,107 @@ export function useGenerateQualResult() {
   });
 }
 
+// ── useCreateQuestion ────────────────────────────────────────────────────────
+export function useCreateQuestion() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: {
+      bidId: string;
+      stage: StageKey;
+      questionText: string;
+      assignedTeam: "pre_sales" | "legal" | "finance";
+    }) => {
+      const { error } = await supabase.from("bid_questions" as never).insert({
+        bid_id: payload.bidId,
+        stage: payload.stage,
+        question_text: payload.questionText,
+        assigned_team: payload.assignedTeam,
+        status: "pending",
+      } as never);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["stage-items"] }),
+  });
+}
+
+// ── useCreateDeliverable ──────────────────────────────────────────────────────
+export function useCreateDeliverable() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: {
+      bidId: string;
+      stage: StageKey;
+      label: string;
+      assignedTeam: "pre_sales" | "legal" | "finance";
+      type?: string;
+    }) => {
+      const { error } = await supabase.from("bid_deliverables").insert({
+        bid_id: payload.bidId,
+        stage: payload.stage,
+        label: payload.label,
+        assigned_team: payload.assignedTeam,
+        type: (payload.type ?? "document") as never,
+        status: "pending",
+      } as never);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["stage-items"] }),
+  });
+}
+
+// ── useUpdateQuestionResponse ─────────────────────────────────────────────────
+export function useUpdateQuestionResponse() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      id,
+      responseText,
+      internalNotes,
+      status,
+    }: {
+      id: string;
+      responseText: string;
+      internalNotes?: string;
+      status?: "pending" | "in_progress" | "done";
+    }) => {
+      const patch: Record<string, unknown> = { response_text: responseText };
+      if (internalNotes !== undefined) patch.internal_notes = internalNotes;
+      if (status) patch.status = status;
+      const { error } = await supabase.from("bid_questions" as never).update(patch as never).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["stage-items"] }),
+  });
+}
+
+// ── useTeamMembers ────────────────────────────────────────────────────────────
+export type TeamMember = {
+  user_id: string;
+  full_name: string;
+  status: string;
+  primary_role: string;
+};
+
+export function useTeamMembers() {
+  return useQuery({
+    queryKey: ["team-members"],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from("profiles")
+        .select("user_id, full_name, status, user_roles(role)")
+        .eq("status", "active")
+        .order("full_name");
+      if (error) throw error;
+      return ((data ?? []) as any[]).map((p: any) => ({
+        user_id: p.user_id as string,
+        full_name: (p.full_name as string) ?? "Unknown",
+        status: p.status as string,
+        primary_role: (p.user_roles?.role as string) ?? "pre_sales",
+      })) as TeamMember[];
+    },
+  });
+}
+
 // ── useGenerateDealBrief ──────────────────────────────────────────────────────
 export function useGenerateDealBrief() {
   const qc = useQueryClient();
