@@ -155,17 +155,15 @@ function BidSessionList({
   creatingBidId: string | null;
 }) {
   const [expandedBidId, setExpandedBidId] = useState<string | null>(selectedBidId);
-  const activeBids = bids.filter((b) => b.status === "active");
-
-  if (activeBids.length === 0) {
+  if (bids.length === 0) {
     return (
-      <div className="text-[10px] text-muted-foreground px-3 py-3">No active bids</div>
+      <div className="text-[10px] text-muted-foreground px-3 py-3">No bids</div>
     );
   }
 
   return (
     <div className="p-2 flex flex-col gap-1">
-      {activeBids.map((bid) => {
+      {bids.map((bid) => {
         const bidSessions = sessions[bid.id] ?? [];
         const isExpanded = expandedBidId === bid.id;
         const urgency = urgencyClass(bid.deadline);
