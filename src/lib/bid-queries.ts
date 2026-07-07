@@ -215,17 +215,28 @@ export function useBidTeam(bidId: string | undefined) {
     queryKey: ["bid-team", bidId],
     enabled: !!bidId,
     queryFn: async () => {
-      const { data, error } = await (supabase as any)
+      const { data: assignments, error } = await (supabase as any)
         .from("bid_assignments")
-        .select("id, user_id, profiles!bid_assignments_user_id_fkey(full_name, email), user_roles(role)")
+        .select("id, user_id, profiles!bid_assignments_user_id_fkey(full_name, email)")
         .eq("bid_id", bidId!);
       if (error) throw error;
-      return ((data ?? []) as any[]).map((row: any) => ({
+
+      const userIds = ((assignments ?? []) as any[]).map((a: any) => a.user_id as string);
+      const roleMap: Record<string, string> = {};
+      if (userIds.length > 0) {
+        const { data: rolesData } = await (supabase as any)
+          .from("user_roles")
+          .select("user_id, role")
+          .in("user_id", userIds);
+        for (const r of (rolesData ?? []) as any[]) roleMap[r.user_id] = r.role;
+      }
+
+      return ((assignments ?? []) as any[]).map((row: any) => ({
         assignment_id: row.id as string,
         user_id: row.user_id as string,
         full_name: (row.profiles?.full_name as string) ?? "Unknown",
         email: (row.profiles?.email as string) ?? "",
-        role: (row.user_roles?.role as string) ?? "—",
+        role: roleMap[row.user_id] ?? "—",
       })) as BidTeamMember[];
     },
   });
@@ -430,17 +441,28 @@ export function useTeamMembers() {
   return useQuery({
     queryKey: ["team-members"],
     queryFn: async () => {
-      const { data, error } = await (supabase as any)
+      const { data: profilesData, error } = await (supabase as any)
         .from("profiles")
-        .select("user_id, full_name, status, user_roles(role)")
+        .select("id, full_name, status")
         .eq("status", "active")
         .order("full_name");
       if (error) throw error;
-      return ((data ?? []) as any[]).map((p: any) => ({
-        user_id: p.user_id as string,
+
+      const userIds = ((profilesData ?? []) as any[]).map((p: any) => p.id as string);
+      const roleMap: Record<string, string> = {};
+      if (userIds.length > 0) {
+        const { data: rolesData } = await (supabase as any)
+          .from("user_roles")
+          .select("user_id, role")
+          .in("user_id", userIds);
+        for (const r of (rolesData ?? []) as any[]) roleMap[r.user_id] = r.role;
+      }
+
+      return ((profilesData ?? []) as any[]).map((p: any) => ({
+        user_id: p.id as string,
         full_name: (p.full_name as string) ?? "Unknown",
         status: p.status as string,
-        primary_role: (p.user_roles?.role as string) ?? "pre_sales",
+        primary_role: roleMap[p.id] ?? "pre_sales",
       })) as TeamMember[];
     },
   });
