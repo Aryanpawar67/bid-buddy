@@ -490,3 +490,122 @@ export function useGenerateDealBrief() {
     },
   });
 }
+
+// ── Contract Approvals ────────────────────────────────────────────────────────
+
+export type ContractApproval = {
+  id: string;
+  bid_id: string;
+  stage: "legal" | "commercial" | "finance" | "executive";
+  status: "pending" | "approved" | "rejected";
+  approved_by: string | null;
+  approved_at: string | null;
+  notes: string | null;
+  approver_name: string | null;
+};
+
+const APPROVAL_STAGE_ORDER: ContractApproval["stage"][] = [
+  "legal",
+  "commercial",
+  "finance",
+  "executive",
+];
+
+export function useContractApprovals(bidId: string | undefined) {
+  return useQuery({
+    queryKey: ["contract-approvals", bidId],
+    enabled: !!bidId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("contract_approvals")
+        .select("*")
+        .eq("bid_id", bidId!);
+      if (error) throw error;
+      const rows = (data ?? []) as ContractApproval[];
+
+      // Fetch approver names separately (user_roles FK path issue)
+      const approverIds = rows.map(r => r.approved_by).filter(Boolean) as string[];
+      const nameMap: Record<string, string> = {};
+      if (approverIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from("profiles")
+          .select("id, full_name")
+          .in("id", approverIds);
+        for (const p of (profiles ?? []) as any[]) nameMap[p.id] = p.full_name;
+      }
+
+      // Build a complete ordered list, filling gaps with pending stubs
+      const byStage = Object.fromEntries(rows.map(r => [r.stage, r]));
+      return APPROVAL_STAGE_ORDER.map(stage => ({
+        ...(byStage[stage] ?? {
+          id: "",
+          bid_id: bidId!,
+          stage,
+          status: "pending" as const,
+          approved_by: null,
+          approved_at: null,
+          notes: null,
+        }),
+        approver_name: byStage[stage]?.approved_by ? (nameMap[byStage[stage].approved_by!] ?? null) : null,
+      })) as ContractApproval[];
+    },
+  });
+}
+
+export function useEnsureApprovals() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (bidId: string) => {
+      // Insert pending rows for any stages that don't exist yet (upsert-safe)
+      const upserts = APPROVAL_STAGE_ORDER.map(stage => ({
+        bid_id: bidId,
+        stage,
+        status: "pending" as const,
+      }));
+      const { error } = await supabase
+        .from("contract_approvals")
+        .upsert(upserts, { onConflict: "bid_id,stage", ignoreDuplicates: true });
+      if (error) throw error;
+    },
+    onSuccess: (_d, bidId) => {
+      qc.invalidateQueries({ queryKey: ["contract-approvals", bidId] });
+    },
+  });
+}
+
+export function useActionApproval() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      bidId,
+      stage,
+      status,
+      userId,
+      notes,
+    }: {
+      bidId: string;
+      stage: ContractApproval["stage"];
+      status: "approved" | "rejected";
+      userId: string;
+      notes?: string;
+    }) => {
+      const { error } = await supabase
+        .from("contract_approvals")
+        .upsert(
+          {
+            bid_id: bidId,
+            stage,
+            status,
+            approved_by: userId,
+            approved_at: new Date().toISOString(),
+            notes: notes ?? null,
+          },
+          { onConflict: "bid_id,stage" }
+        );
+      if (error) throw error;
+    },
+    onSuccess: (_d, v) => {
+      qc.invalidateQueries({ queryKey: ["contract-approvals", v.bidId] });
+    },
+  });
+}

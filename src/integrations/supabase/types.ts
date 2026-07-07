@@ -122,6 +122,54 @@ export type Database = {
           },
         ]
       }
+      contract_approvals: {
+        Row: {
+          id: string
+          bid_id: string
+          stage: "legal" | "commercial" | "finance" | "executive"
+          status: "pending" | "approved" | "rejected"
+          approved_by: string | null
+          approved_at: string | null
+          notes: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          bid_id: string
+          stage: "legal" | "commercial" | "finance" | "executive"
+          status?: "pending" | "approved" | "rejected"
+          approved_by?: string | null
+          approved_at?: string | null
+          notes?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          bid_id?: string
+          stage?: "legal" | "commercial" | "finance" | "executive"
+          status?: "pending" | "approved" | "rejected"
+          approved_by?: string | null
+          approved_at?: string | null
+          notes?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contract_approvals_bid_id_fkey"
+            columns: ["bid_id"]
+            isOneToOne: false
+            referencedRelation: "bids"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_approvals_approved_by_fkey"
+            columns: ["approved_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       bid_questions: {
         Row: {
           assigned_team: Database["public"]["Enums"]["assigned_team"]

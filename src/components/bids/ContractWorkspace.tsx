@@ -2,11 +2,16 @@ import { useState } from "react";
 import {
   Check, Circle, AlertTriangle, CheckCircle2,
   Users, Activity, LayoutList, FileText, Milestone, Sparkles, ArrowRight,
-  Clock, ShieldCheck,
+  Clock, ShieldCheck, XCircle, UserCircle2, CalendarDays,
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import type { Bid } from "@/lib/bid-queries";
-import { useStageItems, useToggleDeliverable, useToggleQuestion, useBidTeam, useBidActivity, useUpdateBid } from "@/lib/bid-queries";
+import {
+  useStageItems, useToggleDeliverable, useToggleQuestion, useBidTeam,
+  useBidActivity, useUpdateBid,
+  useContractApprovals, useEnsureApprovals, useActionApproval,
+  type ContractApproval,
+} from "@/lib/bid-queries";
 import { useDocuments } from "@/lib/doc-queries";
 import { supabase } from "@/integrations/supabase/client";
 import { useCurrentUser } from "@/lib/auth";
@@ -35,33 +40,28 @@ function avatarColor(name: string): string {
   return colors[Math.abs(hash) % colors.length];
 }
 
-const APPROVAL_STAGES = [
-  { key: "legal",       label: "Legal Review" },
-  { key: "commercial",  label: "Commercial Review" },
-  { key: "finance",     label: "Finance Review" },
-  { key: "executive",   label: "Executive Approval" },
-];
+const APPROVAL_STAGE_LABELS: Record<ContractApproval["stage"], string> = {
+  legal:      "Legal Review",
+  commercial: "Commercial Review",
+  finance:    "Finance Review",
+  executive:  "Executive Approval",
+};
 
-// Derive approval status from deliverables matching each type
-function deriveApprovals(deliverables: any[]) {
-  return APPROVAL_STAGES.map((a, i) => {
-    const match = deliverables.find(d =>
-      new RegExp(a.key, "i").test(d.label) ||
-      new RegExp(a.key, "i").test(d.type ?? "")
-    );
-    // Fallback: sequential logic based on overall progress
-    const totalDone = deliverables.filter(d => d.status === "done").length;
-    const total = deliverables.length || 4;
-    const threshold = Math.floor((i / 4) * total);
-    const ok = match
-      ? match.status === "done"
-      : totalDone > threshold;
-    const inP = match
-      ? match.status === "in_progress"
-      : !ok && totalDone === threshold;
-    return { label: a.label, done: ok, inProgress: inP };
-  });
-}
+// Which user roles can action which approval stage
+const STAGE_ROLE_GATE: Record<ContractApproval["stage"], string[]> = {
+  legal:      ["legal", "admin"],
+  commercial: ["pre_sales", "admin"],
+  finance:    ["finance", "admin"],
+  executive:  ["admin"],
+};
+
+const DOC_CATEGORY_LABELS: Record<string, { label: string; color: string; bg: string }> = {
+  draft:      { label: "Draft",      color: "#d97706", bg: "#fef9c3" },
+  redline:    { label: "Redline",    color: "#dc2626", bg: "#fee2e2" },
+  final:      { label: "Final",      color: "#16a34a", bg: "#dcfce7" },
+  reference:  { label: "Reference",  color: "#6366f1", bg: "#ede9fe" },
+  supporting: { label: "Supporting", color: "#0891b2", bg: "#e0f2fe" },
+};
 
 const EXT_COLORS: Record<string, { bg: string; color: string }> = {
   pdf:  { bg: "#fff1f1", color: "#e53e3e" },
@@ -72,19 +72,22 @@ const EXT_COLORS: Record<string, { bg: string; color: string }> = {
 
 export function ContractWorkspace({ bid, activeTab, onTabChange: _onTabChange }: { bid: Bid; activeTab: string; onTabChange: (t: string) => void }) {
   const items     = useStageItems(bid.id, "contract_closure");
-  const { data: team = [] }     = useBidTeam(bid.id);
-  const { data: activity = [] } = useBidActivity(bid.id);
-  const { data: docs = [] }     = useDocuments({ bidId: bid.id });
-  const [closeout, setCloseout] = useState<"won" | "lost" | null>(null);
-  const toggleD = useToggleDeliverable();
-  const toggleQ = useToggleQuestion();
+  const { data: team = [] }       = useBidTeam(bid.id);
+  const { data: activity = [] }   = useBidActivity(bid.id);
+  const { data: docs = [] }       = useDocuments({ bidId: bid.id });
+  const { data: approvals = [] }  = useContractApprovals(bid.id);
+  const ensureApprovals           = useEnsureApprovals();
+  const [closeout, setCloseout]   = useState<"won" | "lost" | null>(null);
+  const toggleD   = useToggleDeliverable();
+  const toggleQ   = useToggleQuestion();
+  const { primaryRole, user } = useCurrentUser();
 
   const deliverables = items.data?.deliverables ?? [];
   const questions    = items.data?.questions    ?? [];
 
-  const total     = deliverables.length;
-  const completed = deliverables.filter(d => d.status === "done").length;
-  const inProg    = deliverables.filter(d => d.status === "in_progress").length;
+  const total      = deliverables.length;
+  const completed  = deliverables.filter(d => d.status === "done").length;
+  const inProg     = deliverables.filter(d => d.status === "in_progress").length;
   const notStarted = deliverables.filter(d => d.status === "pending").length;
   const pct = total ? Math.round((completed / total) * 100) : 0;
 
@@ -92,9 +95,15 @@ export function ContractWorkspace({ bid, activeTab, onTabChange: _onTabChange }:
   const health = pct >= 70 ? "On Track" : pct >= 40 ? "Needs Attention" : "At Risk";
   const healthColor = pct >= 70 ? "#16a34a" : pct >= 40 ? "#d97706" : "#dc2626";
   const healthBg    = pct >= 70 ? "#dcfce7"  : pct >= 40 ? "#fef9c3"  : "#fee2e2";
-  const approvals   = deriveApprovals(deliverables);
 
-  // ── Tabs ────────────────────────────────────────────────────────────────────
+  // Ensure approval rows exist when first viewing this stage
+  function handleEnsureApprovals() {
+    if (approvals.length === 0 || approvals.every(a => a.id === "")) {
+      ensureApprovals.mutate(bid.id);
+    }
+  }
+
+  // ── Milestones tab ──────────────────────────────────────────────────────────
   if (activeTab === "milestones") {
     return (
       <div className="px-6 py-5 max-w-[700px]">
@@ -108,7 +117,7 @@ export function ContractWorkspace({ bid, activeTab, onTabChange: _onTabChange }:
           ) : (
             <ul className="divide-y hairline divide-border">
               {deliverables.map((d, i) => (
-                <MilestoneRow key={d.id} num={i+1} label={d.label} status={d.status}
+                <MilestoneRow key={d.id} num={i + 1} deliverable={d}
                   onToggle={() => toggleD.mutate({ id: d.id, status: d.status === "done" ? "pending" : "done" })} />
               ))}
             </ul>
@@ -118,98 +127,27 @@ export function ContractWorkspace({ bid, activeTab, onTabChange: _onTabChange }:
     );
   }
 
+  // ── Documents tab ───────────────────────────────────────────────────────────
   if (activeTab === "documents") {
-    return (
-      <div className="px-6 py-5 max-w-[800px]">
-        <div className="bg-card hairline border rounded-xl overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b hairline border-border">
-            <h3 className="text-[13px] font-semibold">Contract Documents</h3>
-            <Link to="/docs" className="text-[11px] text-primary font-medium hover:underline">View all →</Link>
-          </div>
-          {docs.length === 0 ? (
-            <div className="py-10 text-center text-[12px] text-muted-foreground">
-              No documents uploaded.{" "}
-              <Link to="/docs" className="text-primary underline">Go to Knowledge Hub →</Link>
-            </div>
-          ) : (
-            <ul className="divide-y hairline divide-border">
-              {docs.map((doc: any) => {
-                const ext = doc.name?.split(".").pop()?.toLowerCase() ?? "default";
-                const style = EXT_COLORS[ext] ?? EXT_COLORS.default;
-                return (
-                  <li key={doc.id} className="flex items-center gap-3 px-4 py-3 hover:bg-muted/20 transition-colors">
-                    <div className="w-8 h-10 rounded flex items-center justify-center text-[9px] font-black shrink-0"
-                      style={{ background: style.bg, color: style.color }}>
-                      {ext.toUpperCase().slice(0, 4)}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="text-[12.5px] font-medium truncate">{doc.name}</div>
-                      <div className="text-[10px] text-muted-foreground mt-0.5 capitalize">{doc.type}</div>
-                    </div>
-                    {doc.embedding && (
-                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-primary/10 text-primary font-semibold shrink-0">AI Indexed</span>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
-      </div>
-    );
+    return <DocumentsTab docs={docs} />;
   }
 
+  // ── Approvals tab ───────────────────────────────────────────────────────────
   if (activeTab === "approvals") {
     return (
-      <div className="px-6 py-5 max-w-[700px]">
-        <div className="bg-card hairline border rounded-xl overflow-hidden">
-          <div className="px-4 py-3 border-b hairline border-border">
-            <h3 className="text-[13px] font-semibold">Approval Workflow</h3>
-          </div>
-          <ul className="divide-y hairline divide-border">
-            {approvals.map((a, i) => (
-              <li key={i} className="flex items-center gap-3 px-4 py-3.5">
-                {a.done
-                  ? <CheckCircle2 className="size-4 text-success-foreground shrink-0" />
-                  : a.inProgress
-                    ? <Clock className="size-4 text-warning-foreground shrink-0" />
-                    : <Circle className="size-4 text-muted-foreground/40 shrink-0" />}
-                <span className="text-[12.5px] flex-1">{a.label}</span>
-                <span className={[
-                  "text-[9px] font-semibold px-2 py-0.5 rounded-full",
-                  a.done ? "bg-success-soft text-success-foreground"
-                    : a.inProgress ? "bg-yellow-100 text-yellow-700"
-                    : "bg-muted text-muted-foreground"
-                ].join(" ")}>
-                  {a.done ? "Completed" : a.inProgress ? "In Progress" : "Pending"}
-                </span>
-              </li>
-            ))}
-          </ul>
-          {questions.length > 0 && (
-            <div className="border-t hairline border-border">
-              <div className="px-4 pt-3 pb-1 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
-                Open Items
-              </div>
-              <ul className="divide-y hairline divide-border">
-                {questions.map((q, i) => (
-                  <li key={q.id} className="flex items-start gap-3 px-4 py-3 hover:bg-muted/20 transition-colors">
-                    <button onClick={() => toggleQ.mutate({ id: q.id, status: q.status === "done" ? "pending" : "done" })}
-                      className={["size-[18px] rounded-full flex items-center justify-center shrink-0 mt-0.5 hairline border",
-                        q.status === "done" ? "bg-success-soft border-[#97C459]" : "border-dashed border-border-strong"].join(" ")}>
-                      {q.status === "done" && <Check className="size-3 text-success-foreground" strokeWidth={2.5} />}
-                    </button>
-                    <div className="flex-1 min-w-0 text-[12px]">{q.question_text}</div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      </div>
+      <ApprovalsTab
+        bid={bid}
+        approvals={approvals}
+        questions={questions}
+        primaryRole={primaryRole}
+        userId={user?.id ?? ""}
+        onToggleQ={(q) => toggleQ.mutate({ id: q.id, status: q.status === "done" ? "pending" : "done" })}
+        onEnsure={handleEnsureApprovals}
+      />
     );
   }
 
+  // ── Team tab ────────────────────────────────────────────────────────────────
   if (activeTab === "team") {
     return (
       <div className="px-6 py-5 max-w-[700px]">
@@ -243,6 +181,7 @@ export function ContractWorkspace({ bid, activeTab, onTabChange: _onTabChange }:
     );
   }
 
+  // ── Activity Log tab ────────────────────────────────────────────────────────
   if (activeTab === "activity_log") {
     return (
       <div className="px-6 py-5 max-w-[700px]">
@@ -314,26 +253,37 @@ export function ContractWorkspace({ bid, activeTab, onTabChange: _onTabChange }:
           </div>
         </div>
 
-        {/* Approvals + close-out */}
+        {/* Approvals mini + close-out */}
         <div className="bg-card hairline border rounded-xl p-4">
           <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-3">Approvals</div>
           <div className="flex flex-col gap-2">
-            {approvals.map((a, i) => (
-              <div key={i} className="flex items-center gap-2">
-                {a.done
-                  ? <CheckCircle2 className="size-3.5 text-success-foreground shrink-0" />
-                  : a.inProgress
-                    ? <Clock className="size-3.5 text-warning-foreground shrink-0" />
-                    : <Circle className="size-3.5 text-muted-foreground/30 shrink-0" />}
-                <span className="text-[11px] flex-1">{a.label}</span>
-                <span className={[
-                  "text-[9px] font-semibold",
-                  a.done ? "text-success-foreground" : a.inProgress ? "text-warning-foreground" : "text-muted-foreground"
-                ].join(" ")}>
-                  {a.done ? "Done" : a.inProgress ? "In Progress" : "Pending"}
-                </span>
-              </div>
-            ))}
+            {approvals.length === 0
+              ? APPROVAL_STAGE_LABELS && Object.entries(APPROVAL_STAGE_LABELS).map(([, label], i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <Circle className="size-3.5 text-muted-foreground/30 shrink-0" />
+                    <span className="text-[11px] flex-1">{label}</span>
+                    <span className="text-[9px] font-semibold text-muted-foreground">Pending</span>
+                  </div>
+                ))
+              : approvals.map((a) => (
+                  <div key={a.stage} className="flex items-center gap-2">
+                    {a.status === "approved"
+                      ? <CheckCircle2 className="size-3.5 text-success-foreground shrink-0" />
+                      : a.status === "rejected"
+                        ? <XCircle className="size-3.5 text-destructive shrink-0" />
+                        : <Circle className="size-3.5 text-muted-foreground/30 shrink-0" />}
+                    <span className="text-[11px] flex-1">{APPROVAL_STAGE_LABELS[a.stage]}</span>
+                    <span className={[
+                      "text-[9px] font-semibold",
+                      a.status === "approved" ? "text-success-foreground"
+                        : a.status === "rejected" ? "text-destructive"
+                        : "text-muted-foreground"
+                    ].join(" ")}>
+                      {a.status === "approved" ? "Approved" : a.status === "rejected" ? "Rejected" : "Pending"}
+                    </span>
+                  </div>
+                ))
+            }
           </div>
           {(bid.status === "active" || bid.status === "submitted") && (
             <div className="flex items-center gap-2 mt-3 pt-3 border-t hairline border-border">
@@ -351,12 +301,11 @@ export function ContractWorkspace({ bid, activeTab, onTabChange: _onTabChange }:
         </div>
       </div>
 
-      {/* Main 3-col layout: Milestones + AI Engine + Health/Risks */}
+      {/* Main 3-col layout */}
       <div className="grid grid-cols-3 gap-4">
 
         {/* Left: Milestones + Docs */}
         <div className="flex flex-col gap-4">
-          {/* Contract Milestones */}
           <div className="bg-card hairline border rounded-xl overflow-hidden">
             <div className="flex items-center justify-between px-4 py-3 border-b hairline border-border">
               <h3 className="text-[12px] font-semibold">Contract Milestones</h3>
@@ -366,24 +315,33 @@ export function ContractWorkspace({ bid, activeTab, onTabChange: _onTabChange }:
               <div className="px-4 py-6 text-center text-[11px] text-muted-foreground">No milestones yet.</div>
             ) : (
               <ul className="divide-y hairline divide-border">
-                {deliverables.slice(0, 6).map((d, i) => (
-                  <li key={d.id} className="flex items-center gap-2.5 px-3.5 py-2.5 hover:bg-muted/20 transition-colors">
+                {deliverables.slice(0, 6).map((d) => (
+                  <li key={d.id} className="flex items-start gap-2.5 px-3.5 py-2.5 hover:bg-muted/20 transition-colors">
                     <button onClick={() => toggleD.mutate({ id: d.id, status: d.status === "done" ? "pending" : "done" })}
-                      className={["size-5 rounded-full flex items-center justify-center shrink-0 hairline border transition-colors",
+                      className={["size-5 rounded-full flex items-center justify-center shrink-0 mt-0.5 hairline border transition-colors",
                         d.status === "done" ? "bg-success-soft border-[#97C459]" : d.status === "in_progress" ? "border-[#3b82f6] bg-blue-50" : "border-dashed border-border-strong"].join(" ")}>
                       {d.status === "done" && <Check className="size-3 text-success-foreground" strokeWidth={2.5} />}
                       {d.status === "in_progress" && <div className="size-2 rounded-full bg-blue-400" />}
                     </button>
-                    <span className={`text-[11px] flex-1 leading-snug ${d.status === "done" ? "line-through text-muted-foreground" : ""}`}>
-                      {d.label}
-                    </span>
+                    <div className="flex-1 min-w-0">
+                      <span className={`text-[11px] leading-snug ${d.status === "done" ? "line-through text-muted-foreground" : ""}`}>
+                        {d.label}
+                      </span>
+                      {(d as any).due_date && (
+                        <div className="flex items-center gap-1 mt-0.5">
+                          <CalendarDays className="size-2.5 text-muted-foreground shrink-0" />
+                          <span className="text-[9px] text-muted-foreground">
+                            {new Date((d as any).due_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                          </span>
+                        </div>
+                      )}
+                    </div>
                   </li>
                 ))}
               </ul>
             )}
           </div>
 
-          {/* Contract Documents (preview) */}
           {docs.length > 0 && (
             <div className="bg-card hairline border rounded-xl overflow-hidden">
               <div className="flex items-center justify-between px-4 py-3 border-b hairline border-border">
@@ -394,13 +352,21 @@ export function ContractWorkspace({ bid, activeTab, onTabChange: _onTabChange }:
                 {docs.slice(0, 4).map((doc: any) => {
                   const ext = doc.name?.split(".").pop()?.toLowerCase() ?? "default";
                   const style = EXT_COLORS[ext] ?? EXT_COLORS.default;
+                  const cat = DOC_CATEGORY_LABELS[doc.doc_category ?? "reference"] ?? DOC_CATEGORY_LABELS.reference;
                   return (
-                    <li key={doc.id} className="flex items-center gap-2.5 px-3.5 py-2.5 hover:bg-muted/20 transition-colors">
+                    <li key={doc.id} className={[
+                      "flex items-center gap-2.5 px-3.5 py-2.5 hover:bg-muted/20 transition-colors",
+                      doc.doc_category === "final" ? "bg-green-50/40 dark:bg-green-950/20" : ""
+                    ].join(" ")}>
                       <div className="w-6 h-7 rounded flex items-center justify-center text-[8px] font-black shrink-0"
                         style={{ background: style.bg, color: style.color }}>
                         {ext.toUpperCase().slice(0, 3)}
                       </div>
                       <span className="text-[11px] truncate flex-1">{doc.name}</span>
+                      <span className="text-[8px] font-semibold px-1.5 py-0.5 rounded-full shrink-0"
+                        style={{ background: cat.bg, color: cat.color }}>
+                        {cat.label}
+                      </span>
                     </li>
                   );
                 })}
@@ -409,7 +375,7 @@ export function ContractWorkspace({ bid, activeTab, onTabChange: _onTabChange }:
           )}
         </div>
 
-        {/* Middle: Legal AI Engine → RFx Responder */}
+        {/* Middle: Legal AI Engine */}
         <div className="flex flex-col gap-4">
           <div className="bg-card hairline border rounded-xl overflow-hidden h-full"
             style={{ background: "linear-gradient(160deg, rgba(73,26,235,.05) 0%, rgba(73,26,235,.02) 100%)" }}>
@@ -428,8 +394,6 @@ export function ContractWorkspace({ bid, activeTab, onTabChange: _onTabChange }:
                 Open Legal AI Assistant
                 <ArrowRight className="size-3" />
               </Link>
-
-              {/* Suggested questions */}
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mt-1">Suggested questions</div>
               <div className="flex flex-col gap-2">
                 {[
@@ -451,7 +415,6 @@ export function ContractWorkspace({ bid, activeTab, onTabChange: _onTabChange }:
 
         {/* Right: Contract Health + Key Risks */}
         <div className="flex flex-col gap-4">
-          {/* Health */}
           <div className="bg-card hairline border rounded-xl p-4">
             <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-3">Contract Health</div>
             <span className="inline-block text-[11px] font-bold px-2.5 py-1 rounded-full mb-3"
@@ -464,7 +427,6 @@ export function ContractWorkspace({ bid, activeTab, onTabChange: _onTabChange }:
             </div>
           </div>
 
-          {/* Key Contract Risks (derived from open questions) */}
           <div className="bg-card hairline border rounded-xl p-4 flex-1">
             <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-3">Key Risks</div>
             {questions.length === 0 ? (
@@ -488,6 +450,276 @@ export function ContractWorkspace({ bid, activeTab, onTabChange: _onTabChange }:
         </div>
       </div>
       <AdvanceStageFooter bid={bid} stage="contract_closure" />
+    </div>
+  );
+}
+
+// ── ApprovalsTab ──────────────────────────────────────────────────────────────
+
+function ApprovalsTab({
+  bid, approvals, questions, primaryRole, userId, onToggleQ, onEnsure,
+}: {
+  bid: Bid;
+  approvals: ContractApproval[];
+  questions: any[];
+  primaryRole: string;
+  userId: string;
+  onToggleQ: (q: any) => void;
+  onEnsure: () => void;
+}) {
+  const actionApproval = useActionApproval();
+  const [actionTarget, setActionTarget] = useState<{ stage: ContractApproval["stage"]; outcome: "approved" | "rejected" } | null>(null);
+  const [noteText, setNoteText] = useState("");
+
+  function canAction(stage: ContractApproval["stage"]) {
+    const allowed = STAGE_ROLE_GATE[stage] ?? [];
+    return allowed.includes(primaryRole);
+  }
+
+  async function submitAction() {
+    if (!actionTarget) return;
+    await actionApproval.mutateAsync({
+      bidId: bid.id,
+      stage: actionTarget.stage,
+      status: actionTarget.outcome,
+      userId,
+      notes: noteText.trim() || undefined,
+    });
+    setActionTarget(null);
+    setNoteText("");
+  }
+
+  const displayApprovals = approvals.length > 0
+    ? approvals
+    : (["legal", "commercial", "finance", "executive"] as ContractApproval["stage"][]).map(stage => ({
+        id: "", bid_id: bid.id, stage, status: "pending" as const,
+        approved_by: null, approved_at: null, notes: null, approver_name: null,
+      }));
+
+  return (
+    <div className="px-6 py-5 max-w-[700px]">
+      <div className="bg-card hairline border rounded-xl overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b hairline border-border">
+          <h3 className="text-[13px] font-semibold">Approval Workflow</h3>
+          {approvals.every(a => a.id === "") && (
+            <button onClick={onEnsure}
+              className="h-6 px-2.5 rounded text-[10px] font-medium bg-primary/10 text-primary hover:bg-primary/20">
+              Initialise
+            </button>
+          )}
+        </div>
+
+        <ul className="divide-y hairline divide-border">
+          {displayApprovals.map((a) => {
+            const canAct = canAction(a.stage);
+            const isPending = a.status === "pending";
+            return (
+              <li key={a.stage} className="px-4 py-3.5">
+                <div className="flex items-center gap-3">
+                  {a.status === "approved"
+                    ? <CheckCircle2 className="size-4 text-success-foreground shrink-0" />
+                    : a.status === "rejected"
+                      ? <XCircle className="size-4 text-destructive shrink-0" />
+                      : <Circle className="size-4 text-muted-foreground/40 shrink-0" />}
+
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[12.5px] font-medium">{APPROVAL_STAGE_LABELS[a.stage]}</div>
+                    {a.status !== "pending" && (
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        {a.approver_name && (
+                          <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                            <UserCircle2 className="size-3" />
+                            {a.approver_name}
+                          </span>
+                        )}
+                        {a.approved_at && (
+                          <span className="text-[10px] text-muted-foreground">
+                            · {new Date(a.approved_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {a.notes && (
+                      <div className="text-[10px] text-muted-foreground mt-0.5 italic line-clamp-2">"{a.notes}"</div>
+                    )}
+                  </div>
+
+                  <span className={[
+                    "text-[9px] font-semibold px-2 py-0.5 rounded-full shrink-0",
+                    a.status === "approved" ? "bg-success-soft text-success-foreground"
+                      : a.status === "rejected" ? "bg-red-100 text-red-700"
+                      : "bg-muted text-muted-foreground"
+                  ].join(" ")}>
+                    {a.status === "approved" ? "Approved" : a.status === "rejected" ? "Rejected" : "Pending"}
+                  </span>
+                </div>
+
+                {canAct && isPending && a.id !== "" && (
+                  <div className="flex gap-2 mt-2.5 ml-7">
+                    <button
+                      onClick={() => { setActionTarget({ stage: a.stage, outcome: "approved" }); setNoteText(""); }}
+                      className="h-6 px-2.5 rounded text-[10px] font-semibold bg-green-600 text-white hover:bg-green-700">
+                      Approve
+                    </button>
+                    <button
+                      onClick={() => { setActionTarget({ stage: a.stage, outcome: "rejected" }); setNoteText(""); }}
+                      className="h-6 px-2.5 rounded text-[10px] font-semibold border hairline border-destructive text-destructive hover:bg-destructive/10">
+                      Reject
+                    </button>
+                  </div>
+                )}
+                {canAct && !isPending && a.id !== "" && (
+                  <div className="mt-2 ml-7">
+                    <button
+                      onClick={() => { setActionTarget({ stage: a.stage, outcome: isPending ? "approved" : "pending" as any }); setNoteText(""); }}
+                      className="text-[10px] text-muted-foreground hover:text-foreground underline underline-offset-2">
+                      Revise decision
+                    </button>
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+
+        {questions.length > 0 && (
+          <div className="border-t hairline border-border">
+            <div className="px-4 pt-3 pb-1 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+              Open Items
+            </div>
+            <ul className="divide-y hairline divide-border">
+              {questions.map((q) => (
+                <li key={q.id} className="flex items-start gap-3 px-4 py-3 hover:bg-muted/20 transition-colors">
+                  <button onClick={() => onToggleQ(q)}
+                    className={["size-[18px] rounded-full flex items-center justify-center shrink-0 mt-0.5 hairline border",
+                      q.status === "done" ? "bg-success-soft border-[#97C459]" : "border-dashed border-border-strong"].join(" ")}>
+                    {q.status === "done" && <Check className="size-3 text-success-foreground" strokeWidth={2.5} />}
+                  </button>
+                  <div className="flex-1 min-w-0 text-[12px]">{q.question_text}</div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+
+      {/* Approve / Reject confirmation inline dialog */}
+      {actionTarget && (
+        <Dialog open onOpenChange={() => { setActionTarget(null); setNoteText(""); }}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="text-[14px]">
+                {actionTarget.outcome === "approved" ? "Approve" : "Reject"} — {APPROVAL_STAGE_LABELS[actionTarget.stage]}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3 text-[12px]">
+              <label className="block">
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+                  {actionTarget.outcome === "rejected" ? "Reason (required)" : "Note (optional)"}
+                </div>
+                <textarea
+                  value={noteText}
+                  onChange={e => setNoteText(e.target.value)}
+                  placeholder={actionTarget.outcome === "rejected" ? "Explain what needs to change…" : "Add a note…"}
+                  className="w-full h-20 px-2 py-1.5 rounded-md hairline border bg-card text-[12px] resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+              </label>
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <button onClick={() => { setActionTarget(null); setNoteText(""); }}
+                className="h-8 px-3 rounded-md hairline border text-[12px]">Cancel</button>
+              <button
+                onClick={submitAction}
+                disabled={actionApproval.isPending || (actionTarget.outcome === "rejected" && !noteText.trim())}
+                className={[
+                  "h-8 px-3 rounded-md text-[12px] font-semibold disabled:opacity-50",
+                  actionTarget.outcome === "approved"
+                    ? "bg-green-600 text-white hover:bg-green-700"
+                    : "bg-destructive text-destructive-foreground hover:opacity-90"
+                ].join(" ")}>
+                {actionApproval.isPending ? "…" : actionTarget.outcome === "approved" ? "Confirm Approval" : "Confirm Rejection"}
+              </button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+    </div>
+  );
+}
+
+// ── DocumentsTab ──────────────────────────────────────────────────────────────
+
+function DocumentsTab({ docs }: { docs: any[] }) {
+  const FILTERS = ["all", "draft", "redline", "final", "reference", "supporting"] as const;
+  const [filter, setFilter] = useState<typeof FILTERS[number]>("all");
+
+  const filtered = filter === "all" ? docs : docs.filter(d => (d.doc_category ?? "reference") === filter);
+
+  return (
+    <div className="px-6 py-5 max-w-[800px]">
+      {/* Filter pills */}
+      <div className="flex items-center gap-1.5 mb-3 flex-wrap">
+        {FILTERS.map(f => {
+          const meta = f === "all" ? null : DOC_CATEGORY_LABELS[f];
+          const active = filter === f;
+          return (
+            <button key={f} onClick={() => setFilter(f)}
+              className={[
+                "h-6 px-2.5 rounded-full text-[10px] font-semibold capitalize transition-colors",
+                active
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted text-muted-foreground hover:bg-muted/80"
+              ].join(" ")}
+              style={active && meta ? { background: meta.bg, color: meta.color } : {}}>
+              {f === "all" ? `All (${docs.length})` : meta?.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="bg-card hairline border rounded-xl overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b hairline border-border">
+          <h3 className="text-[13px] font-semibold">Contract Documents</h3>
+          <Link to="/docs" className="text-[11px] text-primary font-medium hover:underline">View all →</Link>
+        </div>
+        {filtered.length === 0 ? (
+          <div className="py-10 text-center text-[12px] text-muted-foreground">
+            {docs.length === 0
+              ? <>No documents uploaded. <Link to="/docs" className="text-primary underline">Go to Knowledge Hub →</Link></>
+              : `No ${filter} documents.`}
+          </div>
+        ) : (
+          <ul className="divide-y hairline divide-border">
+            {filtered.map((doc: any) => {
+              const ext = doc.name?.split(".").pop()?.toLowerCase() ?? "default";
+              const style = EXT_COLORS[ext] ?? EXT_COLORS.default;
+              const cat = DOC_CATEGORY_LABELS[doc.doc_category ?? "reference"] ?? DOC_CATEGORY_LABELS.reference;
+              return (
+                <li key={doc.id} className={[
+                  "flex items-center gap-3 px-4 py-3 hover:bg-muted/20 transition-colors",
+                  doc.doc_category === "final" ? "bg-green-50/40 dark:bg-green-950/20" : ""
+                ].join(" ")}>
+                  <div className="w-8 h-10 rounded flex items-center justify-center text-[9px] font-black shrink-0"
+                    style={{ background: style.bg, color: style.color }}>
+                    {ext.toUpperCase().slice(0, 4)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[12.5px] font-medium truncate">{doc.name}</div>
+                    <div className="text-[10px] text-muted-foreground mt-0.5 capitalize">{doc.type}</div>
+                  </div>
+                  <span className="text-[9px] font-semibold px-2 py-0.5 rounded-full shrink-0"
+                    style={{ background: cat.bg, color: cat.color }}>
+                    {cat.label}
+                  </span>
+                  {doc.embedding && (
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-primary/10 text-primary font-semibold shrink-0">AI Indexed</span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }
@@ -550,8 +782,7 @@ function CloseoutModal({ bid, outcome, onClose }: { bid: Bid; outcome: "won" | "
               outcome === "won"
                 ? "bg-green-600 text-white hover:bg-green-700"
                 : "bg-destructive text-destructive-foreground hover:opacity-90"
-            }`}
-          >
+            }`}>
             {updateBid.isPending ? "…" : outcome === "won" ? "Confirm Won ✓" : "Confirm Lost ✗"}
           </button>
         </div>
@@ -560,28 +791,52 @@ function CloseoutModal({ bid, outcome, onClose }: { bid: Bid; outcome: "won" | "
   );
 }
 
-function MilestoneRow({ num, label, status, onToggle }: {
-  num: number; label: string; status: string; onToggle: () => void;
+// ── MilestoneRow ──────────────────────────────────────────────────────────────
+
+function MilestoneRow({ num, deliverable, onToggle }: {
+  num: number;
+  deliverable: any;
+  onToggle: () => void;
 }) {
-  const done = status === "done";
-  const inP  = status === "in_progress";
+  const done = deliverable.status === "done";
+  const inP  = deliverable.status === "in_progress";
   return (
-    <li className="flex items-center gap-3 px-4 py-3 hover:bg-muted/20 transition-colors">
+    <li className="flex items-start gap-3 px-4 py-3 hover:bg-muted/20 transition-colors">
       <button onClick={onToggle}
-        className={["size-5 rounded-full flex items-center justify-center shrink-0 hairline border transition-colors",
+        className={["size-5 rounded-full flex items-center justify-center shrink-0 mt-0.5 hairline border transition-colors",
           done ? "bg-success-soft border-[#97C459]" : inP ? "border-[#3b82f6] bg-blue-50" : "border-dashed border-border-strong"].join(" ")}>
         {done && <Check className="size-3 text-success-foreground" strokeWidth={2.5} />}
         {inP  && <div className="size-2 rounded-full bg-blue-400" />}
       </button>
-      <span className="text-[10px] text-muted-foreground w-5 shrink-0">{num}</span>
-      <span className={`text-[12px] flex-1 ${done ? "line-through text-muted-foreground" : ""}`}>{label}</span>
-      <span className={["text-[9px] font-semibold px-1.5 py-0.5 rounded-full",
+      <span className="text-[10px] text-muted-foreground w-5 shrink-0 mt-0.5">{num}</span>
+      <div className="flex-1 min-w-0">
+        <div className={`text-[12px] ${done ? "line-through text-muted-foreground" : ""}`}>
+          {deliverable.label}
+        </div>
+        <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+          {deliverable.due_date && (
+            <span className="flex items-center gap-1 text-[9px] text-muted-foreground">
+              <CalendarDays className="size-2.5 shrink-0" />
+              Due {new Date(deliverable.due_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+            </span>
+          )}
+          {deliverable.assigned_to && (
+            <span className="flex items-center gap-1 text-[9px] text-muted-foreground">
+              <UserCircle2 className="size-2.5 shrink-0" />
+              Assigned
+            </span>
+          )}
+        </div>
+      </div>
+      <span className={["text-[9px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 mt-0.5",
         done ? "bg-success-soft text-success-foreground" : inP ? "bg-blue-100 text-blue-700" : "bg-muted text-muted-foreground"].join(" ")}>
         {done ? "Done" : inP ? "In Progress" : "Pending"}
       </span>
     </li>
   );
 }
+
+// ── Small helpers ─────────────────────────────────────────────────────────────
 
 function KV({ label, value, urgent }: { label: string; value: string; urgent?: boolean }) {
   return (
