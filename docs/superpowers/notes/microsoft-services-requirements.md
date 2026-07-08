@@ -229,6 +229,128 @@ If IT creates **two App Registrations**:
 
 ---
 
+## Security commitments — iMocha BidBuddy
+
+This section documents the security controls BidBuddy implements to protect Microsoft service credentials and the data accessed through them. These commitments apply to all five service areas above.
+
+---
+
+### 1. Credential storage and access
+
+**How credentials are stored**
+
+All Microsoft service credentials (tenant ID, client ID, client secret, SMTP password, webhook URLs) are stored in BidBuddy's `org_settings` database table in Supabase. This table has the following protections:
+
+- **Row-Level Security (RLS) is enabled.** Only users with the `admin` role can read or write to this table. No other role (`pre_sales`, `legal`, `finance`) can query it — the policy is enforced at the database layer, not application code.
+- **Server-side only.** Credentials are read exclusively by server functions (`createServerFn`) that run in Node.js on the server. They are never included in the JavaScript bundle served to the browser and are never accessible from the client side.
+- **Service role key separation.** BidBuddy uses two Supabase clients: an `anon` client for browser code (limited, user-scoped access) and a `service_role` client for server functions only. The service role key lives in environment variables on the server host and is never shipped to the client.
+
+**Who can configure credentials**
+
+Only users with the `admin` role in BidBuddy can configure Microsoft service credentials. There is no UI for non-admin users to view, enter, or change these values. Admin actions are logged in the `bid_activity_log` audit table.
+
+---
+
+### 2. Principle of least privilege
+
+Every Microsoft API permission requested is the minimum required for the stated function:
+
+| Permission | Scope requested | What we deliberately did NOT request |
+|-----------|----------------|--------------------------------------|
+| SharePoint file access | `Files.Read.All` (read-only) | `Files.ReadWrite.All`, `Sites.Manage.All`, `Sites.FullControl.All` |
+| Email sending | `Mail.Send` scoped to one shared mailbox | `Mail.ReadWrite`, `Mail.Read` (access to anyone's inbox) |
+| Calendar | `Calendars.ReadWrite` scoped to shared calendar only | Full `Calendars.ReadWrite.All` across all users |
+| SSO | `openid`, `profile`, `email`, `User.Read` | `Directory.Read.All`, `GroupMember.Read.All`, admin-level directory permissions |
+
+BidBuddy never requests write access to SharePoint or employee files. The application is a consumer of documents, not a modifier of them.
+
+---
+
+### 3. Token handling
+
+- **Access tokens are never persisted.** The Microsoft Graph access token is cached in-process (server memory only) with a 60-second safety buffer before its declared expiry. It is never written to the database, logged, or returned to any client.
+- **Token cache is instance-scoped.** On server restart, the cache is cleared and a fresh token is fetched. There is no shared token store.
+- **Client secrets are not logged.** Credential objects are never passed to `console.log`, error reporters, or telemetry pipelines. Error messages from failed Graph API calls log only the HTTP status code, not credential values.
+
+---
+
+### 4. Data flow and residency
+
+**What data moves, and where**
+
+| Data | Flow | Stored |
+|------|------|--------|
+| SharePoint document bytes | SharePoint → BidBuddy server → Supabase Storage | Supabase Storage (encrypted at rest) |
+| Document text chunks (for AI search) | BidBuddy server → Voyage AI (embeddings) → Supabase `pgvector` | Supabase DB |
+| Outbound emails | BidBuddy server → Microsoft 365 Mail API | Not stored in BidBuddy after send |
+| Calendar event metadata | BidBuddy server → Microsoft Graph Calendar API | Mirror stored in `calendar_events` table |
+| SSO token (login) | Microsoft Entra → Supabase Auth (verified) | Supabase Auth (session token only, not the Microsoft token) |
+
+**What is never sent externally**
+
+- Bid content, proposal text, and Q&A responses are sent to Anthropic (Claude) and Voyage AI for AI features — these are governed by iMocha's separate agreements with those vendors. They are **not** sent to Microsoft services.
+- No document content is sent to SharePoint or Teams — data flows only inbound from Microsoft to BidBuddy, not outbound.
+
+**Data residency**
+
+Supabase is hosted in the region selected during iMocha's Supabase project setup. Document bytes downloaded from SharePoint are stored in the same Supabase project. BidBuddy does not replicate or forward document content to any other region or third party beyond the AI vendors noted above.
+
+---
+
+### 5. Licensing compliance
+
+**Application permissions vs. delegated permissions**
+
+BidBuddy uses **application permissions** (client credentials flow) for server-to-server calls (SharePoint sync, email sending, calendar writes). This means:
+- No employee's account is impersonated
+- Access is granted to the application identity, not tied to any individual user's license
+- Access does not consume a user login slot
+
+**SSO licensing requirement**
+
+Microsoft Entra ID SSO requires that each user signing in holds a valid Microsoft 365 license in the iMocha tenant. BidBuddy does not attempt to bypass this — users without a valid iMocha Microsoft 365 account will not be able to use SSO login. Fallback email/password login remains available for service accounts or contractors without a Microsoft 365 license.
+
+**No license-gated features are circumvented**
+
+BidBuddy does not cache, reproduce, or redistribute SharePoint content outside of the document store used for internal bid management. Downloaded documents are stored for the sole purpose of AI-powered search within BidBuddy. They are not made publicly accessible, shared outside the application, or used for any purpose other than the bid they were imported against.
+
+---
+
+### 6. Secret rotation and expiry
+
+| Secret | Recommended expiry | Rotation process |
+|--------|-------------------|-----------------|
+| App Registration client secret (SharePoint/Mail) | 12 months | Admin updates in BidBuddy Settings → Integrations. Old secret immediately replaced in `org_settings`. |
+| App Registration client secret (SSO) | 12 months | Same process. Token cache auto-clears on restart. |
+| Teams incoming webhook URL | No expiry by default | Rotated by IT if channel is compromised; admin updates in Settings. |
+| SMTP app password (if used) | Per iMocha IT policy | Admin updates in Settings. |
+
+BidBuddy will surface a warning in the admin Settings panel when a configured secret is within 30 days of its recorded expiry date (expiry date stored alongside the credential in `org_settings`).
+
+---
+
+### 7. Audit trail
+
+Every configuration change to Microsoft service credentials is written to BidBuddy's `bid_activity_log` table with the admin's user ID and a timestamp. The log records:
+- When credentials were added or updated (not the credential values themselves)
+- When a manual SharePoint sync was triggered and by whom
+- When a user was approved/rejected (which triggers the approval email)
+
+This log is append-only, retained indefinitely, and visible only to admin users within BidBuddy.
+
+---
+
+### 8. Breach response commitment
+
+In the event that BidBuddy's database or server environment is compromised:
+
+1. The `org_settings` table (containing Microsoft credentials) is the highest-priority credential to rotate. IT should revoke and reissue the App Registration client secret immediately.
+2. Because credentials are application-level (not tied to any user account), rotating the secret does not require any user password changes.
+3. BidBuddy's service role key (Supabase) should also be rotated in the Supabase dashboard and the server environment variables updated.
+4. iMocha IT should review the Azure App Registration's sign-in logs in Entra ID to confirm no unauthorised access occurred during the window of compromise.
+
+---
+
 ## Summary for IT request email
 
 > BidBuddy needs two Azure App Registrations in the iMocha tenant:
