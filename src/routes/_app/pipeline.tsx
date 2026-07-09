@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useBids } from "@/lib/bid-queries";
 import type { StageKey } from "@/lib/bid-constants";
@@ -14,6 +14,10 @@ import { CONTRACT_TABS } from "@/components/bids/ContractWorkspace";
 import { LayoutList, Users, Activity, FileText } from "lucide-react";
 
 export const Route = createFileRoute("/_app/pipeline")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    bidId: typeof search.bidId === "string" ? search.bidId : undefined,
+    stage: typeof search.stage === "string" ? (search.stage as StageKey) : undefined,
+  }),
   component: PipelinePage,
 });
 
@@ -42,8 +46,8 @@ function defaultTabForStage(stage: StageKey): string {
 
 function PipelinePage() {
   const { data: bids = [], isLoading } = useBids();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [viewStage, setViewStage] = useState<StageKey | null>(null);
+  const { bidId: urlBidId, stage: urlStage } = Route.useSearch();
+  const navigate = useNavigate({ from: Route.fullPath });
   const [activeTab, setActiveTab] = useState<string>("bid_details");
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
@@ -60,14 +64,9 @@ function PipelinePage() {
     });
   }, [bids, q, filter]);
 
-  const selected = filtered.find((b) => b.id === selectedId) ?? filtered[0] ?? null;
-  const effectiveStage = viewStage ?? selected?.stage ?? "deal_qualification";
+  const selected = filtered.find((b) => b.id === urlBidId) ?? filtered[0] ?? null;
+  const effectiveStage = (urlStage ?? selected?.stage ?? "deal_qualification") as StageKey;
   const tabs = getTabsForStage(effectiveStage);
-
-  function handleViewStage(s: StageKey) {
-    setViewStage(s);
-    setActiveTab(defaultTabForStage(s));
-  }
 
   return (
     <div className="h-full flex overflow-hidden">
@@ -76,9 +75,8 @@ function PipelinePage() {
         selectedId={selected?.id ?? null}
         onSelect={(id) => {
           const bid = bids.find((b) => b.id === id);
-          setSelectedId(id);
-          setViewStage(null);
-          setActiveTab(bid ? defaultTabForStage(bid.stage) : "overview");
+          navigate({ search: { bidId: id, stage: bid?.stage as StageKey } });
+          setActiveTab(bid ? defaultTabForStage(bid.stage as StageKey) : "overview");
           setRosterCollapsed(true);
         }}
         collapsed={rosterCollapsed}
@@ -93,8 +91,6 @@ function PipelinePage() {
         <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
           <BidHeaderBar
             bid={selected}
-            viewStage={effectiveStage}
-            onViewStage={handleViewStage}
             tabs={tabs}
             activeTab={activeTab}
             onTabChange={setActiveTab}
