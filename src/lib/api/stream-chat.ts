@@ -6,6 +6,9 @@ import type OpenAI from "openai";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
+// Fix 5: module-level singleton — one client object reused across all requests
+const anthropicClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
 const ALLOWED_MODELS = [
   "claude-opus-4-8",
   "claude-sonnet-4-6",
@@ -54,6 +57,8 @@ type ChunkRow = { doc_name: string; chunk_text: string };
 
 async function rerank(query: string, chunks: ChunkRow[]): Promise<ChunkRow[]> {
   if (!chunks.length) return chunks;
+  // Fix 4: nothing to reorder when candidates already fit within top_k
+  if (chunks.length <= 8) return chunks;
   try {
     const resp = await fetch("https://api.voyageai.com/v1/rerank", {
       method: "POST",
@@ -243,72 +248,77 @@ async function getActiveSystemPrompt(): Promise<string | null> {
 async function buildSystemBlocks(
   bidId: string | null
 ): Promise<Anthropic.Messages.TextBlockParam[]> {
-  const activePrompt = await getActiveSystemPrompt();
-  const basePersona = activePrompt ?? RFI_RFP_PERSONA;
-
-  const exportInstruction: Anthropic.Messages.TextBlockParam = {
-    type: "text",
-    text: 'When the user explicitly asks to export, download, or save the current response as a document, prepend your entire response with this exact line (replacing <suggested-name> with a descriptive filename, no spaces, no extension): \x1eEXPORT\x1e{"format":"docx","filename":"<suggested-name>.docx"}\n',
-  };
+  const exportInstruction = 'When the user explicitly asks to export, download, or save the current response as a document, prepend your entire response with this exact line (replacing <suggested-name> with a descriptive filename, no spaces, no extension): \x1eEXPORT\x1e{"format":"docx","filename":"<suggested-name>.docx"}\n';
 
   if (!bidId) {
+    // Fix 2: single query, no parallelism needed for global mode
+    const activePrompt = await getActiveSystemPrompt();
+    const basePersona = activePrompt ?? RFI_RFP_PERSONA;
     return [
+      // Fix 1: persona alone in its own cached block — never invalidated by bid data changes
       { type: "text", text: basePersona, cache_control: { type: "ephemeral" } },
-      exportInstruction,
+      { type: "text", text: exportInstruction },
     ];
   }
 
-  const { data: bid } = await supabaseAdmin
-    .from("bids")
-    .select("client_name, title, type, value, status, stage, deadline, procurement_portal")
-    .eq("id", bidId)
-    .single();
+  // Fix 2: fetch all four data sources in parallel
+  const [activePrompt, bidResult, questionsResult, deliverablesResult] = await Promise.all([
+    getActiveSystemPrompt(),
+    supabaseAdmin
+      .from("bids")
+      .select("client_name, title, type, value, status, stage, deadline, procurement_portal")
+      .eq("id", bidId)
+      .single(),
+    supabaseAdmin
+      .from("bid_questions")
+      .select("question_text, stage")
+      .eq("bid_id", bidId)
+      .order("created_at", { ascending: true }),
+    supabaseAdmin
+      .from("bid_deliverables")
+      .select("label, stage")
+      .eq("bid_id", bidId)
+      .order("created_at", { ascending: true }),
+  ]);
 
-  const parts: string[] = [basePersona, ""];
+  const basePersona = activePrompt ?? RFI_RFP_PERSONA;
+  const bid = bidResult.data;
+  const questions = questionsResult.data;
+  const deliverables = deliverablesResult.data;
 
+  // Build the dynamic bid context block (changes per bid/turn)
+  const contextParts: string[] = [];
   if (bid) {
-    parts.push("## Active Bid Context");
-    parts.push(`Client: ${bid.client_name}`);
-    parts.push(`Title: ${bid.title}`);
-    parts.push(`Type: ${bid.type?.toUpperCase()}`);
-    parts.push(`Value: $${((bid.value ?? 0) / 1_000_000).toFixed(1)}M`);
-    parts.push(`Stage: ${bid.stage}`);
-    parts.push(`Deadline: ${bid.deadline}`);
-    if (bid.procurement_portal) parts.push(`Portal: ${bid.procurement_portal}`);
-    parts.push("");
+    contextParts.push("## Active Bid Context");
+    contextParts.push(`Client: ${bid.client_name}`);
+    contextParts.push(`Title: ${bid.title}`);
+    contextParts.push(`Type: ${bid.type?.toUpperCase()}`);
+    contextParts.push(`Value: $${((bid.value ?? 0) / 1_000_000).toFixed(1)}M`);
+    contextParts.push(`Stage: ${bid.stage}`);
+    contextParts.push(`Deadline: ${bid.deadline}`);
+    if (bid.procurement_portal) contextParts.push(`Portal: ${bid.procurement_portal}`);
+    contextParts.push("");
   }
-
-  const { data: questions } = await supabaseAdmin
-    .from("bid_questions")
-    .select("question_text, stage")
-    .eq("bid_id", bidId)
-    .order("created_at", { ascending: true });
-
   if (questions?.length) {
-    parts.push("## Bid Questions");
-    for (const q of questions) parts.push(`- [${q.stage}] ${q.question_text}`);
-    parts.push("");
+    contextParts.push("## Bid Questions");
+    for (const q of questions) contextParts.push(`- [${q.stage}] ${q.question_text}`);
+    contextParts.push("");
   }
-
-  const { data: deliverables } = await supabaseAdmin
-    .from("bid_deliverables")
-    .select("label, stage")
-    .eq("bid_id", bidId)
-    .order("created_at", { ascending: true });
-
   if (deliverables?.length) {
-    parts.push("## Bid Deliverables");
-    for (const d of deliverables) parts.push(`- [${d.stage}] ${d.label}`);
-    parts.push("");
+    contextParts.push("## Bid Deliverables");
+    for (const d of deliverables) contextParts.push(`- [${d.stage}] ${d.label}`);
+    contextParts.push("");
   }
 
-  // cache_control on the last block caches tools + system together
+  // Fix 1: persona in Block 1 (cached independently), bid context in Block 2 (cached separately),
+  // export instruction in Block 3 (tiny, no cache needed).
+  // Block 1 cache survives bid data changes; Block 2 cache survives across turns within same session.
   return [
-    { type: "text", text: parts.join("\n"), cache_control: { type: "ephemeral" } },
-    {
-      type: "text",
-      text: 'When the user explicitly asks to export, download, or save the current response as a document, prepend your entire response with this exact line (replacing <suggested-name> with a descriptive filename, no spaces, no extension): \x1eEXPORT\x1e{"format":"docx","filename":"<suggested-name>.docx"}\n',
-    } as Anthropic.Messages.TextBlockParam,
+    { type: "text", text: basePersona, cache_control: { type: "ephemeral" } },
+    ...(contextParts.length > 0
+      ? [{ type: "text" as const, text: contextParts.join("\n"), cache_control: { type: "ephemeral" as const } }]
+      : []),
+    { type: "text", text: exportInstruction },
   ];
 }
 
@@ -351,7 +361,6 @@ async function runAnthropicLoop(
   systemBlocks: Anthropic.Messages.TextBlockParam[],
   controller: ReadableStreamDefaultController
 ) {
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const MAX_ROUNDS = 3;
 
   type AnthropicMsg = Anthropic.Messages.MessageParam;
@@ -368,7 +377,7 @@ async function runAnthropicLoop(
     const supportsThinking =
       data.model === "claude-opus-4-8" || data.model === "claude-sonnet-4-6";
 
-    const apiStream = anthropic.messages.stream({
+    const apiStream = anthropicClient.messages.stream({
       model: data.model,
       max_tokens: 4096,
       ...(supportsThinking ? { thinking: { type: "adaptive" } } : {}),
