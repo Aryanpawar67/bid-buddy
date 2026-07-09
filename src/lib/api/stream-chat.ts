@@ -143,6 +143,12 @@ function statusLine(kind: string, detail: string): Uint8Array {
   );
 }
 
+// Clear sentinel — tells the client to retract any text streamed this round
+// (pre-tool narration like "Let me search…" that preceded a tool_use).
+function clearLine(): Uint8Array {
+  return new TextEncoder().encode("\x1fCLEAR\x1f\n");
+}
+
 // ── system prompt builder ──────────────────────────────────────────────────────
 
 const RFI_RFP_PERSONA = `You are the iMocha Sales Assistant. Answer RFP/RFI questions EXCLUSIVELY from 15 KB documents. You are a retrieval system — not an AI with general knowledge.
@@ -379,49 +385,35 @@ async function runAnthropicLoop(
 
     const apiStream = anthropicClient.messages.stream({
       model: data.model,
-      // Raised from 4096 — requirements tables and detailed analyses can easily
-      // exceed 4096 tokens; hitting the limit silently truncated responses.
-      max_tokens: 8192,
+      // 16 000 gives thinking-capable models enough headroom for long analyses.
+      max_tokens: 16000,
       ...(supportsThinking ? { thinking: { type: "adaptive" } } : {}),
       system: systemBlocks,
       tools: isLastRound ? undefined : [SEARCH_TOOL],
       messages,
     });
 
-    // Buffer text for intermediate rounds — only flush once we know this is
-    // the final response (stop_reason === "end_turn"). Pre-tool narration like
-    // "Let me search across X areas..." was leaking into the chat bubble because
-    // text was streamed before we knew whether the round would end with a tool call.
-    let roundBuffer = "";
-
+    // Stream text directly in every round so the user sees tokens as they arrive.
+    // If this round ends with a tool_use we'll send a CLEAR sentinel that tells
+    // the client to retract any pre-tool narration that was already streamed.
     for await (const event of apiStream) {
       if (
         event.type === "content_block_delta" &&
         event.delta.type === "text_delta"
       ) {
-        if (isLastRound) {
-          // Final round — stream directly so the user sees tokens as they arrive
-          controller.enqueue(new TextEncoder().encode(event.delta.text));
-        } else {
-          roundBuffer += event.delta.text;
-        }
+        controller.enqueue(new TextEncoder().encode(event.delta.text));
       }
     }
 
     const final = await apiStream.finalMessage();
 
     if (final.stop_reason !== "tool_use" || isLastRound) {
-      // This was the final response — flush any buffered text (happens when Claude
-      // answers directly on an intermediate round without calling a tool)
-      if (roundBuffer) {
-        controller.enqueue(new TextEncoder().encode(roundBuffer));
-      }
       break;
     }
 
-    // Tool call round — discard the pre-tool narration buffer, run search
-    roundBuffer = "";
+    // Tool call — retract any pre-tool narration text, then run the search.
 
+    controller.enqueue(clearLine());
     messages.push({ role: "assistant", content: final.content });
     const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
 

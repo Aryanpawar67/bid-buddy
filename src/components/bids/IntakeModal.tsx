@@ -8,7 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { PORTALS } from "@/lib/bid-constants";
 import { useCurrentUser } from "@/lib/auth";
 import { useRef, useState } from "react";
-import { useUploadDocument } from "@/lib/doc-queries";
+import { useUploadAndIndexDocument } from "@/lib/doc-queries";
 import { Paperclip, X as XIcon } from "lucide-react";
 
 const schema = z.object({
@@ -39,7 +39,7 @@ export function IntakeModal({
   const { user } = useCurrentUser();
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const upload = useUploadDocument();
+  const upload = useUploadAndIndexDocument();
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 

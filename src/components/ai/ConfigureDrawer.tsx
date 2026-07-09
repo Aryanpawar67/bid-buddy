@@ -377,7 +377,7 @@ function VersionRow({
   onRestore: () => void;
   restoring: boolean;
 }) {
-  const preview = version.prompt_text.slice(0, 80).replace(/\n/g, " ");
+  const preview = (version.prompt_text ?? "").slice(0, 80).replace(/\n/g, " ");
   const date = new Date(version.created_at).toLocaleString("en-US", {
     month: "short",
     day: "numeric",

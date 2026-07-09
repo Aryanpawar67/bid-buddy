@@ -267,6 +267,17 @@ export function useAiChat(
             try { exportMeta = JSON.parse(exportMatch[1]); } catch {}
           }
 
+          // CLEAR sentinel — server retracts pre-tool narration streamed before a tool_use
+          if (lineBuffer.includes("\x1fCLEAR\x1f")) {
+            assistantContent = "";
+            setMessages((prev) => {
+              const next = [...prev];
+              next[next.length - 1] = { ...next[next.length - 1], content: "" };
+              return next;
+            });
+            setStreamingStatus([]);
+          }
+
           // Capture STATUS sentinels and surface them to the UI
           const statusMatches = [...lineBuffer.matchAll(/\x1fSTATUS\x1f([^\n]*)\n/g)];
           if (statusMatches.length > 0) {
