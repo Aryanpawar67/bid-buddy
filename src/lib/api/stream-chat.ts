@@ -379,25 +379,48 @@ async function runAnthropicLoop(
 
     const apiStream = anthropicClient.messages.stream({
       model: data.model,
-      max_tokens: 4096,
+      // Raised from 4096 — requirements tables and detailed analyses can easily
+      // exceed 4096 tokens; hitting the limit silently truncated responses.
+      max_tokens: 8192,
       ...(supportsThinking ? { thinking: { type: "adaptive" } } : {}),
       system: systemBlocks,
       tools: isLastRound ? undefined : [SEARCH_TOOL],
       messages,
     });
 
+    // Buffer text for intermediate rounds — only flush once we know this is
+    // the final response (stop_reason === "end_turn"). Pre-tool narration like
+    // "Let me search across X areas..." was leaking into the chat bubble because
+    // text was streamed before we knew whether the round would end with a tool call.
+    let roundBuffer = "";
+
     for await (const event of apiStream) {
       if (
         event.type === "content_block_delta" &&
         event.delta.type === "text_delta"
       ) {
-        controller.enqueue(new TextEncoder().encode(event.delta.text));
+        if (isLastRound) {
+          // Final round — stream directly so the user sees tokens as they arrive
+          controller.enqueue(new TextEncoder().encode(event.delta.text));
+        } else {
+          roundBuffer += event.delta.text;
+        }
       }
     }
 
     const final = await apiStream.finalMessage();
 
-    if (final.stop_reason !== "tool_use" || isLastRound) break;
+    if (final.stop_reason !== "tool_use" || isLastRound) {
+      // This was the final response — flush any buffered text (happens when Claude
+      // answers directly on an intermediate round without calling a tool)
+      if (roundBuffer) {
+        controller.enqueue(new TextEncoder().encode(roundBuffer));
+      }
+      break;
+    }
+
+    // Tool call round — discard the pre-tool narration buffer, run search
+    roundBuffer = "";
 
     messages.push({ role: "assistant", content: final.content });
     const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
@@ -454,22 +477,33 @@ async function runAzureLoop(
 
     const stream = azureClient.chat.completions.stream({
       model: deploymentName,
-      max_completion_tokens: 4096,
+      max_completion_tokens: 8192,
       messages,
       tools: isLastRound ? undefined : [AZURE_SEARCH_TOOL],
     });
 
+    let roundBuffer = "";
+
     for await (const chunk of stream) {
       const content = chunk.choices[0]?.delta?.content;
       if (content) {
-        controller.enqueue(new TextEncoder().encode(content));
+        if (isLastRound) {
+          controller.enqueue(new TextEncoder().encode(content));
+        } else {
+          roundBuffer += content;
+        }
       }
     }
 
     const final = await stream.finalChatCompletion();
     const finishReason = final.choices[0]?.finish_reason;
 
-    if (finishReason !== "tool_calls" || isLastRound) break;
+    if (finishReason !== "tool_calls" || isLastRound) {
+      if (roundBuffer) controller.enqueue(new TextEncoder().encode(roundBuffer));
+      break;
+    }
+
+    roundBuffer = "";
 
     const assistantMessage = final.choices[0].message;
     messages.push({
