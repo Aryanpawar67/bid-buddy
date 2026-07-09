@@ -216,11 +216,16 @@ export function useAiChat(
       const text = (overrideText ?? inputValue).trim();
       if (!text || isStreaming || !sessionId) return;
 
-      // Merge new IDs into the session-wide pinned set
-      const allPinnedIds = mentionedDocIds?.length
-        ? [...new Set([...sessionPinnedDocIds, ...mentionedDocIds])]
-        : sessionPinnedDocIds;
-      if (mentionedDocIds?.length) setSessionPinnedDocIds(allPinnedIds);
+      // Track which docs have been @-mentioned across the session (for UI / future use).
+      // Only inject chunks for docs mentioned in THIS message — not accumulated ones.
+      // Re-injecting all ever-mentioned docs every turn costs 40K+ tokens per @-mention
+      // and exhausts the 200K context window within ~12 turns on large documents.
+      // The search tool handles follow-up lookups; the model has already seen the
+      // content in the conversation history from the original mention turn.
+      if (mentionedDocIds?.length) {
+        setSessionPinnedDocIds((prev) => [...new Set([...prev, ...mentionedDocIds])]);
+      }
+      const currentTurnPinnedIds = mentionedDocIds ?? [];
 
       const userMsg: Message = {
         role: "user",
@@ -246,7 +251,7 @@ export function useAiChat(
           bidId,
           messages: updatedWithUser,
           model,
-          mentionedDocIds: allPinnedIds.length ? allPinnedIds : undefined,
+          mentionedDocIds: currentTurnPinnedIds.length ? currentTurnPinnedIds : undefined,
         });
 
         const reader = stream.getReader();

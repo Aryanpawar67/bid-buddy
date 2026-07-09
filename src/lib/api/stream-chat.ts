@@ -82,6 +82,11 @@ async function rerank(query: string, chunks: ChunkRow[]): Promise<ChunkRow[]> {
   }
 }
 
+// Cap per-document chunk injection at 15 chunks (~6 750 tokens).
+// Injecting a full 50-page doc (100+ chunks) consumes 40K+ tokens on every
+// turn; the search tool can retrieve specific sections on demand.
+const PINNED_CHUNKS_PER_DOC = 15;
+
 async function fetchPinnedChunks(docIds: string[]): Promise<ChunkRow[]> {
   if (!docIds.length) return [];
   try {
@@ -90,7 +95,14 @@ async function fetchPinnedChunks(docIds: string[]): Promise<ChunkRow[]> {
       .select("chunk_text, document_id, bid_documents(name)")
       .in("document_id", docIds)
       .order("chunk_index", { ascending: true });
-    return (data ?? []).map((r: any) => ({
+    // Enforce per-document cap in JS (Supabase doesn't support per-group limits)
+    const counts: Record<string, number> = {};
+    const capped = (data ?? []).filter((r: any) => {
+      const id = r.document_id;
+      counts[id] = (counts[id] ?? 0) + 1;
+      return counts[id] <= PINNED_CHUNKS_PER_DOC;
+    });
+    return capped.map((r: any) => ({
       doc_name: r.bid_documents?.name ?? "Unknown",
       chunk_text: r.chunk_text,
     })) as ChunkRow[];
@@ -367,10 +379,17 @@ async function runAnthropicLoop(
   systemBlocks: Anthropic.Messages.TextBlockParam[],
   controller: ReadableStreamDefaultController
 ) {
-  const MAX_ROUNDS = 3;
+  const MAX_ROUNDS = 5;
+
+  // Slide the history window to stay within the 200K context budget.
+  // The full transcript is persisted in the DB; we only truncate what's sent
+  // to the API. Always start on a user message (Anthropic requirement).
+  const HISTORY_WINDOW = 30;
+  const historySlice = data.messages.slice(-HISTORY_WINDOW);
+  const firstUser = historySlice.findIndex((m) => m.role === "user");
 
   type AnthropicMsg = Anthropic.Messages.MessageParam;
-  const messages: AnthropicMsg[] = data.messages.map((m) => ({
+  const messages: AnthropicMsg[] = (firstUser > 0 ? historySlice.slice(firstUser) : historySlice).map((m) => ({
     role: m.role,
     content: m.content,
   }));
