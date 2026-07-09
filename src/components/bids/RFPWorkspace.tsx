@@ -10,6 +10,8 @@ import { initials } from "@/lib/bid-constants";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { useDocuments, type BidDocument } from "@/lib/doc-queries";
+import { DocPreviewModal } from "@/components/docs/DocPreviewModal";
 import { AdvanceStageFooter } from "./AdvanceStageFooter";
 import type { TabDef } from "./BidHeaderBar";
 
@@ -44,6 +46,7 @@ export function RFPWorkspace({ bid, activeTab, onTabChange }: { bid: Bid; active
   const items = useStageItems(bid.id, "rfp");
   const { data: team = [] } = useBidTeam(bid.id);
   const { data: activity = [] } = useBidActivity(bid.id);
+  const [docPanelOpen, setDocPanelOpen] = useState(false);
 
   const deliverables = items.data?.deliverables ?? [];
   const questions = items.data?.questions ?? [];
@@ -63,7 +66,7 @@ export function RFPWorkspace({ bid, activeTab, onTabChange }: { bid: Bid; active
 
   if (activeTab === "clarifications") {
     return (
-      <div className="px-6 py-5 max-w-[900px]">
+      <div className="px-6 py-5 max-w-[1100px]">
         <div className="mb-4 p-3.5 rounded-xl bg-primary/5 border hairline border-primary/20 flex items-start gap-3">
           <Sparkles className="size-4 text-primary shrink-0 mt-0.5" />
           <div className="flex-1 min-w-0">
@@ -81,60 +84,43 @@ export function RFPWorkspace({ bid, activeTab, onTabChange }: { bid: Bid; active
           </Link>
         </div>
 
-        <div className="bg-card hairline border rounded-xl overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b hairline border-border">
-            <h3 className="text-[13px] font-semibold">Customer Clarifications</h3>
-            <span className="text-[11px] text-muted-foreground">
-              {questions.filter(q => q.status === "done").length}/{questions.length} answered
-            </span>
+        <div className="flex gap-4 items-start">
+          <div className="flex-1 min-w-0 bg-card hairline border rounded-xl overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b hairline border-border">
+              <h3 className="text-[13px] font-semibold">Customer Clarifications</h3>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-muted-foreground">
+                  {questions.filter(q => q.status === "done").length}/{questions.length} answered
+                </span>
+                <button
+                  onClick={() => setDocPanelOpen(o => !o)}
+                  title="Toggle documents"
+                  className={`p-1 rounded hover:bg-muted ${docPanelOpen ? "text-primary" : "text-muted-foreground"}`}
+                >
+                  <FileText className="size-3.5" />
+                </button>
+              </div>
+            </div>
+            {questions.length === 0 ? (
+              <div className="py-8 text-center text-[12px] text-muted-foreground">No clarification questions added yet.</div>
+            ) : (
+              <ul className="divide-y hairline divide-border">
+                {questions.map((q, i) => (
+                  <ClarificationRow
+                    key={q.id}
+                    num={i + 1}
+                    question={q}
+                    onCycle={() => {
+                      const next = q.status === "pending" ? "in_progress" : q.status === "in_progress" ? "done" : "pending";
+                      toggleQ.mutate({ id: q.id, status: next });
+                    }}
+                  />
+                ))}
+              </ul>
+            )}
+            <RFPAddQuestionInline bidId={bid.id} />
           </div>
-          {questions.length === 0 ? (
-            <div className="py-8 text-center text-[12px] text-muted-foreground">No clarification questions added yet.</div>
-          ) : (
-            <ul className="divide-y hairline divide-border">
-              {questions.map((q, i) => {
-                const done = q.status === "done";
-                const inProg = q.status === "in_progress";
-                return (
-                  <li key={q.id} className="flex items-start gap-3 px-4 py-3 hover:bg-muted/20 transition-colors">
-                    <span className="text-[10px] text-muted-foreground w-5 shrink-0 mt-0.5">{i + 1}</span>
-                    <button
-                      onClick={() => {
-                        const next = q.status === "pending" ? "in_progress" : q.status === "in_progress" ? "done" : "pending";
-                        toggleQ.mutate({ id: q.id, status: next });
-                      }}
-                      className={[
-                        "size-[18px] rounded-full flex items-center justify-center shrink-0 mt-0.5 hairline border transition-colors",
-                        done ? "bg-success-soft border-[#97C459]" : inProg ? "border-amber-400 bg-amber-50 dark:bg-amber-950/30" : "border-dashed border-border-strong",
-                      ].join(" ")}
-                    >
-                      {done && <Check className="size-3 text-success-foreground" strokeWidth={2.5} />}
-                      {inProg && <div className="size-2 rounded-full bg-amber-400" />}
-                      {!done && !inProg && <Circle className="size-2 text-muted-foreground/40" />}
-                    </button>
-                    <div className="flex-1 min-w-0">
-                      <div className={`text-[12.5px] leading-snug ${done ? "line-through text-muted-foreground" : ""}`}>
-                        {q.question_text}
-                      </div>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className={[
-                          "text-[9px] font-semibold px-1.5 py-0.5 rounded",
-                          done ? "bg-success-soft text-success-foreground" : inProg ? "bg-amber-100 text-amber-700" : "bg-muted text-muted-foreground"
-                        ].join(" ")}>
-                          {done ? "Answered" : inProg ? "Drafting" : "Pending"}
-                        </span>
-                        {q.assigned_team && (
-                          <span className="text-[10px] text-muted-foreground">{q.assigned_team.replace(/_/g, " ")}</span>
-                        )}
-                        {q.response_text && <FileText className="size-3 text-muted-foreground" />}
-                      </div>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-          <RFPAddQuestionInline bidId={bid.id} />
+          {docPanelOpen && <DocQuickPanel bidId={bid.id} onClose={() => setDocPanelOpen(false)} />}
         </div>
         <AdvanceStageFooter bid={bid} stage="rfp" />
       </div>
@@ -417,6 +403,115 @@ export function RFPWorkspace({ bid, activeTab, onTabChange }: { bid: Bid; active
       )}
       <AdvanceStageFooter bid={bid} stage="rfp" />
     </div>
+  );
+}
+
+// ── ClarificationRow ──────────────────────────────────────────────────────────
+
+function ClarificationRow({ num, question, onCycle }: { num: number; question: any; onCycle: () => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const [draft, setDraft] = useState(question.response_text ?? "");
+  const updateResponse = useUpdateQuestionResponse();
+
+  const done = question.status === "done";
+  const inProg = question.status === "in_progress";
+
+  return (
+    <li className="px-4 py-3 hover:bg-muted/20 transition-colors">
+      <div className="flex items-start gap-3">
+        <span className="text-[10px] text-muted-foreground w-5 shrink-0 mt-0.5">{num}</span>
+        <button
+          onClick={(e) => { e.stopPropagation(); onCycle(); }}
+          className={[
+            "size-[18px] rounded-full flex items-center justify-center shrink-0 mt-0.5 hairline border transition-colors",
+            done ? "bg-success-soft border-[#97C459]" : inProg ? "border-amber-400 bg-amber-50 dark:bg-amber-950/30" : "border-dashed border-border-strong",
+          ].join(" ")}
+        >
+          {done && <Check className="size-3 text-success-foreground" strokeWidth={2.5} />}
+          {inProg && <div className="size-2 rounded-full bg-amber-400" />}
+          {!done && !inProg && <Circle className="size-2 text-muted-foreground/40" />}
+        </button>
+        <div className="flex-1 min-w-0">
+          <button onClick={() => setExpanded(o => !o)} className="text-left w-full">
+            <div className={`text-[12.5px] leading-snug ${done ? "line-through text-muted-foreground" : ""}`}>
+              {question.question_text}
+            </div>
+          </button>
+          <div className="flex items-center gap-2 mt-1">
+            <span className={[
+              "text-[9px] font-semibold px-1.5 py-0.5 rounded",
+              done ? "bg-success-soft text-success-foreground" : inProg ? "bg-amber-100 text-amber-700" : "bg-muted text-muted-foreground"
+            ].join(" ")}>
+              {done ? "Answered" : inProg ? "Drafting" : "Pending"}
+            </span>
+            {question.assigned_team && (
+              <span className="text-[10px] text-muted-foreground">{question.assigned_team.replace(/_/g, " ")}</span>
+            )}
+            {question.response_text && <FileText className="size-3 text-muted-foreground" />}
+          </div>
+        </div>
+      </div>
+      {expanded && (
+        <div className="mt-2 ml-8">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Your response</div>
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="Draft your response here… (auto-saves on blur)"
+            className="w-full text-[12px] bg-muted/30 hairline border rounded-md p-2 resize-none min-h-[5rem] focus:outline-none focus:ring-1 focus:ring-ring"
+            onBlur={() => {
+              if (draft !== (question.response_text ?? "")) {
+                const nextStatus = question.status === "pending" && draft.trim() ? "in_progress" : undefined;
+                updateResponse.mutate({ id: question.id, responseText: draft, status: nextStatus });
+              }
+            }}
+          />
+          <button onClick={() => setExpanded(false)} className="mt-1 text-[10px] text-muted-foreground hover:text-foreground">
+            ▲ Collapse
+          </button>
+        </div>
+      )}
+    </li>
+  );
+}
+
+// ── DocQuickPanel ─────────────────────────────────────────────────────────────
+
+function DocQuickPanel({ bidId, onClose }: { bidId: string; onClose: () => void }) {
+  const { data: docs = [] } = useDocuments({ bidId });
+  const [preview, setPreview] = useState<BidDocument | null>(null);
+
+  return (
+    <>
+      <div className="w-60 shrink-0 bg-card hairline border rounded-xl overflow-hidden flex flex-col">
+        <div className="flex items-center justify-between px-3 py-2.5 border-b hairline border-border">
+          <span className="text-[11px] font-semibold">Documents ({docs.length})</span>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+            <X className="size-3.5" />
+          </button>
+        </div>
+        <div className="overflow-y-auto flex-1">
+          {docs.length === 0 ? (
+            <div className="py-6 text-center text-[11px] text-muted-foreground">No documents.</div>
+          ) : (
+            <ul className="divide-y hairline divide-border">
+              {docs.map((d) => (
+                <li key={d.id}>
+                  <button
+                    onClick={() => setPreview(d)}
+                    className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-muted/30 text-left"
+                  >
+                    <FileText className="size-3.5 text-muted-foreground shrink-0" />
+                    <span className="text-[11px] truncate">{d.name}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+      {preview && <DocPreviewModal doc={preview} allDocs={docs} onClose={() => setPreview(null)} />}
+    </>
   );
 }
 

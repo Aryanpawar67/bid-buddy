@@ -178,6 +178,8 @@ export function useAiRequestCount(userId: string | undefined) {
 // sessionId: the active session (null = no session selected, chat is disabled)
 // bidId: the bid context (null = global mode, no bid context injected)
 // model: the Anthropic model ID to use
+export type StreamingStatusEvent = { kind: string; query: string };
+
 export function useAiChat(
   sessionId: string | null,
   bidId: string | null,
@@ -186,6 +188,7 @@ export function useAiChat(
   const [messages, setMessages] = useState<Message[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [inputValue, setInputValue] = useState("");
+  const [streamingStatus, setStreamingStatus] = useState<StreamingStatusEvent[]>([]);
   // Accumulates all doc IDs ever pinned in this session so every subsequent
   // message re-injects their chunks — making attached docs always in context.
   const [sessionPinnedDocIds, setSessionPinnedDocIds] = useState<string[]>([]);
@@ -228,6 +231,7 @@ export function useAiChat(
       const updatedWithUser = [...messages, userMsg];
       setMessages(updatedWithUser);
       setInputValue("");
+      setStreamingStatus([]);
       setIsStreaming(true);
 
       const assistantCreatedAt = new Date().toISOString();
@@ -261,6 +265,18 @@ export function useAiChat(
           const exportMatch = lineBuffer.match(/\x1eEXPORT\x1e([^\n]*)\n/);
           if (exportMatch) {
             try { exportMeta = JSON.parse(exportMatch[1]); } catch {}
+          }
+
+          // Capture STATUS sentinels and surface them to the UI
+          const statusMatches = [...lineBuffer.matchAll(/\x1fSTATUS\x1f([^\n]*)\n/g)];
+          if (statusMatches.length > 0) {
+            const newEvents: StreamingStatusEvent[] = [];
+            for (const sm of statusMatches) {
+              try { newEvents.push(JSON.parse(sm[1])); } catch {}
+            }
+            if (newEvents.length > 0) {
+              setStreamingStatus((prev) => [...prev, ...newEvents]);
+            }
           }
 
           // Strip both STATUS (\x1f) and EXPORT (\x1e) sentinels
@@ -334,7 +350,7 @@ export function useAiChat(
     [inputValue, isStreaming, messages, sessionId, bidId, model, updateSession]
   );
 
-  return { messages, isStreaming, inputValue, setInputValue, send };
+  return { messages, isStreaming, inputValue, setInputValue, send, streamingStatus };
 }
 
 // ── usePreviewProposal ────────────────────────────────────────────────────────

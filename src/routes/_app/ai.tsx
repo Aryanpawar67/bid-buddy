@@ -64,7 +64,7 @@ function AiPage() {
     mode === "bid" && selectedBidId ? { bidId: selectedBidId } : undefined
   );
 
-  const { messages, isStreaming, inputValue, setInputValue, send } = useAiChat(
+  const { messages, isStreaming, inputValue, setInputValue, send, streamingStatus } = useAiChat(
     selectedSessionId,
     mode === "global" ? null : selectedBidId,
     model
@@ -161,6 +161,7 @@ function AiPage() {
         sessionId={selectedSessionId}
         messages={messages}
         isStreaming={isStreaming}
+        streamingStatus={streamingStatus}
         inputValue={inputValue}
         onInputChange={setInputValue}
         onSend={send}

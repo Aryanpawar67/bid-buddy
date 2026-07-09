@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { Send, Loader2, Copy, Check, Download, FileText, Paperclip, CheckCircle2, X, MoreHorizontal } from "lucide-react";
+import { Send, Loader2, Copy, Check, Download, FileText, Paperclip, CheckCircle2, X, MoreHorizontal, Search, FileDown } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { Message } from "@/lib/ai-queries";
+import type { Message, StreamingStatusEvent } from "@/lib/ai-queries";
 import type { Bid } from "@/lib/bid-queries";
 import { ProposalModal } from "@/components/ai/ProposalModal";
 import { BidDocsDrawer } from "@/components/ai/BidDocsDrawer";
@@ -72,6 +72,7 @@ type Props = {
   sessionId: string | null;
   messages: Message[];
   isStreaming: boolean;
+  streamingStatus: StreamingStatusEvent[];
   inputValue: string;
   onInputChange: (v: string) => void;
   onSend: (text?: string, mentionedDocIds?: string[], attachmentNames?: string[]) => void;
@@ -87,6 +88,7 @@ export function AiChatPanel({
   sessionId,
   messages,
   isStreaming,
+  streamingStatus,
   inputValue,
   onInputChange,
   onSend,
@@ -404,6 +406,11 @@ export function AiChatPanel({
               isStreaming={
                 isStreaming && i === messages.length - 1 && msg.role === "assistant"
               }
+              streamingStatus={
+                isStreaming && i === messages.length - 1 && msg.role === "assistant"
+                  ? streamingStatus
+                  : []
+              }
             />
           ))}
           <div ref={messagesEndRef} />
@@ -578,10 +585,17 @@ export function AiChatPanel({
               )}
             </button>
           </div>
-          <div className="text-[9px] text-muted-foreground mt-1.5 text-right">
-            {attachmentsPending
-              ? "Indexing attachment — send unlocks when ready"
-              : "Enter to send · Shift+Enter for new line"}
+          <div className="text-[9px] mt-1.5 text-right flex items-center justify-end gap-1.5">
+            {isStreaming ? (
+              <>
+                <span className="inline-block size-1.5 rounded-full bg-primary animate-pulse" />
+                <span className="text-primary font-medium">Claude is responding — please wait</span>
+              </>
+            ) : attachmentsPending ? (
+              <span className="text-muted-foreground">Indexing attachment — send unlocks when ready</span>
+            ) : (
+              <span className="text-muted-foreground">Enter to send · Shift+Enter for new line</span>
+            )}
           </div>
         </div>
       )}
@@ -611,17 +625,20 @@ export function AiChatPanel({
 function MessageBubble({
   message,
   isStreaming,
+  streamingStatus,
   messageIndex,
   sessionId,
 }: {
   message: Message;
   isStreaming: boolean;
+  streamingStatus: StreamingStatusEvent[];
   messageIndex: number;
   sessionId: string;
 }) {
   const isUser = message.role === "user";
   const [copied, setCopied] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const isExportMessage = !isUser && !!message.exportMeta;
 
   function handleCopy() {
     navigator.clipboard.writeText(message.content).then(() => {
@@ -651,13 +668,88 @@ function MessageBubble({
   }
 
   function handleDownloadPdf() {
+    // Convert markdown to styled HTML for proper PDF rendering
+    const md = message.content;
+    const htmlLines: string[] = [];
+    const lines = md.split("\n");
+    let inList = false;
+    let listTag = "ul";
+
+    const escHtml = (s: string) =>
+      s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+    const inlineHtml = (s: string) =>
+      escHtml(s)
+        .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+        .replace(/\*([^*]+)\*/g, "<em>$1</em>")
+        .replace(/`([^`]+)`/g, "<code>$1</code>");
+
+    function closeList() {
+      if (inList) { htmlLines.push(`</${listTag}>`); inList = false; }
+    }
+
+    for (const line of lines) {
+      if (/^# (.+)/.test(line)) {
+        closeList();
+        htmlLines.push(`<h1>${inlineHtml(line.slice(2).trim())}</h1>`);
+      } else if (/^## (.+)/.test(line)) {
+        closeList();
+        htmlLines.push(`<h2>${inlineHtml(line.slice(3).trim())}</h2>`);
+      } else if (/^### (.+)/.test(line)) {
+        closeList();
+        htmlLines.push(`<h3>${inlineHtml(line.slice(4).trim())}</h3>`);
+      } else if (/^[-*] /.test(line)) {
+        if (!inList || listTag !== "ul") { closeList(); htmlLines.push("<ul>"); inList = true; listTag = "ul"; }
+        htmlLines.push(`<li>${inlineHtml(line.slice(2).trim())}</li>`);
+      } else if (/^\d+\. /.test(line)) {
+        if (!inList || listTag !== "ol") { closeList(); htmlLines.push("<ol>"); inList = true; listTag = "ol"; }
+        htmlLines.push(`<li>${inlineHtml(line.replace(/^\d+\. /, "").trim())}</li>`);
+      } else if (/^---+$/.test(line.trim())) {
+        closeList();
+        htmlLines.push("<hr>");
+      } else if (line.trim().startsWith("|") && line.trim().endsWith("|")) {
+        if (/^[\s|:-]+$/.test(line)) continue; // separator row
+        closeList();
+        const cells = line.trim().slice(1, -1).split("|").map(c => c.trim());
+        htmlLines.push(`<tr>${cells.map(c => `<td>${inlineHtml(c)}</td>`).join("")}</tr>`);
+      } else if (line.trim() === "") {
+        closeList();
+        htmlLines.push("<br>");
+      } else {
+        closeList();
+        htmlLines.push(`<p>${inlineHtml(line)}</p>`);
+      }
+    }
+    closeList();
+
+    // Wrap table rows in <table>
+    const html = htmlLines.join("\n").replace(/(<tr>.*?<\/tr>\n*)+/gs, (match) =>
+      `<table>${match}</table>`
+    );
+
     const iframe = document.createElement("iframe");
-    iframe.style.cssText = "position:fixed;top:-9999px;left:-9999px;width:800px;height:1100px";
-    iframe.srcdoc = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:system-ui,sans-serif;font-size:13px;line-height:1.6;max-width:750px;margin:40px auto;padding:0 20px;color:#111}pre{background:#f5f5f5;padding:12px;border-radius:4px;overflow-x:auto}code{background:#f5f5f5;padding:1px 4px;border-radius:2px}</style></head><body><pre style="white-space:pre-wrap">${message.content.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</pre></body></html>`;
+    iframe.style.cssText = "position:fixed;top:-9999px;left:-9999px;width:850px;height:1100px";
+    iframe.srcdoc = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+      @media print { body { margin: 0; } }
+      body { font-family: "Segoe UI", Arial, sans-serif; font-size: 11pt; line-height: 1.55; max-width: 720px; margin: 36px auto; padding: 0 24px; color: #111; }
+      h1 { font-size: 18pt; font-weight: 700; margin: 20px 0 8px; border-bottom: 2px solid #491AEB; padding-bottom: 4px; color: #1a1a2e; }
+      h2 { font-size: 14pt; font-weight: 600; margin: 16px 0 6px; color: #2d2d4e; }
+      h3 { font-size: 12pt; font-weight: 600; margin: 12px 0 4px; }
+      p { margin: 4px 0 8px; }
+      ul, ol { margin: 4px 0 8px; padding-left: 24px; }
+      li { margin: 2px 0; }
+      table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 10pt; }
+      td, th { border: 1px solid #ccc; padding: 5px 8px; text-align: left; vertical-align: top; }
+      tr:first-child td { background: #f0eeff; font-weight: 600; }
+      code { background: #f4f4f4; padding: 1px 4px; border-radius: 3px; font-family: "Courier New", monospace; font-size: 10pt; }
+      hr { border: none; border-top: 1px solid #ddd; margin: 12px 0; }
+      strong { font-weight: 700; }
+      em { font-style: italic; }
+    </style></head><body>${html}</body></html>`;
     document.body.appendChild(iframe);
     iframe.onload = () => {
       iframe.contentWindow?.print();
-      setTimeout(() => document.body.removeChild(iframe), 2000);
+      setTimeout(() => document.body.removeChild(iframe), 3000);
     };
   }
 
@@ -691,31 +783,89 @@ function MessageBubble({
             })}
           </div>
         )}
-        <div
-          className={[
-            "rounded-xl px-3 py-2.5 text-[12px] leading-relaxed",
-            isUser
-              ? "bg-primary text-white rounded-tr-sm"
-              : "bg-card border hairline border-border text-foreground rounded-tl-sm",
-          ].join(" ")}
-        >
-          {message.content ? (
-            isUser ? (
-              <div className="whitespace-pre-wrap">{message.content}</div>
-            ) : (
-              <div className="prose prose-sm max-w-none prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-ol:my-1 prose-li:my-0 prose-table:text-[11px] prose-th:py-1 prose-td:py-1 prose-hr:my-2 prose-pre:bg-muted prose-pre:text-[11px] prose-code:text-[11px] prose-code:bg-muted prose-code:px-1 prose-code:rounded dark:prose-invert">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {message.content}
-                </ReactMarkdown>
-              </div>
-            )
-          ) : isStreaming ? (
-            <TypingIndicator />
-          ) : null}
-        </div>
 
-        {/* Assistant action row — copy + export chips */}
-        {!isUser && message.content && !isStreaming && (
+        {/* Export message — compact document-ready card */}
+        {isExportMessage && !isStreaming ? (
+          <div className="rounded-xl border hairline border-primary/20 bg-primary/5 overflow-hidden">
+            <div className="flex items-center gap-3 px-4 py-3 border-b hairline border-primary/10">
+              <div className="size-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                <FileDown className="size-4 text-primary" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-[12px] font-semibold text-foreground">Document ready</div>
+                <div className="text-[11px] text-muted-foreground truncate">
+                  {message.exportMeta!.filename}
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 px-4 py-2.5">
+              <button
+                onClick={handleDownloadDocx}
+                disabled={exporting}
+                className="flex items-center gap-1.5 text-[11px] font-semibold text-primary hover:text-primary/80 transition-colors px-3 py-1.5 rounded-md border hairline border-primary/30 bg-primary/5 hover:bg-primary/10 disabled:opacity-50"
+              >
+                {exporting ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
+                Download DOCX
+              </button>
+              <button
+                onClick={handleDownloadPdf}
+                className="flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground hover:text-foreground transition-colors px-3 py-1.5 rounded-md border hairline border-border hover:bg-muted"
+              >
+                <FileText className="size-3.5" />
+                Save as PDF
+              </button>
+              <button
+                onClick={handleCopy}
+                className="ml-auto flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors px-1.5 py-1 rounded"
+                title="Copy content to clipboard"
+              >
+                {copied ? <Check className="size-3 text-green-500" /> : <Copy className="size-3" />}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div
+            className={[
+              "rounded-xl px-3 py-2.5 text-[12px] leading-relaxed",
+              isUser
+                ? "bg-primary text-white rounded-tr-sm"
+                : "bg-card border hairline border-border text-foreground rounded-tl-sm",
+            ].join(" ")}
+          >
+            {/* Thinking steps — shown while streaming, above content */}
+            {!isUser && isStreaming && streamingStatus.length > 0 && (
+              <div className="mb-3 flex flex-col gap-1.5">
+                {streamingStatus.map((s, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-center gap-2 text-[10px] text-primary/80 bg-primary/5 border hairline border-primary/15 rounded-md px-2.5 py-1.5"
+                  >
+                    <Search className="size-3 shrink-0 text-primary/60" />
+                    <span className="font-medium">Searching:</span>
+                    <span className="truncate text-muted-foreground">{s.query}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {message.content ? (
+              isUser ? (
+                <div className="whitespace-pre-wrap">{message.content}</div>
+              ) : (
+                <div className="prose prose-sm max-w-none prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-ol:my-1 prose-li:my-0 prose-table:text-[11px] prose-th:py-1 prose-td:py-1 prose-hr:my-2 prose-pre:bg-muted prose-pre:text-[11px] prose-code:text-[11px] prose-code:bg-muted prose-code:px-1 prose-code:rounded dark:prose-invert">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {message.content}
+                  </ReactMarkdown>
+                </div>
+              )
+            ) : isStreaming ? (
+              <TypingIndicator />
+            ) : null}
+          </div>
+        )}
+
+        {/* Assistant action row — copy + export chips (non-export messages only) */}
+        {!isUser && !isExportMessage && message.content && !isStreaming && (
           <div className="flex items-center gap-1.5 flex-wrap">
             <button
               onClick={handleCopy}
@@ -733,30 +883,6 @@ function MessageBubble({
                 </>
               )}
             </button>
-
-            {message.exportMeta && (
-              <>
-                <button
-                  onClick={handleDownloadDocx}
-                  disabled={exporting}
-                  className="flex items-center gap-1 text-[10px] text-primary hover:text-primary/80 transition-colors px-2 py-0.5 rounded-full border hairline border-primary/30 bg-primary/5 disabled:opacity-50"
-                >
-                  {exporting ? (
-                    <Loader2 className="size-3 animate-spin" />
-                  ) : (
-                    <Download className="size-3" />
-                  )}
-                  <span>Download DOCX</span>
-                </button>
-                <button
-                  onClick={handleDownloadPdf}
-                  className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors px-2 py-0.5 rounded-full border hairline border-border"
-                >
-                  <FileText className="size-3" />
-                  <span>Save as PDF</span>
-                </button>
-              </>
-            )}
           </div>
         )}
       </div>
