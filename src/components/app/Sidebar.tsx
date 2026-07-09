@@ -25,6 +25,10 @@ import { useNotificationCount } from "@/lib/notification-queries";
 export function Sidebar() {
   const { primaryRole, profile, user } = useCurrentUser();
   const path = useRouterState({ select: (s) => s.location.pathname });
+  const searchStr = useRouterState({ select: (s) => s.location.search });
+  const urlSearchParams = new URLSearchParams(searchStr);
+  const currentBidId = urlSearchParams.get("bidId") ?? undefined;
+  const currentStage = urlSearchParams.get("stage") ?? undefined;
   const [pursuitsOpen, setPursuitsOpen] = useState(true);
   const [collapsed, setCollapsed] = useState(() => {
     try { return localStorage.getItem("sidebar-collapsed") === "true"; } catch { return false; }
@@ -164,14 +168,28 @@ export function Sidebar() {
               <div className="mb-1">
                 {STAGES.map((s, i) => {
                   const count = activeBids.filter((b) => b.stage === s.key).length;
-                  const isClosure = s.key === "post_closure";
+                  const isActive = path.startsWith("/pipeline") && currentStage === s.key;
+                  const stageSearch = currentBidId
+                    ? { bidId: currentBidId, stage: s.key }
+                    : { stage: s.key };
                   return (
                     <Link
                       key={s.key}
-                      to={isClosure ? "/closure" : "/pipeline"}
-                      className="flex items-center gap-2 py-[5px] pl-[38px] pr-[14px] mx-1.5 rounded-[4px] text-[11px] text-white/38 hover:bg-white/10 hover:text-white/70 transition-colors"
+                      to="/pipeline"
+                      search={stageSearch as any}
+                      className={[
+                        "flex items-center gap-2 py-[5px] pl-[38px] pr-[14px] mx-1.5 rounded-[4px] text-[11px] transition-colors",
+                        isActive
+                          ? "bg-primary/20 text-white/90"
+                          : "text-white/38 hover:bg-white/10 hover:text-white/70",
+                      ].join(" ")}
                     >
-                      <span className="size-4 rounded-full bg-white/[0.08] flex items-center justify-center text-[9px] text-white/50 shrink-0 font-medium">
+                      <span
+                        className={[
+                          "size-4 rounded-full flex items-center justify-center text-[9px] shrink-0 font-medium",
+                          isActive ? "bg-primary/40 text-white/90" : "bg-white/[0.08] text-white/50",
+                        ].join(" ")}
+                      >
                         {i + 1}
                       </span>
                       <span className="flex-1 truncate">{s.label}</span>
