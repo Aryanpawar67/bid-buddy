@@ -271,7 +271,7 @@ async function getActiveSystemPrompt(): Promise<string | null> {
 async function buildSystemBlocks(
   bidId: string | null
 ): Promise<Anthropic.Messages.TextBlockParam[]> {
-  const exportInstruction = 'When the user explicitly asks to export, download, or save the current response as a document, output this EXACT line as the very first line of your response (replace <suggested-name> with a short descriptive filename, no spaces, no extension, no extra text on that line):\nEXPORT{"format":"docx","filename":"<suggested-name>.docx"}\nThen continue with the full response on the next line. Do NOT wrap it in code fences, backticks, or markdown. Output it as a raw line.';
+  const exportInstruction = 'When the user asks to export, download, draft, or save anything as a file:\n1. Output ONLY this exact line first (replace <suggested-name> with a short descriptive filename, no spaces, no extension):\nEXPORT{"format":"docx","filename":"<suggested-name>.docx"}\n2. Immediately follow with the full document content — no preamble, no "here is your file", no "your document is ready", no trailing remarks, no emojis, no sign-off. The content IS the response. Nothing else.';
 
   if (!bidId) {
     // Fix 2: single query, no parallelism needed for global mode
