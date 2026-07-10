@@ -272,8 +272,12 @@ export function useAiChat(
 
           lineBuffer += value;
 
-          // Capture \x1eEXPORT\x1e...\n sentinels before stripping
-          const exportMatch = lineBuffer.match(/\x1eEXPORT\x1e([^\n]*)\n/);
+          // Capture export metadata — two possible formats:
+          // 1. Sentinel format \x1eEXPORT\x1e{...}\n  (emitted by server)
+          // 2. Plain text EXPORT{...}\n                (emitted by model — control chars stripped by LLM)
+          const exportMatch =
+            lineBuffer.match(/\x1eEXPORT\x1e([^\n]*)\n/) ??
+            lineBuffer.match(/^EXPORT(\{[^\n]*\})\n/m);
           if (exportMatch) {
             try { exportMeta = JSON.parse(exportMatch[1]); } catch {}
           }
@@ -301,11 +305,12 @@ export function useAiChat(
             }
           }
 
-          // Strip both STATUS (\x1f) and EXPORT (\x1e) sentinels
+          // Strip STATUS (\x1f), EXPORT sentinel (\x1e), and plain-text EXPORT{...} lines
           let processed = lineBuffer;
           const stripped = processed
             .replace(/\x1f[^\x1f]*\x1f[^\n]*\n/g, "")
-            .replace(/\x1eEXPORT\x1e[^\n]*\n/g, "");
+            .replace(/\x1eEXPORT\x1e[^\n]*\n/g, "")
+            .replace(/^EXPORT\{[^\n]*\}\n/gm, "");
 
           // Hold back an incomplete sentinel at the tail of the buffer
           const lastSentinel = Math.max(
