@@ -1,253 +1,232 @@
-# Agentic RAG — Architecture
+# RFx Responder — Architecture & How It Works
 
-```mermaid
-flowchart TD
+> **Audience:** Pre-sales, engineering, and stakeholder demo context.  
+> **Current status:** Live and production-ready. All features described below are built and running.
 
-%% ─────────────────────────────────────────────────────────────
-%% BROWSER
-%% ─────────────────────────────────────────────────────────────
-subgraph BROWSER["🖥️  Browser  (React 19 · TanStack Router · shadcn/ui)"]
-    direction TB
-    UI["AiChatPanel.tsx
-    ─────────────────
-    • Model selector
-    • Quick actions
-    • Export / Proposal chips
-    • Streaming message list
-    • react-markdown + remark-gfm"]
+---
 
-    DOCUI["BidDocsDrawer / SharePointModal
-    ─────────────────────────────────
-    • Manual upload (PDF/DOCX/XLSX)
-    • SharePoint share-link paste (file or folder)
-    • Per-source Sync / Remove"]
+## What Is the RFx Responder?
 
-    QUERY["TanStack Query hooks
-    ──────────────────────
-    useAiChat · useAiSessions
-    useDocuments · useSharePointSources
-    useSharePointStatus · useSyncSharePoint"]
-end
+The RFx Responder is BidTrack's AI-powered bid assistant. It gives the pre-sales team a chat interface that can answer RFP/RFI questions, analyse client requirements, map them to iMocha's capabilities, draft response sections, and export content — all grounded strictly in iMocha's indexed knowledge base, with no hallucination from general AI knowledge.
 
-%% ─────────────────────────────────────────────────────────────
-%% SERVER FUNCTIONS (TanStack Start SSR / Vite 7 / Bun)
-%% ─────────────────────────────────────────────────────────────
-subgraph SERVER["⚙️  Server Functions  (TanStack Start · Bun runtime)"]
-    direction LR
+It lives at `/ai` in the app and appears in the sidebar under **RFx Responder**.
 
-    subgraph INGEST_FN["Ingestion  (doc-functions.ts + sharepoint-sync.ts)"]
-        direction TB
-        SPFN["addSharePointSourceFn
-        ──────────────────────
-        1. resolveDriveItem (share URL or Graph URL)
-        2. If folder → listFolderChildren (paginated)
-        3. Filter PDF / DOCX / XLSX
-        4. Download bytes via @downloadUrl
-        5. Upload to Supabase Storage
-        6. Upsert bid_documents row (external_id dedup)
-        7. → indexDocument"]
+---
 
-        IDXFN["indexDocument
-        ────────────────
-        1. Download from storage
-        2. extractText (pdf-parse / mammoth / xlsx)
-        3. chunkText (~1800 char, 180 overlap, sentence-aware)
-        4. contextualiseChunks → Haiku (full doc cached)
-        5. embedBatch → Voyage voyage-3 (128/batch, 429 retry)
-        6. Delete stale chunks
-        7. Insert bid_document_chunks (vector + chunk_text → fts generated)
-        8. Update bid_documents.embedding (first chunk proxy)"]
+## What It Can Do (Demo-ready)
 
-        SYNCFN["syncSharePointFn
-        ────────────────────
-        Per stored source:
-        eTag same → skip
-        eTag differs, hash same → rename only (update name)
-        hash differs → re-download + re-index"]
-    end
+| Capability | How to show it |
+|---|---|
+| **Answer KB-grounded questions** | Ask anything about iMocha's capabilities — the model searches the KB and cites sources |
+| **Requirement analysis** | Paste client requirements → get a structured table: Requirement \| Status (SUPPORTED / PARTIAL / NOT SUPPORTED) \| iMocha Capability \| KB Source |
+| **Export to DOCX** | Ask "export this as a file" → download chip appears, click to download a formatted .docx |
+| **@-mention documents** | Type `@` in the chat input to attach a specific indexed document directly into context |
+| **Bid-scoped vs. global** | Switch between a specific bid's docs and the global KB (templates, product docs) |
+| **Model selector** | Choose Claude Opus (highest quality + adaptive thinking), Claude Sonnet (default), Claude Haiku (fast), or Azure GPT-5.4 / OSS-120B |
+| **Live search indicators** | While the model searches, animated status chips show "Searching: [query]" in real time |
+| **Extended thinking indicator** | When Opus reasons deeply, a pulsing brain icon appears so the user knows it's working |
+| **Session management** | Multiple chat sessions per bid — rename, delete, switch between them |
+| **Quick actions** | One-click prompts: Analyse requirements, Map to KB, Security & compliance, Draft response section |
 
-    subgraph CHAT_FN["Agentic Loop  (stream-chat.ts)"]
-        direction TB
-        BUILD["buildSystemBlocks
-        ──────────────────
-        • Bid context (stage, deadline, value)
-        • SEARCH_TOOL schema
-        • Persona / strict KB rules
-        → system array with cache_control ephemeral
-        (prompt-cached across turns)"]
+---
 
-        LOOP["Agentic Loop  (max 3 rounds)
-        ──────────────────────────────
-        round N:
-          Claude → stop_reason?
-          ├─ tool_use → emit STATUS sentinel
-          │              → runSearch → tool_result
-          │              → round N+1
-          └─ end_turn  → stream text deltas → done"]
+## Architecture Overview
 
-        SEARCH["runSearch
-        ──────────
-        1. embedText(query) → Voyage voyage-3
-        2. hybrid_search_chunks RPC
-           (FTS ts_rank_cd + vector cosine, RRF fusion, top-50)
-        3. rerank → Voyage rerank-2.5 → top-8
-        4. formatChunks → tool_result content"]
-    end
-end
-
-%% ─────────────────────────────────────────────────────────────
-%% EXTERNAL AI SERVICES
-%% ─────────────────────────────────────────────────────────────
-subgraph AI["🧠  AI Services"]
-    CLAUDE["Anthropic Claude
-    ─────────────────
-    claude-opus-4-8
-    claude-sonnet-4-6  ← default
-    claude-haiku-4-5   ← contextualiser + fast
-    (+ Azure GPT-5 / OSS-120B via AzureOpenAI SDK)"]
-
-    VOYAGE["Voyage AI
-    ──────────
-    voyage-3        → 1024-dim embeddings
-    rerank-2.5      → cross-encoder reranking"]
-end
-
-%% ─────────────────────────────────────────────────────────────
-%% SUPABASE
-%% ─────────────────────────────────────────────────────────────
-subgraph DB["🗄️  Supabase  (Postgres + pgvector + Auth + Storage)"]
-    direction LR
-
-    BDOCS["bid_documents
-    ──────────────
-    source: uploaded | generated | sharepoint
-    external_id / eTag / hash / url  (SharePoint provenance)
-    embedding vector(1024)  (first-chunk proxy)"]
-
-    CHUNKS["bid_document_chunks
-    ─────────────────────
-    chunk_text  text
-    embedding   vector(1024)   ← cosine search
-    fts         tsvector  GENERATED  ← GIN index, FTS arm
-    chunk_index int"]
-
-    SESSIONS["ai_sessions
-    ────────────
-    messages  JSONB  (full history)
-    model     text
-    title     text  (optional rename)
-    bid_id    uuid | null"]
-
-    ORG["org_settings
-    ──────────────
-    sharepoint_creds      (tenantId / clientId / secret)
-    sharepoint_last_synced
-    hubspot_token
-    — admin-only RLS —"]
-
-    STORAGE["Supabase Storage
-    ─────────────────
-    bucket: bid-documents
-    path: sharepoint/{itemId}/{name}
-    path: uploads/{bidId}/{name}"]
-
-    RPCFN["hybrid_search_chunks RPC
-    ──────────────────────────────
-    scope:
-      bid_id = match_bid_id   (bid docs)
-      OR bid_id IS NULL       (global + SharePoint)
-    FTS arm:  websearch_to_tsquery + ts_rank_cd
-    Vec arm:  embedding <=> query_embedding (cosine)
-    fusion:   RRF (k=50) → top match_count
-    "]
-end
-
-%% ─────────────────────────────────────────────────────────────
-%% MICROSOFT GRAPH
-%% ─────────────────────────────────────────────────────────────
-GRAPH["Microsoft Graph API
-    ─────────────────────
-    POST /oauth2/v2.0/token    (client_credentials)
-    GET  /shares/{encoded}/driveItem
-    GET  /shares/{encoded}/driveItem/children   (folder)
-    GET  /drives/{driveId}/items/{itemId}       (sync)
-    @microsoft.graph.downloadUrl                (temp DL URL)"]
-
-%% ─────────────────────────────────────────────────────────────
-%% EDGES — Ingestion
-%% ─────────────────────────────────────────────────────────────
-DOCUI -->|"share URL / file bytes"| SPFN
-SPFN -->|"OAuth2 client_credentials\nencode + resolve"| GRAPH
-GRAPH -->|"driveItem + downloadUrl"| SPFN
-SPFN -->|"upload bytes"| STORAGE
-SPFN -->|"upsert row"| BDOCS
-SPFN -->|"documentId"| IDXFN
-DOCUI -->|"manual upload → indexDocument"| IDXFN
-IDXFN -->|"download bytes"| STORAGE
-IDXFN -->|"contextualise chunks"| CLAUDE
-IDXFN -->|"embed chunks (voyage-3)"| VOYAGE
-IDXFN -->|"insert chunks"| CHUNKS
-IDXFN -->|"update embedding"| BDOCS
-SYNCFN -->|"resolve via Graph URL"| GRAPH
-SYNCFN -->|"re-download if content changed"| GRAPH
-SYNCFN -->|"→ indexDocument"| IDXFN
-
-%% ─────────────────────────────────────────────────────────────
-%% EDGES — Chat / Agentic loop
-%% ─────────────────────────────────────────────────────────────
-UI -->|"POST streamChat\n(sessionId, bidId, messages, model)"| BUILD
-BUILD -->|"system blocks + messages"| LOOP
-LOOP -->|"messages API streaming"| CLAUDE
-CLAUDE -->|"tool_use: search_knowledge_base"| LOOP
-LOOP -->|"query + bidId"| SEARCH
-SEARCH -->|"embedText(query)"| VOYAGE
-SEARCH -->|"hybrid_search_chunks\n(FTS + vector, RRF)"| RPCFN
-RPCFN -->|"top-50 candidates"| SEARCH
-SEARCH -->|"rerank-2.5"| VOYAGE
-VOYAGE -->|"top-8 reranked chunks"| SEARCH
-SEARCH -->|"tool_result"| LOOP
-CLAUDE -->|"end_turn: text stream"| UI
-LOOP -->|"\\x1fSTATUS\\x1f sentinel\n(search progress)"| UI
-LOOP -->|"\\x1eEXPORT\\x1e sentinel\n(download chip)"| UI
-
-%% ─────────────────────────────────────────────────────────────
-%% EDGES — Session persistence
-%% ─────────────────────────────────────────────────────────────
-LOOP -->|"persist messages + model"| SESSIONS
-QUERY -->|"list / rename / delete sessions"| SESSIONS
-
-%% ─────────────────────────────────────────────────────────────
-%% EDGES — SharePoint creds
-%% ─────────────────────────────────────────────────────────────
-SPFN -->|"read creds\n(supabaseAdmin, bypasses RLS)"| ORG
-SYNCFN -->|"read creds"| ORG
-SYNCFN -->|"write last_synced"| ORG
-
-%% ─────────────────────────────────────────────────────────────
-%% STYLES
-%% ─────────────────────────────────────────────────────────────
-classDef ext fill:#1a1a2e,stroke:#4f8ef7,color:#e0e0ff
-classDef db  fill:#0d1b2a,stroke:#2ecc71,color:#e0ffe0
-classDef srv fill:#1c1c1c,stroke:#ff6b35,color:#ffe0d0
-classDef cli fill:#1a1a1a,stroke:#a855f7,color:#f0e0ff
-
-class CLAUDE,VOYAGE ext
-class BDOCS,CHUNKS,SESSIONS,ORG,STORAGE,RPCFN,GRAPH db
-class SPFN,IDXFN,SYNCFN,BUILD,LOOP,SEARCH srv
-class UI,DOCUI,QUERY cli
+```
+User types a message
+        │
+        ▼
+  AiChatPanel.tsx  ──────────────────────────────────────────────────────────
+  (Browser)                                                                  │
+  • Model selector (Opus / Sonnet / Haiku / Azure)                          │
+  • Quick action chips (Analyse requirements, Map to KB, …)                 │
+  • @-mention picker (attach docs by name)                                  │
+  • Streaming message list (react-markdown + remark-gfm)                    │
+  • Search status chips + Extended thinking indicator                        │
+  • Download chip (appears when EXPORT detected in stream)                  │
+        │  POST streamChat (sessionId, bidId, messages, model, mentionedDocIds)
+        ▼
+  stream-chat.ts  ────────────────────────────────────────────────────────────
+  (TanStack Start server fn — Bun runtime)                                   │
+        │                                                                    │
+        ├─ buildSystemBlocks()                                               │
+        │   • Loads bid context from Supabase (client, stage, deadline,      │
+        │     questions, deliverables)                                        │
+        │   • Loads active system prompt from prompt_versions table          │
+        │     (falls back to hardcoded RFI_RFP_PERSONA)                     │
+        │   • Assembles system block array with prompt caching               │
+        │   • If @-mentioned docs → fetchPinnedChunks() (up to 15           │
+        │     chunks per doc) injected as FILE CONTENTS block                │
+        │                                                                    │
+        └─ Agentic loop (max 5 rounds)                                       │
+                │                                                            │
+                ├─ Round N: stream to Claude with search_knowledge_base tool │
+                │                                                            │
+                │   Claude decides: do I need to search?                     │
+                │                                                            │
+                │   stop_reason = tool_use                                   │
+                │     → emit \x1fSTATUS\x1f sentinel (search chip in UI)    │
+                │     → runSearch(query, bidId)                              │
+                │         1. embedText(query) → Voyage voyage-3 (1024-dim)  │
+                │         2. hybrid_search_chunks RPC                        │
+                │            (FTS ts_rank_cd + vector cosine, RRF top-50)   │
+                │         3. rerank → Voyage rerank-2.5 → top-8             │
+                │     → tool_result → next round                             │
+                │                                                            │
+                │   stop_reason = end_turn                                   │
+                │     → stream text deltas directly to browser               │
+                │     → if user asked to export:                             │
+                │         model prepends EXPORT{...} line                    │
+                │         client detects + strips it + shows Download chip   │
+                │                                                            │
+  ai-queries.ts (useAiChat hook) ─────────────────────────────────────────────
+  (Browser — stream reader)
+  • Reads ReadableStream from server
+  • Strips \x1fSTATUS\x1f sentinels → updates search chip UI
+  • Strips EXPORT{...} line → stores exportMeta → shows Download chip
+  • Strips \x1fCLEAR\x1f → retracts any pre-tool narration text
+  • Appends text deltas → live streaming message
+  • Persists final messages + pinned doc IDs to ai_sessions in Supabase
 ```
 
 ---
 
-## Key Design Decisions
+## Retrieval Pipeline (How It Finds Answers)
+
+Every time Claude calls the `search_knowledge_base` tool, this pipeline runs:
+
+```
+User query (or Claude's rephrased sub-query)
+        │
+        ▼
+  embedText(query)
+  → Voyage voyage-3 → 1024-dimensional vector
+        │
+        ▼
+  hybrid_search_chunks RPC  (Postgres / Supabase)
+  ┌─────────────────────────────────────────────────────────────┐
+  │  FTS arm:  websearch_to_tsquery → ts_rank_cd on fts column │
+  │  Vec arm:  embedding <=> query_vector (cosine distance)     │
+  │  Scope:    bid_id = this bid  OR  bid_id IS NULL (global)   │
+  │  Fusion:   RRF (k=50) → top-50 candidates                  │
+  └─────────────────────────────────────────────────────────────┘
+        │
+        ▼
+  rerank-2.5  (Voyage cross-encoder)
+  → top-8 passages, re-scored by semantic relevance to query
+        │
+        ▼
+  tool_result → back to Claude as context for this round
+```
+
+**Why hybrid?** Vector search finds semantically similar passages; FTS finds exact keyword matches (product names, spec numbers, compliance codes). RRF fusion ensures neither misses what the other catches.
+
+**Why rerank after RRF?** The bi-encoder (vector) scores are approximate. The cross-encoder (rerank-2.5) reads the full query + each passage together — much more accurate, but too slow to run on 50 candidates. So: RRF narrows to 50, rerank picks the best 8.
+
+---
+
+## Document Ingestion (How the KB Gets Built)
+
+When a document is uploaded to the Knowledge Hub:
+
+```
+PDF / DOCX / XLSX uploaded
+        │
+        ▼
+  extractText()
+  → pdf-parse / mammoth / xlsx depending on file type
+        │
+        ▼
+  chunkText()
+  → Sentence-aware chunking (~1800 chars, ~180 char overlap)
+  → Preserves sentence boundaries — no mid-sentence splits
+        │
+        ▼
+  contextualiseChunks()   [Haiku]
+  → Full document text cached as system block (one API call per doc)
+  → Haiku writes a 1–2 sentence situating blurb per chunk:
+    "This chunk is from section X of document Y and covers Z"
+  → Blurb prepended to chunk_text before embedding
+  → Result: retrieval is context-aware, not just term-aware
+        │
+        ▼
+  embedBatch()   [Voyage voyage-3]
+  → 128 chunks per batch
+  → 429 retry with exponential backoff (up to 4×, 20s base)
+        │
+        ▼
+  Supabase: bid_document_chunks
+  → chunk_text, embedding vector(1024)
+  → fts tsvector (GENERATED column + GIN index — auto-kept in sync)
+```
+
+---
+
+## Prompt Architecture
+
+The system prompt is a multi-block array with Anthropic's prompt caching applied:
+
+| Block | Content | Cache behaviour |
+|---|---|---|
+| Block 1 | Persona + KB rules + response rules | Cached — survives across all turns in a session |
+| Block 2 | Bid context (client, stage, questions, deliverables) | Cached — survives across turns within the same session |
+| Block 3 | Export instruction | Small, no cache |
+| Block 4 *(if @-mention)* | Full text of @-mentioned docs (up to 15 chunks/doc) | Not cached — injected only on the turn where @-mention is used |
+
+**What prompt caching does:** On every turn after the first, Blocks 1 and 2 are served from Anthropic's cache (5-min TTL) rather than re-processed. This cuts input token cost ~80% on long sessions and reduces time-to-first-token.
+
+---
+
+## Sentinel Protocol (How the Stream Is Multiplexed)
+
+A single HTTP streaming response carries three types of content simultaneously using ASCII control characters that never appear in normal prose:
+
+| Signal | Character | Format | What the client does |
+|---|---|---|---|
+| `STATUS` | `\x1f` (Unit Separator) | `\x1fSTATUS\x1f{"kind":"search","query":"..."}\n` | Shows animated search chip in the message |
+| `THINKING` | `\x1f` | `\x1fSTATUS\x1f{"kind":"thinking","query":"..."}\n` | Shows pulsing brain icon (Opus extended thinking) |
+| `CLEAR` | `\x1f` | `\x1fCLEAR\x1f\n` | Retracts any pre-tool narration text already streamed |
+| `EXPORT` | plain text | `EXPORT{"format":"docx","filename":"name.docx"}\n` | Strips from render, stores exportMeta, shows Download chip |
+
+All sentinel lines are stripped from the rendered chat bubble — users only see clean prose.
+
+---
+
+## Response Behaviour Rules (What the Model Is Told)
+
+These are enforced in the system prompt:
+
+- **KB-only:** Every claim must be traceable to the indexed knowledge base. General AI knowledge is explicitly forbidden.
+- **No fixed format by default:** The model responds in plain prose unless the user asks for a specific structure.
+- **Requirement analysis = always tabular:** When analysing client requirements, output is always `Requirement | Status | iMocha Capability | KB Source`.
+- **NOT SUPPORTED accuracy:** Before marking anything NOT SUPPORTED, the model must search with multiple phrasings. A single failed search is not sufficient. Ambiguous cases get `⚠️ PARTIAL` with a note to verify with the product team.
+- **Export = content only:** When asked to export, the model outputs only the EXPORT line + document content. No "your file is ready" message.
+- **Product scoping:** TA vs. SI requirements are not cross-assumed unless the client doc specifies. General capabilities (gap analysis, self-assessment, proficiency scoring) apply to both products.
+
+---
+
+## Data Model (Relevant Tables)
+
+| Table | Purpose |
+|---|---|
+| `bid_documents` | One row per uploaded/generated file. `bid_id` is null for global KB docs. |
+| `bid_document_chunks` | Chunked + contextualised + embedded text. `fts` column auto-generated for FTS. |
+| `ai_sessions` | Full chat history per session. Includes `messages` JSONB, `model`, `title`, `pinned_doc_ids`. |
+| `prompt_versions` | Active system prompt override (admin-editable). Falls back to hardcoded persona if none active. |
+
+---
+
+## Key Engineering Decisions
 
 | Decision | Why |
 |---|---|
-| **Tool-use loop (max 3 rounds)** | Claude decides when/what to search — no static chunk pre-stuffing |
-| **Hybrid search (FTS + vector, RRF)** | Keyword precision + semantic recall; neither alone covers all query types |
-| **Voyage rerank-2.5 after RRF** | Cross-encoder rescoring on top-50 candidates → top-8 quality gate |
-| **Contextual Retrieval (Haiku blurb)** | Situates each chunk in document context before embedding, improving retrieval hit rate |
-| **`bid_id IS NULL` = global scope** | SharePoint + template docs surface in every chat session automatically |
-| **Prompt caching on system blocks** | Tool schema + stable persona cached across turns → lower latency + cost |
-| **`\x1f` / `\x1e` sentinel channels** | Multiplex search progress and export metadata over a single SSE stream without JSON overhead |
-| **Graph API URL as `external_url`** | Folder children store a stable item URL so sync works without the original folder share link |
+| **Tool-use loop, not pre-stuffed context** | Claude decides when and what to search. Pre-stuffing 50 pages kills context budget in 2 turns. |
+| **Max 5 search rounds** | Enough for complex multi-part questions; prevents runaway loops on adversarial input. |
+| **Hybrid FTS + vector with RRF** | Keyword precision (product names, spec codes) + semantic recall. Neither alone covers all query types. |
+| **Voyage rerank-2.5 cross-encoder** | Bi-encoder scores are approximate. Cross-encoder rescoring on top-50 → top-8 is significantly more accurate. |
+| **Contextual Retrieval via Haiku** | A chunk without context ("The retention period is 90 days") is ambiguous. Haiku situates it: "From iMocha's AI Interview data retention policy…". Retrieval hit rate improves substantially. |
+| **Per-doc chunk cap (15) for @-mentions** | A full 50-page RFP injected every turn = 40K+ tokens, exhausting 200K context in ~4 turns. 15 chunks ≈ 6,750 tokens — enough for context, leaves room for history. |
+| **History window (last 30 messages)** | Prevents context exhaustion on long sessions. Full history persisted in DB; window is only what's sent to the API. |
+| **Prompt caching on system blocks** | ~80% input token cost reduction on multi-turn sessions. Critical for Opus which is expensive per token. |
+| **Plain-text EXPORT line (not control char)** | LLMs can't reliably emit `\x1e` (ASCII 30). Model outputs `EXPORT{...}` as plain text; client detects + strips both formats. |
+| **`bid_id IS NULL` = global scope** | Global KB docs (product docs, templates, security) surface in every bid session automatically without re-uploading. |
