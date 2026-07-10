@@ -1,13 +1,13 @@
 # RFx Responder — Architecture & How It Works
 
-> **Audience:** Pre-sales, engineering, and stakeholder demo context.  
+> **Audience:** Pre-sales, engineering, and stakeholder demo context.
 > **Current status:** Live and production-ready. All features described below are built and running.
 
 ---
 
 ## What Is the RFx Responder?
 
-The RFx Responder is BidTrack's AI-powered bid assistant. It gives the pre-sales team a chat interface that can answer RFP/RFI questions, analyse client requirements, map them to iMocha's capabilities, draft response sections, and export content — all grounded strictly in iMocha's indexed knowledge base, with no hallucination from general AI knowledge.
+The RFx Responder is BidPursuit's AI-powered bid assistant. It gives the pre-sales team a chat interface that can answer RFP/RFI questions, analyse client requirements, map them to iMocha's capabilities, draft response sections, and export content — all grounded strictly in iMocha's indexed knowledge base, with no hallucination from general AI knowledge.
 
 It lives at `/ai` in the app and appears in the sidebar under **RFx Responder**.
 
@@ -15,18 +15,18 @@ It lives at `/ai` in the app and appears in the sidebar under **RFx Responder**.
 
 ## What It Can Do (Demo-ready)
 
-| Capability | How to show it |
-|---|---|
-| **Answer KB-grounded questions** | Ask anything about iMocha's capabilities — the model searches the KB and cites sources |
-| **Requirement analysis** | Paste client requirements → get a structured table: Requirement \| Status (SUPPORTED / PARTIAL / NOT SUPPORTED) \| iMocha Capability \| KB Source |
-| **Export to DOCX** | Ask "export this as a file" → download chip appears, click to download a formatted .docx |
-| **@-mention documents** | Type `@` in the chat input to attach a specific indexed document directly into context |
-| **Bid-scoped vs. global** | Switch between a specific bid's docs and the global KB (templates, product docs) |
-| **Model selector** | Choose Claude Opus (highest quality + adaptive thinking), Claude Sonnet (default), Claude Haiku (fast), or Azure GPT-5.4 / OSS-120B |
-| **Live search indicators** | While the model searches, animated status chips show "Searching: [query]" in real time |
-| **Extended thinking indicator** | When Opus reasons deeply, a pulsing brain icon appears so the user knows it's working |
-| **Session management** | Multiple chat sessions per bid — rename, delete, switch between them |
-| **Quick actions** | One-click prompts: Analyse requirements, Map to KB, Security & compliance, Draft response section |
+| Capability                             | How to show it                                                                                                                                    |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Answer KB-grounded questions** | Ask anything about iMocha's capabilities — the model searches the KB and cites sources                                                           |
+| **Requirement analysis**         | Paste client requirements → get a structured table: Requirement\| Status (SUPPORTED / PARTIAL / NOT SUPPORTED) \| iMocha Capability \| KB Source |
+| **Export to DOCX**               | Ask "export this as a file" → download chip appears, click to download a formatted .docx                                                         |
+| **@-mention documents**          | Type`@` in the chat input to attach a specific indexed document directly into context                                                           |
+| **Bid-scoped vs. global**        | Switch between a specific bid's docs and the global KB (templates, product docs)                                                                  |
+| **Model selector**               | Choose Claude Opus (highest quality + adaptive thinking), Claude Sonnet (default), Claude Haiku (fast), or Azure GPT-5.4 / OSS-120B               |
+| **Live search indicators**       | While the model searches, animated status chips show "Searching: [query]" in real time                                                            |
+| **Extended thinking indicator**  | When Opus reasons deeply, a pulsing brain icon appears so the user knows it's working                                                             |
+| **Session management**           | Multiple chat sessions per bid — rename, delete, switch between them                                                                             |
+| **Quick actions**                | One-click prompts: Analyse requirements, Map to KB, Security & compliance, Draft response section                                                 |
 
 ---
 
@@ -166,12 +166,12 @@ PDF / DOCX / XLSX uploaded
 
 The system prompt is a multi-block array with Anthropic's prompt caching applied:
 
-| Block | Content | Cache behaviour |
-|---|---|---|
-| Block 1 | Persona + KB rules + response rules | Cached — survives across all turns in a session |
-| Block 2 | Bid context (client, stage, questions, deliverables) | Cached — survives across turns within the same session |
-| Block 3 | Export instruction | Small, no cache |
-| Block 4 *(if @-mention)* | Full text of @-mentioned docs (up to 15 chunks/doc) | Not cached — injected only on the turn where @-mention is used |
+| Block                     | Content                                              | Cache behaviour                                                 |
+| ------------------------- | ---------------------------------------------------- | --------------------------------------------------------------- |
+| Block 1                   | Persona + KB rules + response rules                  | Cached — survives across all turns in a session                |
+| Block 2                   | Bid context (client, stage, questions, deliverables) | Cached — survives across turns within the same session         |
+| Block 3                   | Export instruction                                   | Small, no cache                                                 |
+| Block 4*(if @-mention)* | Full text of @-mentioned docs (up to 15 chunks/doc)  | Not cached — injected only on the turn where @-mention is used |
 
 **What prompt caching does:** On every turn after the first, Blocks 1 and 2 are served from Anthropic's cache (5-min TTL) rather than re-processed. This cuts input token cost ~80% on long sessions and reduces time-to-first-token.
 
@@ -181,12 +181,12 @@ The system prompt is a multi-block array with Anthropic's prompt caching applied
 
 A single HTTP streaming response carries three types of content simultaneously using ASCII control characters that never appear in normal prose:
 
-| Signal | Character | Format | What the client does |
-|---|---|---|---|
-| `STATUS` | `\x1f` (Unit Separator) | `\x1fSTATUS\x1f{"kind":"search","query":"..."}\n` | Shows animated search chip in the message |
-| `THINKING` | `\x1f` | `\x1fSTATUS\x1f{"kind":"thinking","query":"..."}\n` | Shows pulsing brain icon (Opus extended thinking) |
-| `CLEAR` | `\x1f` | `\x1fCLEAR\x1f\n` | Retracts any pre-tool narration text already streamed |
-| `EXPORT` | plain text | `EXPORT{"format":"docx","filename":"name.docx"}\n` | Strips from render, stores exportMeta, shows Download chip |
+| Signal       | Character                 | Format                                                | What the client does                                       |
+| ------------ | ------------------------- | ----------------------------------------------------- | ---------------------------------------------------------- |
+| `STATUS`   | `\x1f` (Unit Separator) | `\x1fSTATUS\x1f{"kind":"search","query":"..."}\n`   | Shows animated search chip in the message                  |
+| `THINKING` | `\x1f`                  | `\x1fSTATUS\x1f{"kind":"thinking","query":"..."}\n` | Shows pulsing brain icon (Opus extended thinking)          |
+| `CLEAR`    | `\x1f`                  | `\x1fCLEAR\x1f\n`                                   | Retracts any pre-tool narration text already streamed      |
+| `EXPORT`   | plain text                | `EXPORT{"format":"docx","filename":"name.docx"}\n`  | Strips from render, stores exportMeta, shows Download chip |
 
 All sentinel lines are stripped from the rendered chat bubble — users only see clean prose.
 
@@ -207,26 +207,107 @@ These are enforced in the system prompt:
 
 ## Data Model (Relevant Tables)
 
-| Table | Purpose |
-|---|---|
-| `bid_documents` | One row per uploaded/generated file. `bid_id` is null for global KB docs. |
-| `bid_document_chunks` | Chunked + contextualised + embedded text. `fts` column auto-generated for FTS. |
-| `ai_sessions` | Full chat history per session. Includes `messages` JSONB, `model`, `title`, `pinned_doc_ids`. |
-| `prompt_versions` | Active system prompt override (admin-editable). Falls back to hardcoded persona if none active. |
+| Table                   | Purpose                                                                                              |
+| ----------------------- | ---------------------------------------------------------------------------------------------------- |
+| `bid_documents`       | One row per uploaded/generated file.`bid_id` is null for global KB docs.                           |
+| `bid_document_chunks` | Chunked + contextualised + embedded text.`fts` column auto-generated for FTS.                      |
+| `ai_sessions`         | Full chat history per session. Includes`messages` JSONB, `model`, `title`, `pinned_doc_ids`. |
+| `prompt_versions`     | Active system prompt override (admin-editable). Falls back to hardcoded persona if none active.      |
 
 ---
 
 ## Key Engineering Decisions
 
-| Decision | Why |
-|---|---|
-| **Tool-use loop, not pre-stuffed context** | Claude decides when and what to search. Pre-stuffing 50 pages kills context budget in 2 turns. |
-| **Max 5 search rounds** | Enough for complex multi-part questions; prevents runaway loops on adversarial input. |
-| **Hybrid FTS + vector with RRF** | Keyword precision (product names, spec codes) + semantic recall. Neither alone covers all query types. |
-| **Voyage rerank-2.5 cross-encoder** | Bi-encoder scores are approximate. Cross-encoder rescoring on top-50 → top-8 is significantly more accurate. |
-| **Contextual Retrieval via Haiku** | A chunk without context ("The retention period is 90 days") is ambiguous. Haiku situates it: "From iMocha's AI Interview data retention policy…". Retrieval hit rate improves substantially. |
-| **Per-doc chunk cap (15) for @-mentions** | A full 50-page RFP injected every turn = 40K+ tokens, exhausting 200K context in ~4 turns. 15 chunks ≈ 6,750 tokens — enough for context, leaves room for history. |
-| **History window (last 30 messages)** | Prevents context exhaustion on long sessions. Full history persisted in DB; window is only what's sent to the API. |
-| **Prompt caching on system blocks** | ~80% input token cost reduction on multi-turn sessions. Critical for Opus which is expensive per token. |
-| **Plain-text EXPORT line (not control char)** | LLMs can't reliably emit `\x1e` (ASCII 30). Model outputs `EXPORT{...}` as plain text; client detects + strips both formats. |
-| **`bid_id IS NULL` = global scope** | Global KB docs (product docs, templates, security) surface in every bid session automatically without re-uploading. |
+| Decision                                            | Why                                                                                                                                                                                           |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Tool-use loop, not pre-stuffed context**    | Claude decides when and what to search. Pre-stuffing 50 pages kills context budget in 2 turns.                                                                                                |
+| **Max 5 search rounds**                       | Enough for complex multi-part questions; prevents runaway loops on adversarial input.                                                                                                         |
+| **Hybrid FTS + vector with RRF**              | Keyword precision (product names, spec codes) + semantic recall. Neither alone covers all query types.                                                                                        |
+| **Voyage rerank-2.5 cross-encoder**           | Bi-encoder scores are approximate. Cross-encoder rescoring on top-50 → top-8 is significantly more accurate.                                                                                 |
+| **Contextual Retrieval via Haiku**            | A chunk without context ("The retention period is 90 days") is ambiguous. Haiku situates it: "From iMocha's AI Interview data retention policy…". Retrieval hit rate improves substantially. |
+| **Per-doc chunk cap (15) for @-mentions**     | A full 50-page RFP injected every turn = 40K+ tokens, exhausting 200K context in ~4 turns. 15 chunks ≈ 6,750 tokens — enough for context, leaves room for history.                          |
+| **History window (last 30 messages)**         | Prevents context exhaustion on long sessions. Full history persisted in DB; window is only what's sent to the API.                                                                            |
+| **Prompt caching on system blocks**           | ~80% input token cost reduction on multi-turn sessions. Critical for Opus which is expensive per token.                                                                                       |
+| **Plain-text EXPORT line (not control char)** | LLMs can't reliably emit`\x1e` (ASCII 30). Model outputs `EXPORT{...}` as plain text; client detects + strips both formats.                                                               |
+| **`bid_id IS NULL` = global scope**         | Global KB docs (product docs, templates, security) surface in every bid session automatically without re-uploading.                                                                           |
+
+---
+
+## Is This Agentic RAG?
+
+**Yes — and the term is accurate, not a marketing stretch.**
+
+The three criteria that define Agentic RAG:
+
+| Criterion | What it means | Do we have it? |
+|---|---|---|
+| **Autonomous retrieval decision** | The model decides *whether* to search, not the system | ✅ Claude calls `search_knowledge_base` only when it judges retrieval is needed |
+| **Autonomous query formulation** | The model decides *what* to search for, rephrasing user questions into focused sub-queries | ✅ Claude rewrites conversational follow-ups into standalone queries before each search |
+| **Multi-step retrieval feedback loop** | Retrieved results inform subsequent searches in the same turn | ✅ Up to 5 rounds; each tool_result is part of the next round's context |
+
+What separates this from standard RAG (where chunks are pre-stuffed into the prompt before the model ever responds) is that the model drives retrieval as a live decision. It can choose not to search, search once, or search five times — depending on the question.
+
+---
+
+## What Would Make It More Agentic (Future Improvements)
+
+These are enhancements, not gaps — the current system is production-ready. These represent the next frontier.
+
+### 1. Multiple Retrieval Tools *(High impact)*
+> Currently there is one tool: `search_knowledge_base`. Claude has no way to distinguish *where* to look — it searches everything.
+
+**What to build:** Give Claude separate, scoped tools:
+- `search_product_kb` — iMocha capability docs only
+- `search_bid_documents` — client-uploaded RFP/RFI only
+- `search_security_compliance` — security, certifications, policy docs only
+- `search_integrations` — integration and technical spec docs only
+
+Claude would then *route* between tools based on the question type — dramatically improving precision on targeted queries.
+
+---
+
+### 2. Parallel Tool Calls *(Medium impact, low effort)*
+> Currently searches are sequential — round 1 finishes before round 2 starts.
+
+**What to build:** Anthropic's API supports multiple `tool_use` blocks in a single response. Claude could issue 3 searches simultaneously for a complex multi-part question and get all results back in one round instead of three.
+
+**Effort:** Modify the tool-result assembly loop in `stream-chat.ts` to batch all tool calls from a single response before advancing to the next round. Already partially structured this way — the `toolResults` array handles multiple blocks.
+
+---
+
+### 3. Explicit Self-Critique / Sufficiency Check *(High impact)*
+> The model currently decides implicitly whether retrieved results are good enough. There's no structured reflection step.
+
+**What to build:** After the final search round, run a structured evaluation:
+- "Did the retrieved passages fully answer the requirement?"
+- "Is there a gap that should be flagged as NOT CONFIRMED rather than NOT SUPPORTED?"
+
+This reduces false NOT SUPPORTED verdicts further and surfaces "I found something related but not exact" as a distinct signal rather than collapsing it into a binary.
+
+---
+
+### 4. Write-Back / KB Gap Flagging *(Medium impact)*
+> When the model can't find something, that signal disappears — no one knows the KB has a gap.
+
+**What to build:** A `flag_kb_gap` tool the model can call when it exhausts searches with no result. Flags get written to a `kb_gaps` table, surfaced to the admin as: "These requirements were asked about but not found in the KB — consider adding documentation."
+
+Closes the feedback loop between what clients ask and what the KB covers.
+
+---
+
+### 5. HNSW Vector Index *(Performance)*
+> Currently using IVFFlat for vector search. HNSW gives significantly better recall at high query volumes.
+
+**Why deferred:** Requires `maintenance_work_mem ≥ 64 MB`. Supabase free tier caps at 32 MB. Needs a paid plan or manual `SET` before index creation. See `docs/superpowers/notes/agentic-rag-verification.md` for apply instructions.
+
+---
+
+### Summary
+
+| Improvement | Impact | Effort | Status |
+|---|---|---|---|
+| Multiple retrieval tools (scoped) | High | Medium | Not started |
+| Parallel tool calls | Medium | Low | Not started |
+| Self-critique / sufficiency check | High | Medium | Not started |
+| KB gap write-back | Medium | Medium | Not started |
+| HNSW index | Performance | Low (needs infra) | Blocked on Supabase tier |
