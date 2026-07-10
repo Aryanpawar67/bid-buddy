@@ -1,5 +1,5 @@
 import { useRouterState } from "@tanstack/react-router";
-import { Search, Plus, Clock, User, Info, MessageSquare, Settings2 } from "lucide-react";
+import { Search, Plus, Settings2 } from "lucide-react";
 import { useState } from "react";
 import { IntakeModal } from "@/components/bids/IntakeModal";
 import { useCurrentUser } from "@/lib/auth";
@@ -52,15 +52,6 @@ export function TopBar() {
 
       <div className="flex-1" />
 
-      {!isAiPage && (
-        <div className="flex items-center gap-1.5">
-          <IconBtn icon={Clock} title="Recent activity" />
-          <IconBtn icon={User} title="Profile" badge={12} />
-          <IconBtn icon={Info} title="Help" />
-          <IconBtn icon={MessageSquare} title="Messages" badge={3} />
-        </div>
-      )}
-
       {isAiPage && isAdmin && (
         <button
           onClick={() => setConfigureOpen(true)}
@@ -85,26 +76,3 @@ export function TopBar() {
   );
 }
 
-function IconBtn({
-  icon: Icon,
-  title,
-  badge,
-}: {
-  icon: React.ElementType;
-  title: string;
-  badge?: number;
-}) {
-  return (
-    <button
-      title={title}
-      className="size-[34px] rounded-[8px] border hairline border-border-strong bg-card flex items-center justify-center text-muted-foreground hover:bg-background relative"
-    >
-      <Icon className="size-4" strokeWidth={1.5} />
-      {badge !== undefined && (
-        <span className="absolute top-[5px] right-[5px] min-w-[14px] h-[14px] bg-accent text-white text-[8px] font-bold rounded-full flex items-center justify-center px-[3px] border border-white">
-          {badge}
-        </span>
-      )}
-    </button>
-  );
-}
