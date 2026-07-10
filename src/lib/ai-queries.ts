@@ -222,8 +222,14 @@ export function useAiChat(
       // and exhausts the 200K context window within ~12 turns on large documents.
       // The search tool handles follow-up lookups; the model has already seen the
       // content in the conversation history from the original mention turn.
+      // Compute new accumulated pinned IDs locally so the closure used in
+      // updateSession.mutateAsync always sees the up-to-date value rather than
+      // the stale state captured when `send` was called.
+      const newSessionPinnedIds = mentionedDocIds?.length
+        ? [...new Set([...sessionPinnedDocIds, ...mentionedDocIds])]
+        : sessionPinnedDocIds;
       if (mentionedDocIds?.length) {
-        setSessionPinnedDocIds((prev) => [...new Set([...prev, ...mentionedDocIds])]);
+        setSessionPinnedDocIds(newSessionPinnedIds);
       }
       const currentTurnPinnedIds = mentionedDocIds ?? [];
 
@@ -347,7 +353,7 @@ export function useAiChat(
         await updateSession.mutateAsync({
           sessionId,
           messages: finalMessages,
-          pinnedDocIds: allPinnedIds,
+          pinnedDocIds: newSessionPinnedIds,
         });
       } catch (err) {
         console.error("Stream error:", err);

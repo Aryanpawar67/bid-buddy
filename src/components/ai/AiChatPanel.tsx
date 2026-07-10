@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Send, Loader2, Copy, Check, Download, FileText, Paperclip, CheckCircle2, X, MoreHorizontal, Search, FileDown } from "lucide-react";
+import { Send, Loader2, Copy, Check, Download, FileText, Paperclip, CheckCircle2, X, MoreHorizontal, Search, FileDown, BrainCircuit } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Message, StreamingStatusEvent } from "@/lib/ai-queries";
@@ -47,7 +47,7 @@ const QUICK_ACTIONS_RFI_RFP = [
   {
     label: "Analyse requirements",
     prompt:
-      "Please analyse the client requirements in the uploaded documents and map each one to iMocha's capabilities. Output format: Requirement | Status | iMocha Capability | Source.",
+      "Search the knowledge base and map iMocha's capabilities to the key requirement categories for this bid (functional, technical, security, compliance, SLA, integrations, AI/ethics). If client RFI/RFP documents have been attached with @, extract each requirement from them first. Output format: Requirement | Status (SUPPORTED / NOT SUPPORTED / PARTIAL) | iMocha Capability | KB Source.",
   },
   {
     label: "Map to KB",
@@ -840,9 +840,18 @@ function MessageBubble({
                     key={idx}
                     className="flex items-center gap-2 text-[10px] text-primary/80 bg-primary/5 border hairline border-primary/15 rounded-md px-2.5 py-1.5"
                   >
-                    <Search className="size-3 shrink-0 text-primary/60" />
-                    <span className="font-medium">Searching:</span>
-                    <span className="truncate text-muted-foreground">{s.query}</span>
+                    {s.kind === "thinking" ? (
+                      <>
+                        <BrainCircuit className="size-3 shrink-0 text-primary/60 animate-pulse" />
+                        <span className="font-medium">Extended thinking…</span>
+                      </>
+                    ) : (
+                      <>
+                        <Search className="size-3 shrink-0 text-primary/60" />
+                        <span className="font-medium">Searching:</span>
+                        <span className="truncate text-muted-foreground">{s.query}</span>
+                      </>
+                    )}
                   </div>
                 ))}
               </div>

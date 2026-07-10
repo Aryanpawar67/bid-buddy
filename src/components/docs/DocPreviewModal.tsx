@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import type { BidDocument, DocType } from "@/lib/doc-queries";
 import { getDocPreview } from "@/lib/api/doc-functions";
 import { useReplaceDocument, useDeleteDocument } from "@/lib/doc-queries";
+import { supabase } from "@/integrations/supabase/client";
 
 const TYPE_STYLES: Record<DocType, string> = {
   rfp:       "bg-[#fff1f1] text-[#e53e3e]",
@@ -54,12 +55,20 @@ export function DocPreviewModal({ doc, allDocs, onClose }: Props) {
     toast.success("Copied — paste in AI chat to use this document");
   }
 
-  function handleDownload() {
-    if (!preview) return;
-    if (preview.type === "url") {
-      window.open(preview.value, "_blank");
-    } else {
-      toast.info("Download not available for converted previews — use Replace to update the file.");
+  async function handleDownload() {
+    try {
+      const { data, error } = await supabase.storage
+        .from("bid-documents")
+        .createSignedUrl(doc.storage_path, 120);
+      if (error || !data?.signedUrl) throw error ?? new Error("No signed URL");
+      const a = document.createElement("a");
+      a.href = data.signedUrl;
+      a.download = doc.name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch {
+      toast.error("Download failed — please try again");
     }
   }
 

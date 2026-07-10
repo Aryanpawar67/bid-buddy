@@ -208,7 +208,7 @@ RESPONSE RULES
 3. Do NOT create formulas or calculations unless exactly stated in KB.
 4. Do NOT cross-assume TA features in SI or vice versa unless documented.
 5. Write as expert — no doc names, headers citing doc names, or block quotes.
-6. Format: Bullets for features, numbered for processes, headers for multi-part answers.
+6. Format: Match the user's request. Do NOT impose tables, bullet lists, numbered lists, or section headers unless the user explicitly asks for a specific structure or format. Plain prose is the default.
 7. INFERENCE SCORING: You may reproduce source weights, confidence ranges, proficiency bands, and decay rates VERBATIM from the AI Inference Engine doc. Do NOT compute, simulate, or invent a composite or example skill score — the model is additive and weights are configurable; state only what the KB states.
 
 EXACT SPECS (reproduce verbatim when cited):
@@ -231,6 +231,11 @@ CLIENT REQUIREMENT ANALYSIS
 When analyzing uploaded client docs:
 1. Extract: Background, goals, pain points, deliverables, integration needs, proposal structure.
 2. Map each requirement: SUPPORTED (in KB) or NOT SUPPORTED (not in KB).
+   ACCURACY RULES — read before marking status:
+   a. Before marking NOT SUPPORTED, you MUST search the KB using multiple phrasings of the requirement (synonyms, related terms, broader/narrower scope). A single failed search is NOT sufficient to declare NOT SUPPORTED.
+   b. Use PARTIAL / ⚠️ when a requirement is directionally covered but a specific detail (e.g., a particular vendor, a specific config option) is not confirmed in the KB.
+   c. Only mark NOT SUPPORTED when you have exhausted multiple searches and found zero relevant KB content. Add: "Not confirmed in KB — recommend verifying with product team."
+   d. Do NOT over-restrict scope: if a requirement is a general capability (e.g., "gap analysis", "self-assessment", "proficiency scoring"), assume it applies across both TA and SI unless the client doc specifies a module.
 3. Integration: Only mark SUPPORTED if client's exact system is in KB (Oracle ORC, Oracle HCM, UKG, Workday, SAP SuccessFactors, Azure AD, Okta, Power BI, Cornerstone, Degreed, LinkedIn Learning, Coursera, Udemy, Pluralsight, GitHub, Jira, Azure DevOps, Credly, Acclaim, ICIMS, SmartRecruiters). Do NOT generalize.
 4. Output format: Requirement | Status | iMocha Capability | KB Source
 
@@ -415,7 +420,18 @@ async function runAnthropicLoop(
     // Stream text directly in every round so the user sees tokens as they arrive.
     // If this round ends with a tool_use we'll send a CLEAR sentinel that tells
     // the client to retract any pre-tool narration that was already streamed.
+    let emittedThinking = false;
     for await (const event of apiStream) {
+      // Emit a single "thinking" status when the model enters extended thinking so
+      // the user sees activity rather than a silent spinner during long reasoning phases.
+      if (
+        event.type === "content_block_start" &&
+        (event.content_block as { type: string }).type === "thinking" &&
+        !emittedThinking
+      ) {
+        controller.enqueue(statusLine("thinking", "Extended thinking…"));
+        emittedThinking = true;
+      }
       if (
         event.type === "content_block_delta" &&
         event.delta.type === "text_delta"
@@ -570,7 +586,7 @@ export const streamChatFn = createServerFn({ method: "POST" })
           ...systemBlocks,
           {
             type: "text" as const,
-            text: `## Pinned Documents (user referenced with @)\n\nThe user has explicitly referenced these documents. Their full indexed content is provided below:\n\n${formatChunks(pinned)}`,
+            text: `## FILE CONTENTS — @-mentioned documents\n\nThe user referenced one or more files using @filename in their message. The full extracted text of those files is reproduced below. THIS IS THE FILE CONTENT — treat it exactly as if the user pasted the document text directly into the chat. Do NOT say you cannot see the file. Do NOT ask them to copy-paste or upload again. Analyse, quote, and respond from this content directly.\n\n${formatChunks(pinned)}`,
           },
         ];
       }
