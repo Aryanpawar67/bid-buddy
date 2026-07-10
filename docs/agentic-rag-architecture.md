@@ -166,11 +166,11 @@ PDF / DOCX / XLSX uploaded
 
 The system prompt is a multi-block array with Anthropic's prompt caching applied:
 
-| Block                     | Content                                              | Cache behaviour                                                 |
-| ------------------------- | ---------------------------------------------------- | --------------------------------------------------------------- |
-| Block 1                   | Persona + KB rules + response rules                  | Cached — survives across all turns in a session                |
-| Block 2                   | Bid context (client, stage, questions, deliverables) | Cached — survives across turns within the same session         |
-| Block 3                   | Export instruction                                   | Small, no cache                                                 |
+| Block                   | Content                                              | Cache behaviour                                                 |
+| ----------------------- | ---------------------------------------------------- | --------------------------------------------------------------- |
+| Block 1                 | Persona + KB rules + response rules                  | Cached — survives across all turns in a session                |
+| Block 2                 | Bid context (client, stage, questions, deliverables) | Cached — survives across turns within the same session         |
+| Block 3                 | Export instruction                                   | Small, no cache                                                 |
 | Block 4*(if @-mention)* | Full text of @-mentioned docs (up to 15 chunks/doc)  | Not cached — injected only on the turn where @-mention is used |
 
 **What prompt caching does:** On every turn after the first, Blocks 1 and 2 are served from Anthropic's cache (5-min TTL) rather than re-processed. This cuts input token cost ~80% on long sessions and reduces time-to-first-token.
@@ -239,11 +239,11 @@ These are enforced in the system prompt:
 
 The three criteria that define Agentic RAG:
 
-| Criterion | What it means | Do we have it? |
-|---|---|---|
-| **Autonomous retrieval decision** | The model decides *whether* to search, not the system | ✅ Claude calls `search_knowledge_base` only when it judges retrieval is needed |
-| **Autonomous query formulation** | The model decides *what* to search for, rephrasing user questions into focused sub-queries | ✅ Claude rewrites conversational follow-ups into standalone queries before each search |
-| **Multi-step retrieval feedback loop** | Retrieved results inform subsequent searches in the same turn | ✅ Up to 5 rounds; each tool_result is part of the next round's context |
+| Criterion                                    | What it means                                                                               | Do we have it?                                                                          |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| **Autonomous retrieval decision**      | The model decides*whether* to search, not the system                                      | ✅ Claude calls`search_knowledge_base` only when it judges retrieval is needed        |
+| **Autonomous query formulation**       | The model decides*what* to search for, rephrasing user questions into focused sub-queries | ✅ Claude rewrites conversational follow-ups into standalone queries before each search |
+| **Multi-step retrieval feedback loop** | Retrieved results inform subsequent searches in the same turn                               | ✅ Up to 5 rounds; each tool_result is part of the next round's context                 |
 
 What separates this from standard RAG (where chunks are pre-stuffed into the prompt before the model ever responds) is that the model drives retrieval as a live decision. It can choose not to search, search once, or search five times — depending on the question.
 
@@ -254,9 +254,11 @@ What separates this from standard RAG (where chunks are pre-stuffed into the pro
 These are enhancements, not gaps — the current system is production-ready. These represent the next frontier.
 
 ### 1. Multiple Retrieval Tools *(High impact)*
+
 > Currently there is one tool: `search_knowledge_base`. Claude has no way to distinguish *where* to look — it searches everything.
 
 **What to build:** Give Claude separate, scoped tools:
+
 - `search_product_kb` — iMocha capability docs only
 - `search_bid_documents` — client-uploaded RFP/RFI only
 - `search_security_compliance` — security, certifications, policy docs only
@@ -267,6 +269,7 @@ Claude would then *route* between tools based on the question type — dramatica
 ---
 
 ### 2. Parallel Tool Calls *(Medium impact, low effort)*
+
 > Currently searches are sequential — round 1 finishes before round 2 starts.
 
 **What to build:** Anthropic's API supports multiple `tool_use` blocks in a single response. Claude could issue 3 searches simultaneously for a complex multi-part question and get all results back in one round instead of three.
@@ -276,9 +279,11 @@ Claude would then *route* between tools based on the question type — dramatica
 ---
 
 ### 3. Explicit Self-Critique / Sufficiency Check *(High impact)*
+
 > The model currently decides implicitly whether retrieved results are good enough. There's no structured reflection step.
 
 **What to build:** After the final search round, run a structured evaluation:
+
 - "Did the retrieved passages fully answer the requirement?"
 - "Is there a gap that should be flagged as NOT CONFIRMED rather than NOT SUPPORTED?"
 
@@ -287,6 +292,7 @@ This reduces false NOT SUPPORTED verdicts further and surfaces "I found somethin
 ---
 
 ### 4. Write-Back / KB Gap Flagging *(Medium impact)*
+
 > When the model can't find something, that signal disappears — no one knows the KB has a gap.
 
 **What to build:** A `flag_kb_gap` tool the model can call when it exhausts searches with no result. Flags get written to a `kb_gaps` table, surfaced to the admin as: "These requirements were asked about but not found in the KB — consider adding documentation."
@@ -296,18 +302,43 @@ Closes the feedback loop between what clients ask and what the KB covers.
 ---
 
 ### 5. HNSW Vector Index *(Performance)*
+
 > Currently using IVFFlat for vector search. HNSW gives significantly better recall at high query volumes.
 
 **Why deferred:** Requires `maintenance_work_mem ≥ 64 MB`. Supabase free tier caps at 32 MB. Needs a paid plan or manual `SET` before index creation. See `docs/superpowers/notes/agentic-rag-verification.md` for apply instructions.
 
 ---
 
+### 6. ⚡ Graph-Based RAG — The Next Paradigm *(Very High Impact)*
+
+> **This is the biggest architectural leap available.** See the full adoption plan at [`docs/superpowers/notes/graph-rag-adoption.md`](./superpowers/notes/graph-rag-adoption.md).
+
+**The fundamental problem with current chunk-based RAG:**
+When you rank chunks and keep only top-8, any relevant information in chunk #9, #15, or #40 is silently dropped. Worse — *relationships between facts* spread across documents are never captured at all. A chunk containing "iMocha is ISO 27001 certified" and a chunk containing "ISO 27001 covers data-at-rest encryption" are two separate vectors. The connection is lost.
+
+**What Graph RAG does instead:**
+Rather than splitting documents into chunks and embedding them, an LLM reads the documents and extracts a **knowledge graph** — entities (iMocha, ISO 27001, Gap Analysis, Voyage AI) and typed relationships (isMocha → *has_certification* → ISO 27001). Retrieval then traverses the graph from a query entity, following relationship edges, collecting multi-hop facts that no single chunk ever contained.
+
+**Frameworks:**
+
+- **Microsoft GraphRAG** — community detection (Leiden algorithm) + hierarchical summaries. Best for global "themes across all docs" queries.
+- **HippoRAG** — Personalized PageRank traversal over entity graph. Best for multi-hop factual retrieval (closest to what BidTrack needs).
+- **LightRAG** — dual-level (local entity + global relationship) retrieval. Cheaper, incremental, easier to adopt alongside existing vector search.
+
+**What this fixes for BidPursuit specifically:**
+
+- *"Which of iMocha's certifications, integrations, and AI-governance policies together satisfy this client's compliance section?"* — today this fails because the answer spans 4 docs with no single chunk connecting them. Graph RAG traverses the relationship path.
+- Requirement analysis false-negatives (NOT SUPPORTED when it should be PARTIAL) — the model couldn't find the connection because the retrieval dropped it at ranking time.
+
+---
+
 ### Summary
 
-| Improvement | Impact | Effort | Status |
-|---|---|---|---|
-| Multiple retrieval tools (scoped) | High | Medium | Not started |
-| Parallel tool calls | Medium | Low | Not started |
-| Self-critique / sufficiency check | High | Medium | Not started |
-| KB gap write-back | Medium | Medium | Not started |
-| HNSW index | Performance | Low (needs infra) | Blocked on Supabase tier |
+| Improvement                                      | Impact              | Effort            | Status                                 |
+| ------------------------------------------------ | ------------------- | ----------------- | -------------------------------------- |
+| Multiple retrieval tools (scoped)                | High                | Medium            | Not started                            |
+| Parallel tool calls                              | Medium              | Low               | Not started                            |
+| Self-critique / sufficiency check                | High                | Medium            | Not started                            |
+| KB gap write-back                                | Medium              | Medium            | Not started                            |
+| HNSW index                                       | Performance         | Low (needs infra) | Blocked on Supabase tier               |
+| **⚡ Graph-based RAG (HippoRAG/LightRAG)** | **Very High** | **High**    | **Planned — see adoption note** |
