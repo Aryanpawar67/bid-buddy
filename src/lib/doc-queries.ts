@@ -177,6 +177,23 @@ export function useUploadAndIndexDocument() {
   });
 }
 
+// ── useReindexDocument ───────────────────────────────────────────────────────
+// Re-triggers indexing for an existing document (uploaded or AI-generated).
+// Clears embedding first so callers can show an "indexing" state.
+export function useReindexDocument() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (documentId: string) => {
+      await (supabase as any)
+        .from("bid_documents")
+        .update({ embedding: null })
+        .eq("id", documentId);
+      indexDocument({ data: { documentId } }).catch(console.error);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["documents"] }),
+  });
+}
+
 // ── useDeleteDocument ─────────────────────────────────────────────────────────
 export function useDeleteDocument() {
   const qc = useQueryClient();
