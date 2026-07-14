@@ -288,38 +288,66 @@ function applySubstitutions(xml: string, intake: Intake): string {
     intake.integrations ??
     "Workday, SAP SuccessFactors, Cornerstone OnDemand, Degreed, and other LTI-compliant LMS/LXP platforms";
 
-  // Pass 1: direct XML-entity string replacement (intact single-run placeholders)
+  // ── Pass 1: paragraph-level replacements ─────────────────────────────────────
+  // Must run BEFORE the solo CUSTOMER direct replacement below.
+  // The TM template splits "CUSTOMER Team" across two <w:r> runs (CUSTOMER + " Team"),
+  // so a simple string search can't find the combined token — paragraph-level exact
+  // match is the only reliable approach for these.
+  // Tokens are compared against the paragraph's DECODED full text (all <w:t> concat,
+  // &amp;/&lt;/&gt; unescaped), so use decoded form here.
+  const paragraphSubs: [string, string][] = [
+    // TM template — cover page (runs are proofErr-split)
+    ["Customer (CUSTOMER)",          sanitize(intake.customer_display_name)],
+    ["CUSTOMER Team",                sanitize(intake.prepared_for)],
+    ["To:CUSTOMER Team",             "To:" + sanitize(intake.prepared_for)],
+    // TM template — cover letter
+    ["Dear <Customer name>,",        "Dear " + sanitize(intake.customer_display_name) + ","],
+    ["<Cover page details>",         "Please find our proposal attached for your review."],
+    // Both templates — SPOC name (TA uses <Sales spoc name>, TM uses Sales person)
+    ["<Sales spoc name>",            sanitize(intake.spoc_name)],
+    ["Sales person",                 sanitize(intake.spoc_name)],
+    // Both templates — scope intro and exec summary (can be proofErr-split)
+    ["<How scope is aligned to what iMocha can deliver>", sanitize(intake.scope_intro)],
+  ];
+  let result = applyParagraphLevelSubstitutions(xml, paragraphSubs);
+
+  // ── Pass 2: direct XML-string replacements ────────────────────────────────────
+  // Order matters: more-specific multi-word tokens before the solo CUSTOMER token.
   const directSubs: [string, string][] = [
-    ["&lt;RFP Name&gt;", sanitize(intake.rfp_name)],
-    ["&lt;Customer Name&gt;", sanitize(intake.customer_display_name)],
-    // "Customer Name (CUSTOMER NAME)" appears as literal text (not XML-encoded) in body
-    ["Customer Name (CUSTOMER NAME)", sanitize(intake.customer_display_name)],
-    ["CUSTOMER NAME", sanitize(intake.customer_display_name)],
-    ["Sales email id", sanitize(intake.spoc_email)],
-    ["&lt;How we are pleased to provide the solution&gt;", sanitize(intake.exec_summary.pleased)],
+    // TA template — XML-encoded placeholders
+    ["&lt;RFP Name&gt;",                                                sanitize(intake.rfp_name)],
+    ["&lt;Customer Name&gt;",                                           sanitize(intake.customer_display_name)],
+    ["&lt;How we are pleased to provide the solution&gt;",             sanitize(intake.exec_summary.pleased)],
     ["&lt;How we are aligned with customer goals and their requirement&gt;", sanitize(intake.exec_summary.aligned)],
-    ["&lt;How confident we are to deliver value&gt;", sanitize(intake.exec_summary.confident)],
+    ["&lt;How confident we are to deliver value&gt;",                  sanitize(intake.exec_summary.confident)],
+    // TM template — solo CUSTOMER in body paragraphs (paragraph-level already handled
+    // the whole-paragraph cases above, so only long body-text instances remain)
+    ["CUSTOMER NAME",                                                   sanitize(intake.customer_display_name)],
+    ["CUSTOMER",                                                        sanitize(intake.customer_display_name)],
+    // TM template — cover letter Dear line token (single run)
+    ["&lt;Customer name&gt;",                                           sanitize(intake.customer_display_name)],
+    // TM template — cover letter subject line token (single run)
+    ["&lt;Mention subject for cover page&gt;",                         sanitize(intake.rfp_name)],
+    // TM template — cover page instructions token (single run, paragraph-level missed it
+    // only when it appears inside a longer paragraph)
+    ["&lt;Cover page details&gt;",                                     "Please find our proposal attached for your review."],
+    // Email: TA uses "Sales email id", TM uses "@imocha.io" hyperlink text
+    ["Sales email id",                                                  sanitize(intake.spoc_email)],
+    ["@imocha.io",                                                      sanitize(intake.spoc_email)],
     // Integrations heading placeholder
-    ["&lt;HRMS, LMS, LXP", sanitize(integrationList)],
+    ["&lt;HRMS, LMS, LXP",                                             sanitize(integrationList)],
   ];
 
-  let result = xml;
   for (const [token, value] of directSubs) {
     result = result.split(token).join(xmlEscape(value));
   }
 
-  // Cover page "Prepared For: Name" — "Name" is a standalone <w:t>Name</w:t> element
-  // right after a <w:br/> on the cover page. Replace it with the actual contact.
+  // ── Pass 3: TA-template "Prepared For: Name" ──────────────────────────────────
+  // "Name" is a standalone <w:t>Name</w:t> run right after the "Prepared For:" label
+  // on the TA cover page. TM uses paragraph-level (handled in Pass 1 above).
   result = result
     .split("<w:t>Name</w:t>")
     .join(`<w:t xml:space="preserve">${xmlEscape(sanitize(intake.prepared_for))}</w:t>`);
-
-  // Pass 2: paragraph-level replacement for split-run placeholders (proofErr-split)
-  const splitRunSubs: [string, string][] = [
-    ["<Sales spoc name>", sanitize(intake.spoc_name)],
-    ["<How scope is aligned to what iMocha can deliver>", sanitize(intake.scope_intro)],
-  ];
-  result = applyParagraphLevelSubstitutions(result, splitRunSubs);
 
   return result;
 }
