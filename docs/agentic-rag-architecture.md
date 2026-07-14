@@ -325,7 +325,9 @@ Rather than splitting documents into chunks and embedding them, an LLM reads the
 - **HippoRAG** — Personalized PageRank traversal over entity graph. Best for multi-hop factual retrieval (closest to what BidTrack needs).
 - **LightRAG** — dual-level (local entity + global relationship) retrieval. Cheaper, incremental, easier to adopt alongside existing vector search.
 
-**What this fixes for BidPursuit specifically:**
+**What this fixes for BidPursuit**
+
+ **specifically:**
 
 - *"Which of iMocha's certifications, integrations, and AI-governance policies together satisfy this client's compliance section?"* — today this fails because the answer spans 4 docs with no single chunk connecting them. Graph RAG traverses the relationship path.
 - Requirement analysis false-negatives (NOT SUPPORTED when it should be PARTIAL) — the model couldn't find the connection because the retrieval dropped it at ranking time.
