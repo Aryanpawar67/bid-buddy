@@ -12,6 +12,9 @@ export type QualificationInsights = {
 export type AssessmentData = {
   scores: Record<string, number>;
   comments: Record<string, string>;
+  rationales?: Record<string, string>;
+  ai_scored?: boolean;
+  ai_scored_at?: string;
   insights?: QualificationInsights;
 };
 
@@ -307,6 +310,28 @@ export function useGenerateQualificationInsights() {
     },
     onError: (e) => {
       console.error("[useGenerateQualificationInsights] error:", e);
+    },
+  });
+}
+
+// ── useGenerateQualAssessment ─────────────────────────────────────────────────
+export function useGenerateQualAssessment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (bidId: string) => {
+      const { generateQualificationAssessmentFn } = await import("@/lib/api/generate-qualification-assessment");
+      const { data: { session } } = await supabase.auth.getSession();
+      return generateQualificationAssessmentFn({
+        data: { bidId },
+        headers: { authorization: `Bearer ${session?.access_token ?? ""}` },
+      });
+    },
+    onSuccess: (_d, bidId) => {
+      qc.invalidateQueries({ queryKey: ["assessment-data", bidId] });
+      qc.invalidateQueries({ queryKey: ["bid", bidId] });
+    },
+    onError: (e) => {
+      console.error("[useGenerateQualAssessment] error:", e);
     },
   });
 }

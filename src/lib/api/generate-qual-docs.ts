@@ -115,7 +115,7 @@ async function getLogo(): Promise<Buffer> {
   if (!logoCache) {
     const { readFileSync } = await import("node:fs");
     const { join } = await import("node:path");
-    logoCache = readFileSync(join(process.cwd(), "public", "imocha-symbol.png"));
+    logoCache = readFileSync(join(process.cwd(), "public", "imocha-logo.png"));
   }
   return logoCache;
 }
@@ -224,7 +224,7 @@ export const generateQualResultFn = createServerFn({ method: "POST" })
       shading: { type: ShadingType.SOLID, color: C.purple },
       spacing: { before: 0, after: 0 },
       children: [
-        new ImageRun({ data: logo, transformation: { width: 22, height: 22 }, type: "png" }),
+        new ImageRun({ data: logo, transformation: { width: 102, height: 22 }, type: "png" }),
         new TextRun({ text: "  iMocha Bid Compass", color: C.white, bold: true, size: 22, font: "Calibri" }),
         new TextRun({ text: "        CONFIDENTIAL — INTERNAL", color: "CCBBFF", size: 16, font: "Calibri" }),
       ],
@@ -436,7 +436,7 @@ export const generateQualResultFn = createServerFn({ method: "POST" })
               new Paragraph({
                 shading: { type: ShadingType.SOLID, color: C.purple },
                 children: [
-                  new ImageRun({ data: logo, transformation: { width: 16, height: 16 }, type: "png" }),
+                  new ImageRun({ data: logo, transformation: { width: 75, height: 16 }, type: "png" }),
                   new TextRun({ text: "  iMocha Bid Compass", color: C.white, bold: true, size: 18, font: "Calibri" }),
                   new TextRun({ text: "        CONFIDENTIAL — INTERNAL", color: "CCBBFF", size: 14, font: "Calibri" }),
                 ],
@@ -659,7 +659,7 @@ export const generateDealBriefFn = createServerFn({ method: "POST" })
             shading: { type: ShadingType.SOLID, color: C.navy },
             spacing: { before: 0, after: 0 },
             children: [
-              new ImageRun({ data: logo, transformation: { width: 20, height: 20 }, type: "png" }),
+              new ImageRun({ data: logo, transformation: { width: 93, height: 20 }, type: "png" }),
               new TextRun({ text: "  DEAL BRIEF — LEADERSHIP REVIEW", color: C.white, bold: true, size: 20, font: "Calibri" }),
               new TextRun({ text: `        ${today}`, color: "AAAACC", size: 16, font: "Calibri" }),
             ],
@@ -735,7 +735,7 @@ export const generateDealBriefFn = createServerFn({ method: "POST" })
             spacing: { before: 0, after: 80 },
             children: [new TextRun({ text: "Why we should pursue this opportunity:", color: C.muted, size: 18, font: "Calibri" })],
           }),
-          ...(insights?.strengths ?? ["Insights not yet generated — please run AI Insights on the Qualification tab first."]).map((s: string) =>
+          ...(insights?.strengths ?? ["Run AI Assessment on the Assessment & Result tab to generate insights."]).map((s: string) =>
             new Paragraph({
               bullet: { level: 0 },
               spacing: { before: 60, after: 60 },
@@ -789,7 +789,7 @@ export const generateDealBriefFn = createServerFn({ method: "POST" })
             spacing: { before: 100, after: 100 },
             indent: { left: 160, right: 160 },
             children: [new TextRun({
-              text: insights?.recommendation ?? "Please generate AI insights in the Qualification Result tab first.",
+              text: insights?.recommendation ?? "Run AI Assessment on the Assessment & Result tab first to generate the recommendation.",
               size: 20, font: "Calibri", color: C.ink,
             })],
           }),

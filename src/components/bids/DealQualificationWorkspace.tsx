@@ -1,6 +1,6 @@
-import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { useState, useMemo, useRef, useCallback } from "react";
 import { DocxViewerModal } from "@/components/docs/DocxViewerModal";
-import { Lock, CheckCircle2, Users, ClipboardList, BarChart3, Activity, RefreshCw, FileText, Eye, Mail, UserPlus, X } from "lucide-react";
+import { Lock, Users, ClipboardList, BarChart3, Activity, RefreshCw, FileText, Eye, Mail, UserPlus, X } from "lucide-react";
 import { initials, urgencyClass, fmtMoney } from "@/lib/bid-constants";
 import type { Bid, AssessmentData, QualificationInsights } from "@/lib/bid-queries";
 import { useDocuments, type BidDocument, type DocType } from "@/lib/doc-queries";
@@ -12,7 +12,7 @@ import {
   useSaveAssessment,
   useBidActivity,
   useUpdateBid,
-  useGenerateQualificationInsights,
+  useGenerateQualAssessment,
   useGenerateQualResult,
   useGenerateDealBrief,
   useTeamMembers,
@@ -85,13 +85,12 @@ export const DEFAULT_CRITERIA = [
   },
 ] as const;
 
-export type Tab = "bid_details" | "bid_team" | "bid_assessment" | "qualification_result" | "activity_log";
+export type Tab = "bid_details" | "bid_team" | "assessment_result" | "activity_log";
 
 export const TABS: { key: Tab; label: string; icon: React.ElementType }[] = [
   { key: "bid_details", label: "Bid Details", icon: ClipboardList },
   { key: "bid_team", label: "Bid Team Details", icon: Users },
-  { key: "bid_assessment", label: "Bid Assessment", icon: BarChart3 },
-  { key: "qualification_result", label: "Qualification Result", icon: CheckCircle2 },
+  { key: "assessment_result", label: "Assessment & Result", icon: BarChart3 },
   { key: "activity_log", label: "Activity Log", icon: Activity },
 ];
 
@@ -121,8 +120,7 @@ export function DealQualificationWorkspace({
       {/* Tab content */}
       {activeTab === "bid_details" && <BidDetailsTab bid={bid} />}
       {activeTab === "bid_team" && <BidTeamTab bid={bid} />}
-      {activeTab === "bid_assessment" && <BidAssessmentTab bid={bid} />}
-      {activeTab === "qualification_result" && <QualificationResultTab bid={bid} />}
+      {activeTab === "assessment_result" && <AssessmentResultTab bid={bid} />}
       {activeTab === "activity_log" && <ActivityLogTab bid={bid} />}
     </div>
   );
@@ -518,189 +516,7 @@ function DQAssignMemberPopover({ bidId, assignedUserIds }: { bidId: string; assi
   );
 }
 
-// ── Bid Assessment Tab ────────────────────────────────────────────────────────
-
-function BidAssessmentTab({ bid }: { bid: Bid }) {
-  const { data: saved, isLoading } = useAssessmentData(bid.id);
-  const saveAssessment = useSaveAssessment();
-
-  const [scores, setScores] = useState<Record<string, number>>({});
-  const [comments, setComments] = useState<Record<string, string>>({});
-  const [initialised, setInitialised] = useState(false);
-  const [dirty, setDirty] = useState(false);
-
-  // Seed local state from saved data once loaded
-  if (!initialised && saved && !isLoading) {
-    setScores(saved.scores ?? {});
-    setComments(saved.comments ?? {});
-    setInitialised(true);
-  }
-
-  function setScore(id: string, val: number) {
-    setScores((p) => ({ ...p, [id]: val }));
-    setDirty(true);
-  }
-
-  function setComment(id: string, val: string) {
-    setComments((p) => ({ ...p, [id]: val }));
-    setDirty(true);
-  }
-
-  async function handleSave() {
-    await saveAssessment.mutateAsync({ bidId: bid.id, data: { scores, comments } });
-    setDirty(false);
-  }
-
-  const totalWeighted = useMemo(() => {
-    return DEFAULT_CRITERIA.reduce((sum, c) => {
-      const s = scores[c.id] ?? 0;
-      return sum + (s / 5) * c.weight * 100;
-    }, 0);
-  }, [scores]);
-
-  if (isLoading) {
-    return <Empty>Loading assessment…</Empty>;
-  }
-
-  const SCORE_LABELS: Record<number, string> = {
-    1: "Low", 2: "Below Avg", 3: "Average", 4: "Above Avg", 5: "High",
-  };
-
-  const SCORE_COLORS: Record<number, string> = {
-    0: "var(--color-muted-foreground)",
-    1: "#b91c1c", 2: "#c2410c", 3: "#854d0e", 4: "#166534", 5: "#15803d",
-  };
-
-  const STAR_COLOR: Record<number, string> = {
-    0: "#d1d5db", 1: "#ef4444", 2: "#f97316", 3: "#eab308", 4: "#22c55e", 5: "#16a34a",
-  };
-
-  return (
-    <div>
-      {/* Legend + save */}
-      <div className="flex items-center justify-between mb-3.5">
-        <div className="flex items-center gap-3">
-          <span className="text-[12px] text-muted-foreground">Score each parameter on a scale of 1 (Low) to 5 (High)</span>
-          <div className="flex items-center gap-2">
-            {[1,2,3,4,5].map((n) => (
-              <span key={n} className="flex items-center gap-1 text-[10px]" style={{ color: SCORE_COLORS[n] }}>
-                <span className="size-3 rounded-full inline-block" style={{ background: STAR_COLOR[n] }} />
-                {n} {SCORE_LABELS[n]}
-              </span>
-            ))}
-          </div>
-        </div>
-        <button
-          onClick={handleSave}
-          disabled={!dirty || saveAssessment.isPending}
-          className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-[12px] font-medium disabled:opacity-40 hover:opacity-90 transition-opacity"
-        >
-          {saveAssessment.isPending ? "Saving…" : "Save Assessment"}
-        </button>
-      </div>
-
-      <div className="text-[12px] text-muted-foreground mb-2">
-        Total: <strong className="text-foreground">{totalWeighted.toFixed(1)}</strong> / 100
-      </div>
-
-      {/* Assessment table */}
-      <div className="bg-card hairline border rounded-xl overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-[12px]">
-            <thead>
-              <tr className="bg-muted/40 text-[10px] uppercase tracking-wider text-muted-foreground">
-                <th className="text-left px-3.5 py-2.5 font-medium w-8">#</th>
-                <th className="text-left px-3.5 py-2.5 font-medium">Assessment Parameter</th>
-                <th className="text-left px-3.5 py-2.5 font-medium hidden xl:table-cell">What should be assessed?</th>
-                <th className="text-center px-3.5 py-2.5 font-medium w-14">Weight</th>
-                <th className="text-center px-3.5 py-2.5 font-medium w-44">Score (1–5)</th>
-                <th className="text-left px-3.5 py-2.5 font-medium w-40 hidden lg:table-cell">Comments</th>
-                <th className="text-center px-3.5 py-2.5 font-medium w-24">Weighted</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y hairline divide-border">
-              {DEFAULT_CRITERIA.map((c, i) => {
-                const score = scores[c.id] ?? 0;
-                const weightedMax = c.weight * 100;
-                const weightedEarned = (score / 5) * weightedMax;
-                const starColor = STAR_COLOR[score] ?? STAR_COLOR[0];
-                const scoreColor = SCORE_COLORS[score] ?? SCORE_COLORS[0];
-                return (
-                  <tr key={c.id} className="hover:bg-muted/20 transition-colors">
-                    <td className="px-3.5 py-3 text-muted-foreground">{i + 1}</td>
-                    <td className="px-3.5 py-3 font-medium leading-snug">{c.parameter}</td>
-                    <td className="px-3.5 py-3 text-muted-foreground leading-relaxed text-[11px] hidden xl:table-cell">{c.focus}</td>
-                    <td className="px-3.5 py-3 text-center font-medium">{Math.round(c.weight * 100)}%</td>
-                    <td className="px-3.5 py-3">
-                      <div className="flex flex-col items-center gap-1">
-                        <div className="flex gap-1">
-                          {[1, 2, 3, 4, 5].map((n) => (
-                            <button
-                              key={n}
-                              type="button"
-                              onClick={() => setScore(c.id, n)}
-                              className="transition-transform hover:scale-110"
-                              style={{ background: "none", border: "none", padding: 0, cursor: "pointer", lineHeight: 1 }}
-                              aria-label={`Score ${n}`}
-                            >
-                              <svg width="18" height="18" viewBox="0 0 20 20">
-                                <path
-                                  d="M10 1l2.39 4.84 5.34.78-3.87 3.77.91 5.32L10 13.27l-4.77 2.44.91-5.32L2.27 6.62l5.34-.78z"
-                                  fill={score >= n ? starColor : "#e5e7eb"}
-                                  stroke={score >= n ? starColor : "#d1d5db"}
-                                  strokeWidth="0.5"
-                                />
-                              </svg>
-                            </button>
-                          ))}
-                        </div>
-                        {score > 0 && (
-                          <span className="text-[10px] font-medium" style={{ color: scoreColor }}>
-                            {score} – {SCORE_LABELS[score]}
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-3.5 py-3 hidden lg:table-cell">
-                      <input
-                        type="text"
-                        value={comments[c.id] ?? ""}
-                        onChange={(e) => setComment(c.id, e.target.value)}
-                        placeholder="Add note…"
-                        className="w-full bg-transparent text-[11px] text-foreground placeholder:text-muted-foreground border-0 outline-none focus:ring-0 p-0"
-                      />
-                    </td>
-                    <td className="px-3.5 py-3 text-center">
-                      {score > 0 ? (
-                        <span className="font-medium" style={{ color: scoreColor }}>{weightedEarned.toFixed(1)}</span>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
-                      <span className="text-muted-foreground text-[10px]">/{weightedMax.toFixed(0)}</span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-            <tfoot>
-              <tr className="bg-muted/40 font-medium">
-                <td colSpan={4} className="px-3.5 py-2.5 text-[11px] text-right uppercase tracking-wider text-muted-foreground">
-                  Total Weighted Score
-                </td>
-                <td colSpan={3} className="px-3.5 py-2.5 text-center text-[14px] font-semibold">
-                  {totalWeighted.toFixed(1)}
-                  <span className="text-[11px] text-muted-foreground font-normal"> / 100</span>
-                </td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Qualification Result Tab ──────────────────────────────────────────────────
+// ── Assessment & Result Tab (merged) ─────────────────────────────────────────
 
 function ScoreGauge({ score }: { score: number }) {
   const r = 50;
@@ -739,62 +555,80 @@ function paramStatus(score: number): { label: string; cls: string } {
   return               { label: "Caution",  cls: "bg-danger-soft text-danger-foreground" };
 }
 
-function QualificationResultTab({ bid }: { bid: Bid }) {
+function AssessmentResultTab({ bid }: { bid: Bid }) {
   const { data: assessmentData, isLoading } = useAssessmentData(bid.id);
-  const updateBid = useUpdateBid();
-  const generateInsights = useGenerateQualificationInsights();
+  const { data: docs = [] } = useDocuments({ bidId: bid.id });
+  const generateAssessment = useGenerateQualAssessment();
+  const saveAssessment = useSaveAssessment();
   const generateQualResult = useGenerateQualResult();
   const generateDealBrief = useGenerateDealBrief();
+  const updateBid = useUpdateBid();
   const { user } = useCurrentUser();
+  const [docxViewer, setDocxViewer] = useState<{ url: string; filename: string } | null>(null);
+  const openDocx = useCallback((url: string, filename: string) => setDocxViewer({ url, filename }), []);
 
-  const { totalScore, decision, avgScore, scoredCount } = useMemo(() => {
-    const scores = assessmentData?.scores ?? {};
+  // Local editable scores — seeded from DB, reset when bid changes
+  const [scores, setScores] = useState<Record<string, number>>({});
+  const [comments, setComments] = useState<Record<string, string>>({});
+  const [touchedIds, setTouchedIds] = useState<Set<string>>(new Set());
+  const [dirty, setDirty] = useState(false);
+  const [initialised, setInitialised] = useState(false);
+  const prevBidId = useRef<string | null>(null);
+
+  if ((!initialised || prevBidId.current !== bid.id) && assessmentData && !isLoading) {
+    prevBidId.current = bid.id;
+    setScores(assessmentData.scores ?? {});
+    setComments(assessmentData.comments ?? {});
+    setTouchedIds(new Set());
+    setDirty(false);
+    setInitialised(true);
+  }
+
+  const indexedDocs = docs.filter((d) => d.embedding !== null);
+  const indexedDocCount = indexedDocs.length;
+  const hasIndexedDocs = indexedDocCount > 0;
+  const indexedDocNames = indexedDocs.map((d) => d.name).join(", ");
+  const isAiScored = !!assessmentData?.ai_scored;
+  const rationales: Record<string, string> = assessmentData?.rationales ?? {};
+  const insights: QualificationInsights | undefined = assessmentData?.insights;
+  const isLocked = !!bid.gonogo_decision;
+
+  const { totalScore, scoredCount, avgScore } = useMemo(() => {
     let total = 0, scoreSum = 0, count = 0;
     for (const c of DEFAULT_CRITERIA) {
       const s = scores[c.id] ?? 0;
       total += (s / 5) * c.weight * 100;
       if (s > 0) { scoreSum += s; count++; }
     }
-    const t = Math.round(total);
-    const d: "go" | "conditional_go" | "no_go" =
-      t >= 65 ? "go" : t >= 45 ? "conditional_go" : "no_go";
-    return { totalScore: t, decision: d, avgScore: count ? (scoreSum / count).toFixed(1) : "—", scoredCount: count };
-  }, [assessmentData]);
+    return { totalScore: Math.round(total), scoredCount: count, avgScore: count ? (scoreSum / count).toFixed(1) : "—" };
+  }, [scores]);
 
-  const insights: QualificationInsights | undefined = assessmentData?.insights;
-  const isLocked = !!bid.gonogo_decision;
   const hasScores = scoredCount > 0;
-  // Fallback: if no parameter scores exist but a locked gonogo_score is present,
-  // surface it rather than showing a contradictory "0 / Insufficient Data" next to
-  // a visible "Decision Locked: Go" card.
   const displayScore = hasScores ? totalScore : (bid.gonogo_score ?? 0);
-  const usingFallbackScore = !hasScores && bid.gonogo_score !== null;
 
-  const [docxViewer, setDocxViewer] = useState<{ url: string; filename: string } | null>(null);
-  const openDocx = useCallback((url: string, filename: string) => setDocxViewer({ url, filename }), []);
+  const bidStrength = displayScore >= 75 ? "Strong" : displayScore >= 55 ? "Moderate" : displayScore >= 35 ? "Weak" : "Insufficient Data";
+  const bidStrengthCls = displayScore >= 75 ? "text-success-foreground" : displayScore >= 55 ? "text-warning-foreground" : displayScore > 0 ? "text-danger-foreground" : "text-muted-foreground";
 
-  // Auto-generate insights once when scores exist but no cached insights yet.
-  // Guards: data must be fully loaded (!isLoading) so we don't fire on the
-  // undefined-during-fetch window; and we track per-bid with a ref so tab
-  // switching never re-fires even if staleTime hasn't expired yet.
-  const autoFiredRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (
-      !isLoading &&
-      hasScores &&
-      !insights &&
-      !generateInsights.isPending &&
-      autoFiredRef.current !== bid.id
-    ) {
-      autoFiredRef.current = bid.id;
-      generateInsights.mutate(bid.id);
-    }
-  }, [isLoading, hasScores, !!insights, bid.id]);
+  const STAR_COLOR: Record<number, string> = {
+    0: "#d1d5db", 1: "#ef4444", 2: "#f97316", 3: "#eab308", 4: "#22c55e", 5: "#16a34a",
+  };
 
-  const bidStrength =
-    displayScore >= 75 ? "Strong" : displayScore >= 55 ? "Moderate" : displayScore >= 35 ? "Weak" : "Insufficient Data";
-  const bidStrengthCls =
-    displayScore >= 75 ? "text-success-foreground" : displayScore >= 55 ? "text-warning-foreground" : displayScore > 0 ? "text-danger-foreground" : "text-muted-foreground";
+  function handleSetScore(id: string, val: number) {
+    setScores((p) => ({ ...p, [id]: val }));
+    setTouchedIds((p) => new Set([...p, id]));
+    setDirty(true);
+  }
+
+  function handleSetComment(id: string, val: string) {
+    setComments((p) => ({ ...p, [id]: val }));
+    setDirty(true);
+  }
+
+  async function handleSave() {
+    const merged: AssessmentData = { ...(assessmentData ?? { scores: {}, comments: {} }), scores, comments };
+    await saveAssessment.mutateAsync({ bidId: bid.id, data: merged });
+    setDirty(false);
+  }
 
   async function lockAs(d: "go" | "conditional_go" | "no_go") {
     await updateBid.mutateAsync({
@@ -814,39 +648,97 @@ function QualificationResultTab({ bid }: { bid: Bid }) {
 
   if (isLoading) return <Empty>Loading…</Empty>;
 
+  const canGenerate = hasScores && !!insights;
+
   return (
     <>
-    <div className="grid grid-cols-[1fr_320px] gap-4">
+    <div className="space-y-3.5">
 
-      {/* ── Left column ── */}
-      <div className="space-y-3.5">
-
-        {/* Summary card */}
-        <section className="bg-card hairline border rounded-xl p-4">
-          <h3 className="text-[13px] font-medium mb-3">Overall Qualification Summary</h3>
-          {usingFallbackScore && (
-            <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/40 hairline border border-border text-[11px] text-muted-foreground">
-              <span className="shrink-0">ℹ</span>
-              Score recorded without individual parameter breakdown — fill the Bid Assessment tab to add detail.
-            </div>
+      {/* ── Action header ── */}
+      <div className="flex items-center gap-3 px-3.5 py-3 bg-muted/30 hairline border border-border rounded-xl">
+        <div className="flex-1 min-w-0">
+          <div className="text-[12px] font-semibold">AI Assessment & Result</div>
+          <div className="text-[10px] text-muted-foreground mt-0.5">
+            {generateAssessment.isPending
+              ? `Searching ${indexedDocNames} + iMocha knowledge base…`
+              : !hasIndexedDocs
+              ? "Upload customer requirement documents in Bid Details to enable AI assessment."
+              : isAiScored && assessmentData?.ai_scored_at
+              ? `Last run ${new Date(assessmentData.ai_scored_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })} · ${indexedDocNames} · iMocha KB`
+              : `Ready: ${indexedDocNames} · iMocha KB`}
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {dirty && (
+            <button
+              onClick={handleSave}
+              disabled={saveAssessment.isPending}
+              className="h-8 px-3 rounded-md hairline border text-[11px] text-primary font-medium hover:bg-primary/10 disabled:opacity-40 transition-colors"
+            >
+              {saveAssessment.isPending ? "Saving…" : "Save Changes"}
+            </button>
           )}
+          <button
+            onClick={() => generateAssessment.mutate(bid.id)}
+            disabled={generateAssessment.isPending || !hasIndexedDocs}
+            className="h-8 px-3.5 rounded-md bg-primary text-primary-foreground text-[11px] font-medium inline-flex items-center gap-1.5 disabled:opacity-40 hover:opacity-90 transition-opacity"
+          >
+            {generateAssessment.isPending ? (
+              <><RefreshCw className="size-3 animate-spin" /> Assessing…</>
+            ) : isAiScored ? (
+              <><RefreshCw className="size-3" /> Re-run AI</>
+            ) : (
+              <>✦ Run AI Assessment</>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* ── Generating banner ── */}
+      {generateAssessment.isPending && (
+        <div className="flex items-center gap-2.5 px-3.5 py-2.5 bg-primary/8 hairline border border-primary/20 rounded-xl text-[11px] text-primary">
+          <RefreshCw className="size-3 animate-spin shrink-0" />
+          Reading {indexedDocNames} + iMocha knowledge base · scoring all 10 parameters…
+        </div>
+      )}
+
+      {/* ── Empty state ── */}
+      {!hasScores && !generateAssessment.isPending && (
+        <div className="flex flex-col items-center text-center gap-3 py-12">
+          <div className="size-10 rounded-full bg-muted/50 flex items-center justify-center">
+            <BarChart3 className="size-5 text-muted-foreground opacity-40" />
+          </div>
+          <div>
+            <div className="text-[13px] font-medium">No assessment yet</div>
+            <div className="text-[11px] text-muted-foreground mt-1 max-w-sm leading-relaxed">
+              {hasIndexedDocs
+                ? "Click Run AI Assessment to auto-score all 10 qualification parameters from customer documents and the iMocha knowledge base."
+                : "Upload the customer's requirement documents in Bid Details, then run the AI assessment. Scores can be edited before locking the Go/No-Go decision."}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Score summary ── */}
+      {hasScores && (
+        <section className="bg-card hairline border rounded-xl p-4">
+          <h3 className="text-[13px] font-medium mb-3">Qualification Summary</h3>
           <div className="flex items-center gap-5">
             <ScoreGauge score={displayScore} />
             <div className="grid grid-cols-2 gap-2 flex-1">
-              {[
-                { label: "Total Parameters", value: hasScores ? "10" : "—" },
-                { label: "Avg Parameter Score", value: hasScores ? avgScore : "—" },
+              {([
+                { label: "Avg Parameter Score", value: avgScore },
                 { label: "Score Achieved", value: `${displayScore}%` },
                 { label: "Bid Strength", value: bidStrength, valueCls: bidStrengthCls },
-              ].map((m) => (
+                { label: "Scored Parameters", value: `${scoredCount} / 10` },
+              ] as const).map((m) => (
                 <div key={m.label} className="bg-muted/30 rounded-lg p-2.5">
                   <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{m.label}</div>
-                  <div className={`text-[16px] font-semibold mt-0.5 ${(m as any).valueCls ?? ""}`}>{m.value}</div>
+                  <div className={`text-[16px] font-semibold mt-0.5 ${"valueCls" in m ? (m as any).valueCls : ""}`}>{m.value}</div>
                 </div>
               ))}
             </div>
           </div>
-          {/* Score band legend */}
           <div className="flex gap-3 text-[10px] mt-3 pt-3 border-t hairline border-border">
             <span className="text-success-foreground font-medium">≥ 65 → Go</span>
             <span className="text-muted-foreground">·</span>
@@ -855,235 +747,187 @@ function QualificationResultTab({ bid }: { bid: Bid }) {
             <span className="text-danger-foreground font-medium">&lt; 45 → No Go</span>
           </div>
         </section>
+      )}
 
-        {/* Breakdown table */}
+      {/* ── Parameter table (editable) ── */}
+      {hasScores && (
         <section className="bg-card hairline border rounded-xl overflow-hidden">
-          <header className="px-3.5 py-2.5 border-b hairline border-border">
-            <h3 className="text-[13px] font-medium">Assessment Summary by Parameter</h3>
+          <header className="px-3.5 py-2.5 border-b hairline border-border flex items-center justify-between">
+            <h3 className="text-[13px] font-medium">Parameter Scores</h3>
+            {isAiScored && (
+              <span className="text-[10px] text-muted-foreground">
+                ✦ AI-drafted · {touchedIds.size > 0 ? `${touchedIds.size} score${touchedIds.size !== 1 ? "s" : ""} edited` : "click stars to edit"}
+              </span>
+            )}
           </header>
-          {!hasScores ? (
-            <div className="text-[12px] text-muted-foreground p-4 text-center">
-              Complete the Bid Assessment tab to see a breakdown here.
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-[12px]">
-                <thead>
-                  <tr className="bg-muted/30 text-[10px] uppercase tracking-wider text-muted-foreground">
-                    <th className="text-left px-3.5 py-2 font-medium">#</th>
-                    <th className="text-left px-3.5 py-2 font-medium">Parameter</th>
-                    <th className="text-center px-3.5 py-2 font-medium w-20">Status</th>
-                    <th className="text-center px-3.5 py-2 font-medium w-16">Score</th>
-                    <th className="text-center px-3.5 py-2 font-medium w-14">Weight</th>
-                    <th className="text-left px-3.5 py-2 font-medium w-36">Progress</th>
-                    <th className="text-center px-3.5 py-2 font-medium w-24">Contribution</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y hairline divide-border">
-                  {DEFAULT_CRITERIA.map((c, i) => {
-                    const s = assessmentData?.scores[c.id] ?? 0;
-                    const contribution = (s / 5) * c.weight * 100;
-                    const maxContrib = c.weight * 100;
-                    const pct = maxContrib > 0 ? (contribution / maxContrib) * 100 : 0;
-                    const st = paramStatus(s);
-                    return (
-                      <tr key={c.id} className="hover:bg-muted/20 transition-colors">
-                        <td className="px-3.5 py-2.5 text-muted-foreground">{i + 1}</td>
-                        <td className="px-3.5 py-2.5 font-medium">{c.parameter}</td>
-                        <td className="px-3.5 py-2.5 text-center">
-                          {s === 0 ? (
-                            <span className="text-muted-foreground">—</span>
-                          ) : (
-                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${st.cls}`}>
-                              {st.label}
+          <div className="overflow-x-auto">
+            <table className="w-full text-[12px]">
+              <thead>
+                <tr className="bg-muted/30 text-[10px] uppercase tracking-wider text-muted-foreground">
+                  <th className="text-left px-3.5 py-2 font-medium w-8">#</th>
+                  <th className="text-left px-3.5 py-2 font-medium">Parameter</th>
+                  <th className="text-center px-3.5 py-2 font-medium w-14">Weight</th>
+                  <th className="text-left px-3.5 py-2 font-medium w-52">Score</th>
+                  <th className="text-left px-3.5 py-2 font-medium hidden lg:table-cell">
+                    {isAiScored ? "AI Rationale" : "Notes"}
+                  </th>
+                  <th className="text-center px-3.5 py-2 font-medium w-24">Contribution</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y hairline divide-border">
+                {DEFAULT_CRITERIA.map((c, i) => {
+                  const score = scores[c.id] ?? 0;
+                  const starColor = STAR_COLOR[score] ?? STAR_COLOR[0];
+                  const contribution = (score / 5) * c.weight * 100;
+                  const maxContrib = c.weight * 100;
+                  const isEdited = touchedIds.has(c.id);
+                  const scoreColor = score >= 4 ? "var(--color-success-foreground)" : score === 3 ? "var(--color-warning-foreground)" : score > 0 ? "var(--color-danger-foreground)" : undefined;
+                  return (
+                    <tr key={c.id} className="hover:bg-muted/20 transition-colors">
+                      <td className="px-3.5 py-3 text-muted-foreground">{i + 1}</td>
+                      <td className="px-3.5 py-3">
+                        <div className="font-medium leading-snug">{c.parameter}</div>
+                        <div className="text-[10px] text-muted-foreground mt-0.5 leading-relaxed hidden xl:block">{c.focus}</div>
+                      </td>
+                      <td className="px-3.5 py-3 text-center text-muted-foreground">{Math.round(c.weight * 100)}%</td>
+                      <td className="px-3.5 py-3">
+                        <div className="flex items-center gap-2">
+                          <div className="flex gap-1">
+                            {[1, 2, 3, 4, 5].map((n) => (
+                              <button
+                                key={n}
+                                type="button"
+                                onClick={() => handleSetScore(c.id, n)}
+                                className="transition-transform hover:scale-110"
+                                style={{ background: "none", border: "none", padding: 0, cursor: "pointer", lineHeight: 1 }}
+                              >
+                                <svg width="18" height="18" viewBox="0 0 20 20">
+                                  <path
+                                    d="M10 1l2.39 4.84 5.34.78-3.87 3.77.91 5.32L10 13.27l-4.77 2.44.91-5.32L2.27 6.62l5.34-.78z"
+                                    fill={score >= n ? starColor : "#e5e7eb"}
+                                    stroke={score >= n ? starColor : "#d1d5db"}
+                                    strokeWidth="0.5"
+                                  />
+                                </svg>
+                              </button>
+                            ))}
+                          </div>
+                          {isAiScored && score > 0 && (
+                            <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded shrink-0 ${isEdited ? "bg-[#fff0e8] text-orange-600 dark:bg-orange-500/15 dark:text-orange-400" : "bg-[#ede9fd] text-primary dark:bg-primary/15"}`}>
+                              {isEdited ? "✎ Edited" : "✦ AI"}
                             </span>
                           )}
-                        </td>
-                        <td className="px-3.5 py-2.5 text-center font-medium">
-                          {s > 0 ? `${s}/5` : <span className="text-muted-foreground">—</span>}
-                        </td>
-                        <td className="px-3.5 py-2.5 text-center text-muted-foreground">
-                          {Math.round(c.weight * 100)}%
-                        </td>
-                        <td className="px-3.5 py-2.5">
-                          <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                            <div
-                              className={`h-full rounded-full transition-all ${
-                                s >= 4 ? "bg-success-foreground" : s === 3 ? "bg-warning-foreground" : s > 0 ? "bg-danger-foreground" : ""
-                              }`}
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
-                        </td>
-                        <td className="px-3.5 py-2.5 text-center">
-                          {s > 0 ? (
-                            <span className="font-medium">{contribution.toFixed(1)}</span>
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                          <span className="text-muted-foreground text-[10px]">/{maxContrib.toFixed(0)}</span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-                <tfoot>
-                  <tr className="bg-muted/30 font-semibold">
-                    <td colSpan={6} className="px-3.5 py-2.5 text-[11px] text-right uppercase tracking-wider text-muted-foreground">
-                      Total
-                    </td>
-                    <td className="px-3.5 py-2.5 text-center text-[14px]">
-                      {totalScore}
-                      <span className="text-[11px] text-muted-foreground font-normal">/100</span>
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          )}
-        </section>
-
-        {/* ── Document generation buttons ── */}
-        {(() => {
-          const canGenerate = !!insights && hasScores;
-          const disabledTitle = !canGenerate ? "AI insights must be generated first" : undefined;
-          return (
-            <div className="flex gap-2">
-              <button
-                onClick={() => generateQualResult.mutate(
-                  { bidId: bid.id, clientName: bid.client_name, decision: bid.gonogo_decision ?? "no_go", totalScore },
-                  { onSuccess: (r) => { if (r?.url) openDocx(r.url, r.filename); } }
-                )}
-                disabled={generateQualResult.isPending || !canGenerate}
-                title={disabledTitle}
-                className="flex-1 h-9 rounded-md bg-primary text-primary-foreground text-[12px] font-medium disabled:opacity-40 hover:opacity-90 inline-flex items-center justify-center gap-1.5 transition-opacity"
-              >
-                <Mail className="size-3.5" />
-                {generateQualResult.isPending ? "Generating…" : "Notify Bid Team"}
-              </button>
-              <button
-                onClick={() => generateDealBrief.mutate(
-                  bid.id,
-                  { onSuccess: (r) => { if (r?.url) openDocx(r.url, r.filename); } }
-                )}
-                disabled={generateDealBrief.isPending || !canGenerate}
-                title={disabledTitle}
-                className="flex-1 h-9 rounded-md hairline border bg-card text-[12px] font-medium disabled:opacity-40 hover:bg-muted inline-flex items-center justify-center gap-1.5 transition-colors"
-              >
-                <Eye className="size-3.5" />
-                {generateDealBrief.isPending ? "Generating…" : "Deal Brief"}
-              </button>
-            </div>
-          );
-        })()}
-      </div>
-
-      {/* ── Right column ── */}
-      <div className="space-y-3.5">
-
-        {/* AI Insights */}
-        <section className="bg-card hairline border rounded-xl p-3.5">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-[13px] font-medium">AI Analysis</h3>
-            {/* Only show regenerate when insights are already cached */}
-            {insights && (
-              <button
-                onClick={() => {
-                  autoFiredRef.current = null;
-                  generateInsights.mutate(bid.id);
-                }}
-                disabled={generateInsights.isPending}
-                title="Regenerate AI insights"
-                className="h-7 w-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-40 inline-flex items-center justify-center transition-colors"
-              >
-                <RefreshCw className={`size-3 ${generateInsights.isPending ? "animate-spin" : ""}`} />
-              </button>
-            )}
+                        </div>
+                      </td>
+                      <td className="px-3.5 py-3 hidden lg:table-cell">
+                        {isAiScored && rationales[c.id] ? (
+                          <span className="text-[11px] text-muted-foreground leading-relaxed">{rationales[c.id]}</span>
+                        ) : (
+                          <input
+                            type="text"
+                            value={comments[c.id] ?? ""}
+                            onChange={(e) => handleSetComment(c.id, e.target.value)}
+                            placeholder="Add note…"
+                            className="w-full bg-transparent text-[11px] text-foreground placeholder:text-muted-foreground border-0 outline-none focus:ring-0 p-0"
+                          />
+                        )}
+                      </td>
+                      <td className="px-3.5 py-3 text-center">
+                        {score > 0 ? (
+                          <span className="font-medium" style={{ color: scoreColor }}>{contribution.toFixed(1)}</span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                        <span className="text-muted-foreground text-[10px]">/{maxContrib.toFixed(0)}</span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr className="bg-muted/40 font-semibold">
+                  <td colSpan={5} className="px-3.5 py-2.5 text-[11px] text-right uppercase tracking-wider text-muted-foreground">
+                    Total Weighted Score
+                  </td>
+                  <td className="px-3.5 py-2.5 text-center text-[14px] font-semibold">
+                    {totalScore}
+                    <span className="text-[11px] text-muted-foreground font-normal"> / 100</span>
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
           </div>
+        </section>
+      )}
 
-          {!hasScores && (
-            <p className="text-[11px] text-muted-foreground">
-              Score all parameters in the Bid Assessment tab first.
-            </p>
-          )}
-
-          {hasScores && !insights && !generateInsights.isPending && !generateInsights.isError && (
-            <p className="text-[11px] text-muted-foreground">Generating AI analysis…</p>
-          )}
-
-          {hasScores && !insights && generateInsights.isError && (
-            <div className="flex items-center justify-between">
-              <p className="text-[11px] text-destructive">Could not generate insights.</p>
-              <button
-                onClick={() => {
-                  autoFiredRef.current = null;
-                  generateInsights.mutate(bid.id);
-                }}
-                className="h-6 px-2 rounded-md text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted inline-flex items-center gap-1 transition-colors"
-              >
-                <RefreshCw className="size-3" /> Retry
-              </button>
+      {/* ── AI Analysis ── */}
+      {insights && (
+        <section className="bg-card hairline border rounded-xl p-3.5">
+          <h3 className="text-[13px] font-medium mb-3">AI Analysis</h3>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-success-foreground font-medium mb-1.5">Key Strengths</div>
+              <ul className="space-y-1.5">
+                {insights.strengths.map((s, i) => (
+                  <li key={i} className="flex items-start gap-1.5 text-[11px]">
+                    <span className="text-success-foreground mt-0.5 shrink-0">✓</span>
+                    <span>{s}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
-          )}
-
-          {generateInsights.isPending && (
-            <div className="space-y-2">
-              {[60, 80, 50].map((w, i) => (
-                <div key={i} className={`h-3 bg-muted rounded animate-pulse`} style={{ width: `${w}%` }} />
-              ))}
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-danger-foreground font-medium mb-1.5">Key Risks / Watchouts</div>
+              <ul className="space-y-1.5">
+                {insights.risks.map((r, i) => (
+                  <li key={i} className="flex items-start gap-1.5 text-[11px]">
+                    <span className="text-danger-foreground mt-0.5 shrink-0">⚠</span>
+                    <span>{r}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
-          )}
-
-          {insights && !generateInsights.isPending && (
-            <div className="space-y-3.5">
-              {/* Key Strengths */}
-              <div>
-                <div className="text-[10px] uppercase tracking-wider text-success-foreground font-medium mb-1.5">
-                  Key Strengths
-                </div>
-                <ul className="space-y-1.5">
-                  {insights.strengths.map((s, i) => (
-                    <li key={i} className="flex items-start gap-1.5 text-[11px]">
-                      <span className="text-success-foreground mt-0.5 shrink-0">✓</span>
-                      <span>{s}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              {/* Key Risks */}
-              <div>
-                <div className="text-[10px] uppercase tracking-wider text-danger-foreground font-medium mb-1.5">
-                  Key Risks / Watchouts
-                </div>
-                <ul className="space-y-1.5">
-                  {insights.risks.map((r, i) => (
-                    <li key={i} className="flex items-start gap-1.5 text-[11px]">
-                      <span className="text-danger-foreground mt-0.5 shrink-0">⚠</span>
-                      <span>{r}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              {/* Recommendation */}
-              <div className="pt-2 border-t hairline border-border">
-                <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">
-                  Recommendation Summary
-                </div>
-                <p className="text-[11px] leading-relaxed">{insights.recommendation}</p>
-              </div>
-
-              {insights.generated_at && (
-                <div className="text-[10px] text-muted-foreground pt-1">
-                  Generated {new Date(insights.generated_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
-                </div>
-              )}
+            <div className="col-span-2 pt-3 border-t hairline border-border">
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">Recommendation</div>
+              <p className="text-[11px] leading-relaxed">{insights.recommendation}</p>
+            </div>
+          </div>
+          {insights.generated_at && (
+            <div className="text-[10px] text-muted-foreground mt-3">
+              Generated {new Date(insights.generated_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+              {isAiScored ? " · Grounded in customer documents" : ""}
             </div>
           )}
         </section>
+      )}
 
-        {/* Lock decision */}
+      {/* ── Document generation ── */}
+      {canGenerate && (
+        <div className="flex gap-2">
+          <button
+            onClick={() => generateQualResult.mutate(
+              { bidId: bid.id, clientName: bid.client_name, decision: bid.gonogo_decision ?? "no_go", totalScore },
+              { onSuccess: (r) => { if (r?.url) openDocx(r.url, r.filename); } },
+            )}
+            disabled={generateQualResult.isPending}
+            className="flex-1 h-9 rounded-md bg-primary text-primary-foreground text-[12px] font-medium disabled:opacity-40 hover:opacity-90 inline-flex items-center justify-center gap-1.5 transition-opacity"
+          >
+            <Mail className="size-3.5" />
+            {generateQualResult.isPending ? "Generating…" : "Notify Bid Team"}
+          </button>
+          <button
+            onClick={() => generateDealBrief.mutate(bid.id, { onSuccess: (r) => { if (r?.url) openDocx(r.url, r.filename); } })}
+            disabled={generateDealBrief.isPending}
+            className="flex-1 h-9 rounded-md hairline border bg-card text-[12px] font-medium disabled:opacity-40 hover:bg-muted inline-flex items-center justify-center gap-1.5 transition-colors"
+          >
+            <Eye className="size-3.5" />
+            {generateDealBrief.isPending ? "Generating…" : "Deal Brief"}
+          </button>
+        </div>
+      )}
+
+      {/* ── Lock Decision ── */}
+      {hasScores && (
         <section className="bg-card hairline border rounded-xl p-3.5">
           <h3 className="text-[13px] font-medium mb-2.5">
             {isLocked ? "Decision Locked" : "Lock Decision"}
@@ -1126,14 +970,11 @@ function QualificationResultTab({ bid }: { bid: Bid }) {
             </div>
           )}
         </section>
-      </div>
+      )}
+
     </div>
     {docxViewer && (
-      <DocxViewerModal
-        url={docxViewer.url}
-        filename={docxViewer.filename}
-        onClose={() => setDocxViewer(null)}
-      />
+      <DocxViewerModal url={docxViewer.url} filename={docxViewer.filename} onClose={() => setDocxViewer(null)} />
     )}
     </>
   );

@@ -1,0 +1,837 @@
+<!doctype html>
+<title>Deal Qualification — AI Assessment & Result · Mockup</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  /* ── Tokens ── */
+  :root {
+    --bg: #0d0d12;
+    --bg-card: #13131a;
+    --bg-card-2: #1a1a24;
+    --bg-muted: #1e1e2a;
+    --border: rgba(255,255,255,0.08);
+    --fg: #e8e8f0;
+    --fg-muted: #7a7a96;
+    --fg-meta: #55556a;
+    --primary: #491AEB;
+    --primary-light: rgba(73,26,235,0.15);
+    --primary-border: rgba(73,26,235,0.35);
+    --accent: #FD5B0E;
+    --accent-light: rgba(253,91,14,0.12);
+    --go: #22c55e;
+    --go-light: rgba(34,197,94,0.12);
+    --cond: #f59e0b;
+    --cond-light: rgba(245,158,11,0.12);
+    --nogo: #ef4444;
+    --nogo-light: rgba(239,68,68,0.12);
+    --ai-chip-bg: rgba(73,26,235,0.18);
+    --ai-chip-fg: #a78bfa;
+    --human-chip-bg: rgba(253,91,14,0.15);
+    --human-chip-fg: #fb923c;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f2f2f7;
+      --bg-card: #ffffff;
+      --bg-card-2: #f8f8fc;
+      --bg-muted: #efeff5;
+      --border: rgba(0,0,0,0.08);
+      --fg: #111118;
+      --fg-muted: #6b6b82;
+      --fg-meta: #9999b0;
+      --primary-light: rgba(73,26,235,0.08);
+      --primary-border: rgba(73,26,235,0.25);
+      --go-light: rgba(34,197,94,0.1);
+      --cond-light: rgba(245,158,11,0.1);
+      --nogo-light: rgba(239,68,68,0.1);
+      --ai-chip-bg: rgba(73,26,235,0.1);
+      --ai-chip-fg: #6d28d9;
+      --human-chip-bg: rgba(253,91,14,0.1);
+      --human-chip-fg: #c2410c;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0d0d12; --bg-card: #13131a; --bg-card-2: #1a1a24; --bg-muted: #1e1e2a;
+    --border: rgba(255,255,255,0.08); --fg: #e8e8f0; --fg-muted: #7a7a96; --fg-meta: #55556a;
+    --primary-light: rgba(73,26,235,0.15); --primary-border: rgba(73,26,235,0.35);
+    --go-light: rgba(34,197,94,0.12); --cond-light: rgba(245,158,11,0.12); --nogo-light: rgba(239,68,68,0.12);
+    --ai-chip-bg: rgba(73,26,235,0.18); --ai-chip-fg: #a78bfa;
+    --human-chip-bg: rgba(253,91,14,0.15); --human-chip-fg: #fb923c;
+  }
+  :root[data-theme="light"] {
+    --bg: #f2f2f7; --bg-card: #ffffff; --bg-card-2: #f8f8fc; --bg-muted: #efeff5;
+    --border: rgba(0,0,0,0.08); --fg: #111118; --fg-muted: #6b6b82; --fg-meta: #9999b0;
+    --primary-light: rgba(73,26,235,0.08); --primary-border: rgba(73,26,235,0.25);
+    --go-light: rgba(34,197,94,0.1); --cond-light: rgba(245,158,11,0.1); --nogo-light: rgba(239,68,68,0.1);
+    --ai-chip-bg: rgba(73,26,235,0.1); --ai-chip-fg: #6d28d9;
+    --human-chip-bg: rgba(253,91,14,0.1); --human-chip-fg: #c2410c;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    font-size: 13px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+
+  /* ── State switcher bar ── */
+  .switcher {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: #220032;
+    border-bottom: 0.5px solid rgba(255,255,255,0.12);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+  }
+  .switcher-label { font-size: 10px; color: rgba(255,255,255,0.45); text-transform: uppercase; letter-spacing: 0.06em; margin-right: 4px; }
+  .sw-btn {
+    height: 26px;
+    padding: 0 12px;
+    border-radius: 4px;
+    border: 0.5px solid rgba(255,255,255,0.15);
+    background: transparent;
+    color: rgba(255,255,255,0.5);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .sw-btn:hover { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.8); }
+  .sw-btn.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+  /* ── Shell ── */
+  .shell {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 20px 24px 60px;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  /* ── Stage nav ── */
+  .stage-nav {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    background: var(--bg-card);
+    border: 0.5px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+  .stage-step {
+    flex: 1;
+    padding: 8px 4px;
+    font-size: 10px;
+    text-align: center;
+    color: var(--fg-meta);
+    border-right: 0.5px solid var(--border);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .stage-step:last-child { border-right: none; }
+  .stage-step.active { background: var(--primary-light); color: var(--primary); font-weight: 600; }
+  .stage-step.done { color: var(--go); }
+
+  /* ── Tab bar ── */
+  .tab-bar {
+    display: flex;
+    border-bottom: 0.5px solid var(--border);
+    background: var(--bg-card);
+    border-radius: 8px 8px 0 0;
+    overflow: hidden;
+  }
+  .tab {
+    padding: 0 16px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--fg-muted);
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .tab.active { color: var(--fg); border-bottom-color: var(--primary); }
+  .tab-badge {
+    font-size: 9px;
+    font-weight: 600;
+    padding: 1px 5px;
+    border-radius: 99px;
+    background: var(--bg-muted);
+    color: var(--fg-muted);
+  }
+  .tab.active .tab-badge { background: var(--primary-light); color: var(--primary); }
+
+  /* ── Content panel ── */
+  .panel {
+    background: var(--bg-card);
+    border: 0.5px solid var(--border);
+    border-top: none;
+    border-radius: 0 0 8px 8px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  /* ── Action header ── */
+  .action-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    background: var(--bg-card-2);
+    border: 0.5px solid var(--border);
+    border-radius: 6px;
+  }
+  .action-header-text { flex: 1; }
+  .action-header-title { font-size: 12px; font-weight: 600; }
+  .action-header-sub { font-size: 10px; color: var(--fg-muted); margin-top: 1px; }
+  .action-header-sub span { color: var(--primary); font-weight: 500; }
+  .action-header-meta { font-size: 10px; color: var(--fg-meta); }
+
+  .btn-run {
+    height: 30px;
+    padding: 0 14px;
+    background: var(--primary);
+    color: #fff;
+    border: none;
+    border-radius: 5px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+    transition: opacity 0.15s;
+    flex-shrink: 0;
+  }
+  .btn-run:hover { opacity: 0.88; }
+  .btn-run:disabled { opacity: 0.35; cursor: not-allowed; }
+  .btn-run-icon { font-size: 12px; }
+
+  /* ── Running state ── */
+  .running-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: var(--primary-light);
+    border: 0.5px solid var(--primary-border);
+    border-radius: 6px;
+    font-size: 11px;
+    color: var(--ai-chip-fg);
+  }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+  .pulse-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--primary);
+    animation: pulse 1.4s ease-in-out infinite;
+    flex-shrink: 0;
+  }
+  .running-steps { display: flex; flex-direction: column; gap: 2px; }
+  .running-step { font-size: 10px; color: var(--fg-muted); }
+  .running-step.done-step { color: var(--go); }
+  .running-step.active-step { color: var(--ai-chip-fg); font-weight: 500; }
+
+  /* ── Score summary ── */
+  .score-summary {
+    display: flex;
+    align-items: stretch;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .gauge-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 14px 20px;
+    background: var(--bg-card-2);
+    border: 0.5px solid var(--border);
+    border-radius: 6px;
+    flex-shrink: 0;
+  }
+  .gauge-arc {
+    position: relative;
+    width: 90px;
+    height: 52px;
+    overflow: visible;
+  }
+  .gauge-label { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
+  .gauge-sub { font-size: 10px; color: var(--fg-muted); }
+
+  .legend-wrap {
+    flex: 1;
+    min-width: 200px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    justify-content: center;
+  }
+  .legend-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+  }
+  .legend-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .legend-range { font-size: 10px; color: var(--fg-meta); margin-left: auto; font-variant-numeric: tabular-nums; }
+
+  .strength-badge {
+    padding: 3px 10px;
+    border-radius: 99px;
+    font-size: 10px;
+    font-weight: 600;
+    flex-shrink: 0;
+    align-self: center;
+  }
+
+  /* ── Parameter table ── */
+  .section-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--fg-meta);
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+  .param-table { width: 100%; border-collapse: collapse; }
+  .param-table th {
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--fg-meta);
+    font-weight: 600;
+    text-align: left;
+    padding: 5px 8px;
+    border-bottom: 0.5px solid var(--border);
+    white-space: nowrap;
+  }
+  .param-table th.right { text-align: right; }
+  .param-table td {
+    padding: 7px 8px;
+    border-bottom: 0.5px solid var(--border);
+    vertical-align: middle;
+  }
+  .param-table tr:last-child td { border-bottom: none; }
+  .param-table tr:hover td { background: var(--bg-muted); }
+
+  .param-num { font-size: 10px; color: var(--fg-meta); font-variant-numeric: tabular-nums; }
+  .param-name { font-size: 11px; font-weight: 500; }
+  .param-focus { font-size: 10px; color: var(--fg-muted); margin-top: 1px; }
+  .param-weight { font-size: 10px; color: var(--fg-muted); text-align: center; }
+  .param-contribution { font-size: 10px; font-variant-numeric: tabular-nums; text-align: right; }
+  .param-rationale { font-size: 10px; color: var(--fg-muted); max-width: 260px; }
+
+  .stars { display: flex; gap: 2px; }
+  .star { font-size: 12px; cursor: pointer; transition: transform 0.1s; color: var(--fg-meta); }
+  .star.filled { color: var(--accent); }
+  .star:hover { transform: scale(1.15); }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 9px;
+    font-weight: 600;
+    padding: 1px 5px;
+    border-radius: 3px;
+    margin-left: 4px;
+  }
+  .chip-ai { background: var(--ai-chip-bg); color: var(--ai-chip-fg); }
+  .chip-human { background: var(--human-chip-bg); color: var(--human-chip-fg); }
+
+  /* empty row state */
+  .param-table tr.empty-row td { opacity: 0.35; }
+
+  /* ── AI Analysis ── */
+  .analysis-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .analysis-card {
+    background: var(--bg-card-2);
+    border: 0.5px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+  }
+  .analysis-card.full { grid-column: 1 / -1; }
+  .analysis-card-title {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .analysis-item { font-size: 11px; display: flex; gap: 6px; margin-bottom: 5px; }
+  .analysis-item:last-child { margin-bottom: 0; }
+  .analysis-icon { flex-shrink: 0; margin-top: 1px; }
+
+  .rec-text { font-size: 11px; line-height: 1.55; color: var(--fg-muted); }
+  .rec-text strong { color: var(--fg); }
+
+  /* ── Lock decision ── */
+  .lock-section {
+    padding: 14px;
+    background: var(--bg-card-2);
+    border: 0.5px solid var(--border);
+    border-radius: 6px;
+  }
+  .lock-title { font-size: 11px; font-weight: 600; margin-bottom: 10px; }
+  .lock-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+  .lock-btn {
+    height: 32px;
+    padding: 0 16px;
+    border-radius: 5px;
+    border: 0.5px solid var(--border);
+    background: var(--bg-muted);
+    color: var(--fg-muted);
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .lock-btn:hover { border-color: currentColor; }
+  .lock-btn.go { background: var(--go-light); color: var(--go); border-color: rgba(34,197,94,0.3); }
+  .lock-btn.conditional { background: var(--cond-light); color: var(--cond); border-color: rgba(245,158,11,0.3); }
+  .lock-btn.nogo { background: var(--nogo-light); color: var(--nogo); border-color: rgba(239,68,68,0.3); }
+  .lock-btn.selected { opacity: 1; font-weight: 700; box-shadow: 0 0 0 2px currentColor; }
+  .lock-note { font-size: 10px; color: var(--fg-meta); margin-top: 8px; }
+
+  /* ── Empty state ── */
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 40px 24px;
+    gap: 10px;
+  }
+  .empty-icon { font-size: 32px; opacity: 0.25; }
+  .empty-title { font-size: 13px; font-weight: 600; }
+  .empty-body { font-size: 11px; color: var(--fg-muted); max-width: 360px; line-height: 1.6; }
+  .empty-hint {
+    font-size: 10px;
+    color: var(--fg-meta);
+    padding: 6px 12px;
+    background: var(--bg-muted);
+    border-radius: 4px;
+    border: 0.5px solid var(--border);
+  }
+
+  /* ── No-docs warning ── */
+  .no-docs-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: rgba(245,158,11,0.08);
+    border: 0.5px solid rgba(245,158,11,0.2);
+    border-radius: 5px;
+    font-size: 10px;
+    color: #d97706;
+  }
+
+  /* ── Divider ── */
+  .divider { height: 0.5px; background: var(--border); }
+
+  /* ── Locked badge ── */
+  .locked-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: var(--go-light);
+    border: 0.5px solid rgba(34,197,94,0.3);
+    border-radius: 5px;
+    font-size: 11px;
+    color: var(--go);
+    font-weight: 500;
+  }
+</style>
+
+<div class="switcher">
+  <span class="switcher-label">State</span>
+  <button class="sw-btn" onclick="setState('empty')">Empty</button>
+  <button class="sw-btn" onclick="setState('running')">Running</button>
+  <button class="sw-btn active" onclick="setState('done')">Completed</button>
+  <button class="sw-btn" onclick="setState('locked')">Locked (Go)</button>
+</div>
+
+<div class="shell">
+
+  <!-- Stage nav -->
+  <div class="stage-nav">
+    <div class="stage-step active">Deal Qualification</div>
+    <div class="stage-step">RFI</div>
+    <div class="stage-step">RFP</div>
+    <div class="stage-step">Orals</div>
+    <div class="stage-step">Due Diligence</div>
+    <div class="stage-step">BAFO</div>
+    <div class="stage-step">Contract &amp; Closure</div>
+    <div class="stage-step">Post Closure</div>
+  </div>
+
+  <!-- Tab bar -->
+  <div class="tab-bar">
+    <div class="tab">Bid Details</div>
+    <div class="tab">Bid Team</div>
+    <div class="tab active">Assessment &amp; Result <span class="tab-badge" id="tab-badge">—</span></div>
+    <div class="tab">Activity Log</div>
+  </div>
+
+  <!-- Panel -->
+  <div class="panel" id="panel-content">
+    <!-- injected by JS -->
+  </div>
+
+</div>
+
+<script>
+const CRITERIA = [
+  { id:"strategic_fit",      name:"Strategic Fit",         focus:"Alignment with company's long-term goals",           weight:0.15 },
+  { id:"business_problem",   name:"Business Problem",      focus:"Clarity and urgency of the customer's problem",      weight:0.10 },
+  { id:"use_case",           name:"Use Case Fit",          focus:"How well iMocha's solution addresses the need",      weight:0.10 },
+  { id:"stakeholder",        name:"Stakeholder Access",    focus:"Access to decision-makers and influencers",          weight:0.10 },
+  { id:"commercial",         name:"Commercial Potential",  focus:"Deal size, margins, and expansion potential",        weight:0.10 },
+  { id:"competitive",        name:"Competitive Position",  focus:"Win probability vs. alternatives",                   weight:0.10 },
+  { id:"implementation",     name:"Implementation Risk",   focus:"Complexity and resource requirements",               weight:0.10 },
+  { id:"technical",          name:"Technical Fit",         focus:"Integration feasibility and tech stack match",       weight:0.10 },
+  { id:"proposal_risk",      name:"Proposal Risk",         focus:"Risk of losing on proposal quality or timeline",     weight:0.10 },
+  { id:"value_realization",  name:"Value Realization",     focus:"Measurable outcomes and time-to-value",              weight:0.05 },
+];
+
+// AI-drafted scores + rationales for the "done" state
+const AI_SCORES = {
+  strategic_fit:     { score: 4, rationale: "Customer's RFP explicitly targets skills-based workforce transformation — core TA value proposition." },
+  business_problem:  { score: 5, rationale: "RFP cites 40% time-to-hire inefficiency and failed tech assessments as primary pain drivers." },
+  use_case:          { score: 4, rationale: "Skills assessment for high-volume tech roles aligns with TA's core test library coverage." },
+  stakeholder:       { score: 3, rationale: "CHRO named as sponsor; procurement-led process limits direct access to economic buyer." },
+  commercial:        { score: 4, rationale: "500-seat pilot with stated expansion to 2,000 seats signals strong TCV upside." },
+  competitive:       { score: 3, rationale: "Incumbent (HackerRank) is under active review; one unnamed shortlisted competitor." },
+  implementation:    { score: 4, rationale: "ATS integration required (Workday); customer IT team confirmed API feasibility in pre-RFI call." },
+  technical:         { score: 4, rationale: "Workday + Slack stack is fully supported; no edge-case integrations identified in requirements doc." },
+  proposal_risk:     { score: 3, rationale: "Proposal deadline is 14 days; custom ROI model requested — moderate effort risk." },
+  value_realization: { score: 4, rationale: "Customer KPIs (time-to-hire, quality-of-hire) map directly to TA benchmark reporting." },
+};
+
+const STRENGTHS = [
+  "Strong alignment with stated workforce transformation mandate — RFP requirements map directly to TA's skills taxonomy and assessment library.",
+  "Clear, quantified pain point (40% hiring inefficiency) makes ROI storytelling straightforward.",
+  "Workday ATS integration confirmed technically feasible — removes a common objection early.",
+];
+const RISKS = [
+  "Limited access to economic buyer (CHRO) through procurement-only RFP process — consider executive outreach.",
+  "Unnamed competitor on shortlist; win-probability is moderate without differentiated pricing or POC offer.",
+  "14-day proposal window with custom ROI model requirement — resource allocation needed immediately.",
+];
+const RECOMMENDATION = "Recommend a <strong>Conditional Go</strong>. The strategic fit and business problem clarity are strong anchors. Primary risk is limited stakeholder access and a tight proposal timeline. Assign a dedicated pre-sales resource, schedule an executive briefing request, and prepare a differentiated POC proposal with a 60-day pilot structure.";
+
+function computeScore(scores) {
+  return CRITERIA.reduce((sum, c) => {
+    const s = scores[c.id]?.score ?? 0;
+    return sum + (s / 5) * c.weight * 100;
+  }, 0);
+}
+
+function stars(score, rowId, isAi, editable) {
+  const chipHtml = isAi
+    ? `<span class="chip chip-ai">✦ AI</span>`
+    : `<span class="chip chip-human">✎ Edited</span>`;
+  const starsHtml = [1,2,3,4,5].map(i =>
+    `<span class="star ${i <= score ? 'filled' : ''}" data-row="${rowId}" data-val="${i}">${i <= score ? '★' : '☆'}</span>`
+  ).join('');
+  return `<div style="display:flex;align-items:center;gap:4px;">
+    <div class="stars">${starsHtml}</div>
+    ${editable ? chipHtml : ''}
+  </div>`;
+}
+
+let humanOverrides = {};
+
+function handleStarClick(rowId, val) {
+  humanOverrides[rowId] = val;
+  renderState(currentState);
+}
+
+let currentState = 'empty';
+
+function setState(s) {
+  currentState = s;
+  document.querySelectorAll('.sw-btn').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+  renderState(s);
+}
+
+function renderState(s) {
+  const panel = document.getElementById('panel-content');
+  const badge = document.getElementById('tab-badge');
+
+  if (s === 'empty') {
+    badge.textContent = '—';
+    panel.innerHTML = renderEmpty();
+  } else if (s === 'running') {
+    badge.textContent = '…';
+    panel.innerHTML = renderRunning();
+  } else if (s === 'done') {
+    badge.textContent = '72';
+    panel.innerHTML = renderDone(false);
+    attachStarListeners();
+  } else if (s === 'locked') {
+    badge.textContent = '72';
+    panel.innerHTML = renderDone(true);
+  }
+}
+
+function renderEmpty() {
+  return `
+    ${renderActionHeader(false, false)}
+    <div class="no-docs-bar">
+      ⚠ <span>No indexed customer documents found. Upload requirement documents in <strong>Bid Details</strong> to enable AI assessment.</span>
+    </div>
+    <div class="divider"></div>
+    <div class="empty-state">
+      <div class="empty-icon">🔍</div>
+      <div class="empty-title">No assessment yet</div>
+      <div class="empty-body">Upload the customer's requirement documents, then run the AI assessment. iMocha's AI reads their requirements against our knowledge base to draft scores for all 10 qualification parameters — you review and adjust before locking the decision.</div>
+      <div class="empty-hint">Supports PDF, DOCX, XLSX · Files are auto-indexed after upload</div>
+    </div>`;
+}
+
+function renderRunning() {
+  return `
+    ${renderActionHeader(true, true)}
+    <div class="running-banner">
+      <div class="pulse-dot"></div>
+      <div class="running-steps">
+        <div class="running-step done-step">✓ Retrieved 3 customer documents (18 chunks)</div>
+        <div class="running-step done-step">✓ Searched iMocha knowledge base</div>
+        <div class="running-step active-step">⟳ Scoring 10 qualification parameters…</div>
+        <div class="running-step">  Generating strengths, risks &amp; recommendation</div>
+      </div>
+    </div>
+    <div class="divider"></div>
+    <div class="section-label">Parameters</div>
+    <table class="param-table">
+      <thead>
+        <tr>
+          <th style="width:24px">#</th>
+          <th>Parameter</th>
+          <th class="right" style="width:52px">Weight</th>
+          <th style="width:120px">Score</th>
+          <th>AI Rationale</th>
+          <th class="right" style="width:72px">Contribution</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${CRITERIA.map((c,i) => `
+          <tr class="empty-row">
+            <td class="param-num">${String(i+1).padStart(2,'0')}</td>
+            <td><div class="param-name">${c.name}</div><div class="param-focus">${c.focus}</div></td>
+            <td class="param-weight">${Math.round(c.weight*100)}%</td>
+            <td><div class="stars">${[1,2,3,4,5].map(()=>`<span class="star">☆</span>`).join('')}</div></td>
+            <td class="param-rationale">—</td>
+            <td class="param-contribution" style="color:var(--fg-meta)">—</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+function renderDone(locked) {
+  const scores = {};
+  CRITERIA.forEach(c => {
+    scores[c.id] = {
+      score: humanOverrides[c.id] ?? AI_SCORES[c.id].score,
+      isHuman: !!humanOverrides[c.id]
+    };
+  });
+  const total = computeScore(scores);
+  const rounded = Math.round(total);
+
+  let bandColor = rounded >= 65 ? 'var(--go)' : rounded >= 45 ? 'var(--cond)' : 'var(--nogo)';
+  let bandLabel = rounded >= 65 ? 'Go' : rounded >= 45 ? 'Conditional Go' : 'No-Go';
+  let strengthLabel = rounded >= 75 ? 'Strong' : rounded >= 55 ? 'Moderate' : 'Weak';
+  let strengthBg = rounded >= 75 ? 'var(--go-light)' : rounded >= 55 ? 'var(--cond-light)' : 'var(--nogo-light)';
+  let strengthColor = rounded >= 75 ? 'var(--go)' : rounded >= 55 ? 'var(--cond)' : 'var(--nogo)';
+
+  return `
+    ${renderActionHeader(true, false, locked)}
+    ${locked ? `<div class="locked-banner">✓ Decision locked as <strong style="margin:0 4px;">Go</strong> — this bid will advance to RFI.</div>` : ''}
+    <div class="score-summary">
+      <div class="gauge-wrap">
+        ${renderGauge(rounded, bandColor)}
+        <div class="gauge-sub">Bid Strength &nbsp;<span class="strength-badge" style="background:${strengthBg};color:${strengthColor}">${strengthLabel}</span></div>
+      </div>
+      <div class="legend-wrap">
+        <div class="section-label">Decision Bands</div>
+        <div class="legend-row"><div class="legend-dot" style="background:var(--go)"></div>Go <span class="legend-range">65 – 100</span></div>
+        <div class="legend-row"><div class="legend-dot" style="background:var(--cond)"></div>Conditional Go <span class="legend-range">45 – 64</span></div>
+        <div class="legend-row"><div class="legend-dot" style="background:var(--nogo)"></div>No-Go <span class="legend-range">0 – 44</span></div>
+        <div style="margin-top:4px;font-size:10px;color:var(--fg-meta)">AI assessment grounded in 3 customer docs + iMocha KB · ${Object.keys(humanOverrides).length > 0 ? Object.keys(humanOverrides).length+' score(s) edited by you' : 'No manual edits yet'}</div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+    <div class="section-label">Parameters — edit scores to refine</div>
+    <div style="overflow-x:auto">
+    <table class="param-table">
+      <thead>
+        <tr>
+          <th style="width:24px">#</th>
+          <th>Parameter</th>
+          <th class="right" style="width:52px">Weight</th>
+          <th style="width:160px">Score</th>
+          <th>AI Rationale</th>
+          <th class="right" style="width:80px">Contribution</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${CRITERIA.map((c,i) => {
+          const s = scores[c.id].score;
+          const isHuman = scores[c.id].isHuman;
+          const contrib = ((s/5)*c.weight*100).toFixed(1);
+          const contribColor = s >= 4 ? 'var(--go)' : s >= 2 ? 'var(--cond)' : 'var(--nogo)';
+          return `
+          <tr>
+            <td class="param-num">${String(i+1).padStart(2,'0')}</td>
+            <td><div class="param-name">${c.name}</div><div class="param-focus">${c.focus}</div></td>
+            <td class="param-weight">${Math.round(c.weight*100)}%</td>
+            <td>${locked ? `<div class="stars">${[1,2,3,4,5].map(j=>`<span class="star ${j<=s?'filled':''}">${j<=s?'★':'☆'}</span>`).join('')}</div>` : stars(s, c.id, !isHuman, true)}</td>
+            <td class="param-rationale">${AI_SCORES[c.id].rationale}</td>
+            <td class="param-contribution" style="color:${contribColor}">${contrib}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="5" style="padding:7px 8px;font-size:11px;font-weight:600;text-align:right;border-top:0.5px solid var(--border)">Total Score</td>
+          <td style="padding:7px 8px;font-size:13px;font-weight:700;text-align:right;color:${bandColor};border-top:0.5px solid var(--border)">${rounded}</td>
+        </tr>
+      </tfoot>
+    </table>
+    </div>
+
+    <div class="divider"></div>
+    <div class="section-label">AI Analysis</div>
+    <div class="analysis-grid">
+      <div class="analysis-card">
+        <div class="analysis-card-title" style="color:var(--go)">✓ Key Strengths</div>
+        ${STRENGTHS.map(s => `<div class="analysis-item"><span class="analysis-icon" style="color:var(--go)">•</span><span>${s}</span></div>`).join('')}
+      </div>
+      <div class="analysis-card">
+        <div class="analysis-card-title" style="color:var(--nogo)">⚠ Risks / Watchouts</div>
+        ${RISKS.map(r => `<div class="analysis-item"><span class="analysis-icon" style="color:var(--cond)">•</span><span>${r}</span></div>`).join('')}
+      </div>
+      <div class="analysis-card full">
+        <div class="analysis-card-title" style="color:var(--fg-muted)">Recommendation</div>
+        <div class="rec-text">${RECOMMENDATION}</div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+    <div class="lock-section">
+      <div class="lock-title">Lock Decision ${locked ? '— locked' : '— required to advance to RFI'}</div>
+      <div class="lock-buttons">
+        <button class="lock-btn go ${locked ? 'selected' : ''}">Go</button>
+        <button class="lock-btn conditional">Conditional Go</button>
+        <button class="lock-btn nogo">No-Go</button>
+        <button class="lock-btn" style="margin-left:auto">Put on Hold</button>
+      </div>
+      ${locked ? '' : '<div class="lock-note">Locking the decision is permanent and will be recorded in the activity log.</div>'}
+    </div>`;
+}
+
+function renderActionHeader(hasRun, isRunning, locked) {
+  if (locked) {
+    return `<div class="action-header">
+      <div class="action-header-text">
+        <div class="action-header-title">AI Assessment &amp; Result</div>
+        <div class="action-header-sub">Last run <span>Jul 14, 2026 · 3 documents · iMocha KB</span></div>
+      </div>
+      <button class="btn-run" disabled style="opacity:0.3">
+        <span class="btn-run-icon">↺</span> Re-run
+      </button>
+    </div>`;
+  }
+  if (isRunning) {
+    return `<div class="action-header">
+      <div class="action-header-text">
+        <div class="action-header-title">AI Assessment &amp; Result</div>
+        <div class="action-header-sub">Reading <span>3 customer documents + iMocha knowledge base</span>…</div>
+      </div>
+      <button class="btn-run" disabled>
+        <div class="pulse-dot" style="width:8px;height:8px;background:#fff;margin-right:2px"></div> Assessing…
+      </button>
+    </div>`;
+  }
+  if (hasRun) {
+    return `<div class="action-header">
+      <div class="action-header-text">
+        <div class="action-header-title">AI Assessment &amp; Result</div>
+        <div class="action-header-sub">Last run <span>Jul 14, 2026 · 3 documents · iMocha KB</span> — edit scores below, then lock the decision.</div>
+      </div>
+      <button class="btn-run" onclick="">
+        <span class="btn-run-icon">↺</span> Re-run
+      </button>
+    </div>`;
+  }
+  return `<div class="action-header">
+    <div class="action-header-text">
+      <div class="action-header-title">AI Assessment &amp; Result</div>
+      <div class="action-header-sub">Reads customer documents + <span>iMocha knowledge base</span> to draft qualification scores.</div>
+    </div>
+    <button class="btn-run" disabled>
+      <span class="btn-run-icon">✦</span> Run AI Assessment
+    </button>
+  </div>`;
+}
+
+function renderGauge(score, color) {
+  const r = 38, cx = 45, cy = 45;
+  const startAngle = -Math.PI * 0.8;
+  const endAngle = Math.PI * 0.8;
+  const range = endAngle - startAngle;
+  const fillAngle = startAngle + (score / 100) * range;
+
+  function pt(angle) {
+    return { x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) };
+  }
+  function arcPath(sa, ea, cl) {
+    const s = pt(sa), e = pt(ea);
+    const largeArc = (ea - sa) > Math.PI ? 1 : 0;
+    return `<path d="M ${s.x} ${s.y} A ${r} ${r} 0 ${largeArc} 1 ${e.x} ${e.y}" fill="none" stroke="${cl}" stroke-width="7" stroke-linecap="round" />`;
+  }
+
+  const bgPath = arcPath(startAngle, endAngle, 'var(--bg-muted)');
+  const fgPath = score > 0 ? arcPath(startAngle, fillAngle, color) : '';
+
+  return `
+    <svg class="gauge-arc" viewBox="0 0 90 55" width="90" height="55">
+      ${bgPath}
+      ${fgPath}
+    </svg>
+    <div class="gauge-label" style="color:${color};margin-top:-14px">${score}</div>`;
+}
+
+function attachStarListeners() {
+  document.querySelectorAll('.star[data-row]').forEach(star => {
+    star.addEventListener('click', () => {
+      handleStarClick(star.dataset.row, parseInt(star.dataset.val));
+    });
+  });
+}
+
+// Initial render
+renderState('done');
+</script>
