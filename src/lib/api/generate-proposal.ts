@@ -21,6 +21,131 @@ async function getTemplateBuffer(filename: string): Promise<Buffer> {
 const TA_TEMPLATE = "TA_Proposal_template.docx";
 const TM_TEMPLATE = "TM_Proposal_template.docx";
 
+// ── Template configuration ──────────────────────────────────────────────────────
+// Each template declares the placeholder tokens it uses and the substitution
+// strategy for each. The engine (applySubstitutions) is generic — add a new
+// template by adding a new TemplateConfig entry, no engine changes needed.
+//
+// Strategies:
+//   "paragraph" — whole-paragraph exact match after decoding (handles split-run
+//                 tokens that Word's spell-checker broke across multiple <w:r>s)
+//   "direct"    — raw XML substring replacement (single-run tokens, XML-encoded
+//                 placeholders like &lt;Token&gt;). Value is xmlEscape'd before insert.
+//   "raw-xml"   — raw XML substring replacement where the value is already valid
+//                 XML (e.g. a full <w:t> node). Value inserted verbatim.
+
+type SubStrategy = "paragraph" | "direct" | "raw-xml";
+
+type SubEntry = {
+  token: string;
+  value: (intake: Intake) => string;
+  strategy: SubStrategy;
+};
+
+type TemplateConfig = {
+  filename: string;
+  substitutions: SubEntry[];
+  headerFooter: Array<{ token: string; value: (i: Intake) => string }>;
+  anchors: {
+    deliverablesHeading: string;
+    integrationsBookmark: string;
+  };
+};
+
+const DEFAULT_INTEGRATIONS =
+  "Workday, SAP SuccessFactors, Cornerstone OnDemand, Degreed, and other LTI-compliant LMS/LXP platforms";
+
+const COVER_PAGE_NOTE = "Please find our proposal attached for your review.";
+
+// ── TA template ─────────────────────────────────────────────────────────────────
+// Uses XML-tag style placeholders: &lt;Token&gt; for most fields,
+// a standalone <w:t>Name</w:t> run for Prepared For, and proofErr-split
+// <Sales spoc name> for the SPOC name.
+const TA_CONFIG: TemplateConfig = {
+  filename: TA_TEMPLATE,
+  anchors: {
+    deliverablesHeading:   "2.1 In scope Key Deliverables",
+    integrationsBookmark:  "_Integration_with_SAP",
+  },
+  headerFooter: [
+    { token: "&lt;Customer Name&gt;", value: i => sanitize(i.customer_display_name) },
+    { token: "&lt;RFP Name&gt;",      value: i => sanitize(i.rfp_name) },
+    { token: "CUSTOMER NAME",         value: i => sanitize(i.customer_display_name) },
+  ],
+  substitutions: [
+    { token: "&lt;RFP Name&gt;",                                                       strategy: "direct",    value: i => sanitize(i.rfp_name) },
+    { token: "&lt;Customer Name&gt;",                                                  strategy: "direct",    value: i => sanitize(i.customer_display_name) },
+    // Prepared For: "Name" is a standalone run after the "Prepared For:" label
+    { token: "<w:t>Name</w:t>",                                                        strategy: "raw-xml",   value: i => `<w:t xml:space="preserve">${xmlEscape(sanitize(i.prepared_for))}</w:t>` },
+    // SPOC name — split across runs by spell-checker
+    { token: "<Sales spoc name>",                                                      strategy: "paragraph", value: i => sanitize(i.spoc_name) },
+    { token: "Sales email id",                                                         strategy: "direct",    value: i => sanitize(i.spoc_email) },
+    { token: "&lt;How we are pleased to provide the solution&gt;",                     strategy: "direct",    value: i => sanitize(i.exec_summary.pleased) },
+    { token: "&lt;How we are aligned with customer goals and their requirement&gt;",   strategy: "direct",    value: i => sanitize(i.exec_summary.aligned) },
+    { token: "&lt;How confident we are to deliver value&gt;",                          strategy: "direct",    value: i => sanitize(i.exec_summary.confident) },
+    { token: "<How scope is aligned to what iMocha can deliver>",                      strategy: "paragraph", value: i => sanitize(i.scope_intro) },
+    { token: "&lt;HRMS, LMS, LXP",                                                     strategy: "direct",    value: i => sanitize(i.integrations ?? DEFAULT_INTEGRATIONS) },
+  ],
+};
+
+// ── TM template ─────────────────────────────────────────────────────────────────
+// Uses all-caps CUSTOMER as a token (no XML tags), "Sales person" for SPOC name,
+// "@imocha.io" hyperlink text for SPOC email. Many tokens are split across runs
+// by the spell-checker so require paragraph-level matching.
+// Order matters within each strategy pass — more-specific tokens before solo CUSTOMER
+// so "CUSTOMER Team" is handled as prepared_for before "CUSTOMER" fires.
+const TM_CONFIG: TemplateConfig = {
+  filename: TM_TEMPLATE,
+  anchors: {
+    deliverablesHeading:   "2.1 In scope Key Deliverables",
+    integrationsBookmark:  "_Integration_with_SAP",
+  },
+  headerFooter: [
+    { token: "&lt;RFP Name&gt;", value: i => sanitize(i.rfp_name) },
+    { token: "CUSTOMER",         value: i => sanitize(i.customer_display_name) },
+  ],
+  substitutions: [
+    // ── Paragraph-level (split-run tokens, must run before direct CUSTOMER) ───
+    // Cover page title — runs: "Customer" + " (" + "CUSTOMER" + ")"
+    { token: "Customer (CUSTOMER)",          strategy: "paragraph", value: i => sanitize(i.customer_display_name) },
+    // Prepared For — runs: "CUSTOMER" + " Team"
+    { token: "CUSTOMER Team",                strategy: "paragraph", value: i => sanitize(i.prepared_for) },
+    // Cover letter To: line — runs: "To:" + "CUSTOMER" + " Team"
+    { token: "To:CUSTOMER Team",             strategy: "paragraph", value: i => "To:" + sanitize(i.prepared_for) },
+    // Cover letter Dear line — runs: "Dear " + "&lt;Customer name&gt;" + ","
+    { token: "Dear <Customer name>,",        strategy: "paragraph", value: i => "Dear " + sanitize(i.customer_display_name) + "," },
+    // Cover letter body placeholder
+    { token: "<Cover page details>",         strategy: "paragraph", value: _ => COVER_PAGE_NOTE },
+    // SPOC name — same text appears in Prepared By (×2) and cover letter sign-off
+    { token: "Sales person",                 strategy: "paragraph", value: i => sanitize(i.spoc_name) },
+    // Scope intro
+    { token: "<How scope is aligned to what iMocha can deliver>", strategy: "paragraph", value: i => sanitize(i.scope_intro) },
+
+    // ── Direct (single-run XML tokens) ───────────────────────────────────────
+    { token: "&lt;RFP Name&gt;",                                                       strategy: "direct",    value: i => sanitize(i.rfp_name) },
+    { token: "&lt;Mention subject for cover page&gt;",                                 strategy: "direct",    value: i => sanitize(i.rfp_name) },
+    // Remaining CUSTOMER in body paragraphs (paragraph-level already handled the
+    // whole-paragraph cases above, so only long body-text instances remain)
+    { token: "CUSTOMER",                                                               strategy: "direct",    value: i => sanitize(i.customer_display_name) },
+    // Dear line fallback — single run if spell-checker didn't split it
+    { token: "&lt;Customer name&gt;",                                                  strategy: "direct",    value: i => sanitize(i.customer_display_name) },
+    // Cover page details fallback — single run if it wasn't paragraph-matched
+    { token: "&lt;Cover page details&gt;",                                             strategy: "direct",    value: _ => COVER_PAGE_NOTE },
+    // SPOC email — "@imocha.io" is the hyperlink text in the Prepared By block
+    { token: "@imocha.io",                                                             strategy: "direct",    value: i => sanitize(i.spoc_email) },
+    // Exec summary (may not exist in TM template — harmless if no match)
+    { token: "&lt;How we are pleased to provide the solution&gt;",                     strategy: "direct",    value: i => sanitize(i.exec_summary.pleased) },
+    { token: "&lt;How we are aligned with customer goals and their requirement&gt;",   strategy: "direct",    value: i => sanitize(i.exec_summary.aligned) },
+    { token: "&lt;How confident we are to deliver value&gt;",                          strategy: "direct",    value: i => sanitize(i.exec_summary.confident) },
+    { token: "&lt;HRMS, LMS, LXP",                                                     strategy: "direct",    value: i => sanitize(i.integrations ?? DEFAULT_INTEGRATIONS) },
+  ],
+};
+
+const TEMPLATE_CONFIGS: Record<string, TemplateConfig> = {
+  [TA_TEMPLATE]: TA_CONFIG,
+  [TM_TEMPLATE]: TM_CONFIG,
+};
+
 // ── Intake schema ──────────────────────────────────────────────────────────────
 export const IntakeSchema = z.object({
   product: z.enum(["TA", "TM"]),
@@ -283,71 +408,29 @@ function applyParagraphLevelSubstitutions(xml: string, subs: [string, string][])
   });
 }
 
-function applySubstitutions(xml: string, intake: Intake): string {
-  const integrationList =
-    intake.integrations ??
-    "Workday, SAP SuccessFactors, Cornerstone OnDemand, Degreed, and other LTI-compliant LMS/LXP platforms";
+// Generic substitution engine — driven entirely by TemplateConfig.
+// Pass order is deterministic: paragraph → direct → raw-xml.
+// Entries within each pass run in config declaration order, which is
+// why more-specific tokens (e.g. "CUSTOMER Team") are listed before
+// less-specific ones (e.g. solo "CUSTOMER") in each template config.
+function applySubstitutions(xml: string, intake: Intake, config: TemplateConfig): string {
+  // Pass 1: paragraph-level (whole-paragraph exact match, decoded text)
+  const paragraphSubs = config.substitutions
+    .filter(s => s.strategy === "paragraph")
+    .map(s => [s.token, s.value(intake)] as [string, string]);
+  let result = paragraphSubs.length
+    ? applyParagraphLevelSubstitutions(xml, paragraphSubs)
+    : xml;
 
-  // ── Pass 1: paragraph-level replacements ─────────────────────────────────────
-  // Must run BEFORE the solo CUSTOMER direct replacement below.
-  // The TM template splits "CUSTOMER Team" across two <w:r> runs (CUSTOMER + " Team"),
-  // so a simple string search can't find the combined token — paragraph-level exact
-  // match is the only reliable approach for these.
-  // Tokens are compared against the paragraph's DECODED full text (all <w:t> concat,
-  // &amp;/&lt;/&gt; unescaped), so use decoded form here.
-  const paragraphSubs: [string, string][] = [
-    // TM template — cover page (runs are proofErr-split)
-    ["Customer (CUSTOMER)",          sanitize(intake.customer_display_name)],
-    ["CUSTOMER Team",                sanitize(intake.prepared_for)],
-    ["To:CUSTOMER Team",             "To:" + sanitize(intake.prepared_for)],
-    // TM template — cover letter
-    ["Dear <Customer name>,",        "Dear " + sanitize(intake.customer_display_name) + ","],
-    ["<Cover page details>",         "Please find our proposal attached for your review."],
-    // Both templates — SPOC name (TA uses <Sales spoc name>, TM uses Sales person)
-    ["<Sales spoc name>",            sanitize(intake.spoc_name)],
-    ["Sales person",                 sanitize(intake.spoc_name)],
-    // Both templates — scope intro and exec summary (can be proofErr-split)
-    ["<How scope is aligned to what iMocha can deliver>", sanitize(intake.scope_intro)],
-  ];
-  let result = applyParagraphLevelSubstitutions(xml, paragraphSubs);
-
-  // ── Pass 2: direct XML-string replacements ────────────────────────────────────
-  // Order matters: more-specific multi-word tokens before the solo CUSTOMER token.
-  const directSubs: [string, string][] = [
-    // TA template — XML-encoded placeholders
-    ["&lt;RFP Name&gt;",                                                sanitize(intake.rfp_name)],
-    ["&lt;Customer Name&gt;",                                           sanitize(intake.customer_display_name)],
-    ["&lt;How we are pleased to provide the solution&gt;",             sanitize(intake.exec_summary.pleased)],
-    ["&lt;How we are aligned with customer goals and their requirement&gt;", sanitize(intake.exec_summary.aligned)],
-    ["&lt;How confident we are to deliver value&gt;",                  sanitize(intake.exec_summary.confident)],
-    // TM template — solo CUSTOMER in body paragraphs (paragraph-level already handled
-    // the whole-paragraph cases above, so only long body-text instances remain)
-    ["CUSTOMER NAME",                                                   sanitize(intake.customer_display_name)],
-    ["CUSTOMER",                                                        sanitize(intake.customer_display_name)],
-    // TM template — cover letter Dear line token (single run)
-    ["&lt;Customer name&gt;",                                           sanitize(intake.customer_display_name)],
-    // TM template — cover letter subject line token (single run)
-    ["&lt;Mention subject for cover page&gt;",                         sanitize(intake.rfp_name)],
-    // TM template — cover page instructions token (single run, paragraph-level missed it
-    // only when it appears inside a longer paragraph)
-    ["&lt;Cover page details&gt;",                                     "Please find our proposal attached for your review."],
-    // Email: TA uses "Sales email id", TM uses "@imocha.io" hyperlink text
-    ["Sales email id",                                                  sanitize(intake.spoc_email)],
-    ["@imocha.io",                                                      sanitize(intake.spoc_email)],
-    // Integrations heading placeholder
-    ["&lt;HRMS, LMS, LXP",                                             sanitize(integrationList)],
-  ];
-
-  for (const [token, value] of directSubs) {
-    result = result.split(token).join(xmlEscape(value));
+  // Pass 2: direct XML-string replacement (value is xmlEscape'd before insert)
+  for (const sub of config.substitutions.filter(s => s.strategy === "direct")) {
+    result = result.split(sub.token).join(xmlEscape(sub.value(intake)));
   }
 
-  // ── Pass 3: TA-template "Prepared For: Name" ──────────────────────────────────
-  // "Name" is a standalone <w:t>Name</w:t> run right after the "Prepared For:" label
-  // on the TA cover page. TM uses paragraph-level (handled in Pass 1 above).
-  result = result
-    .split("<w:t>Name</w:t>")
-    .join(`<w:t xml:space="preserve">${xmlEscape(sanitize(intake.prepared_for))}</w:t>`);
+  // Pass 3: raw-xml replacement (value is already valid XML, inserted verbatim)
+  for (const sub of config.substitutions.filter(s => s.strategy === "raw-xml")) {
+    result = result.split(sub.token).join(sub.value(intake));
+  }
 
   return result;
 }
@@ -367,12 +450,11 @@ function buildBulletParagraphs(deliverables: string[], numId: string | null): st
     .join("\n");
 }
 
-function injectDeliverables(xml: string, deliverables: string[]): string {
+function injectDeliverables(xml: string, deliverables: string[], config: TemplateConfig): string {
   const numId = discoverBulletNumId(xml);
   const bullets = buildBulletParagraphs(deliverables, numId);
 
-  const headingMarker = "2.1 In scope Key Deliverables";
-  const headingIdx = xml.indexOf(headingMarker);
+  const headingIdx = xml.indexOf(config.anchors.deliverablesHeading);
   if (headingIdx === -1) {
     return xml.replace("</w:body>", `${bullets}</w:body>`);
   }
@@ -381,14 +463,10 @@ function injectDeliverables(xml: string, deliverables: string[]): string {
   return xml.slice(0, headingParaEnd) + "\n" + bullets + xml.slice(headingParaEnd);
 }
 
-// Injects integrations_content as a body paragraph immediately after the Integration
-// heading. Uses the '_Integration_with_SAP' named bookmark as a reliable anchor —
-// it is embedded in the integrations heading paragraph in both TA and TM templates.
-function injectIntegrationsContent(xml: string, content: string): string {
+function injectIntegrationsContent(xml: string, content: string, config: TemplateConfig): string {
   if (!content) return xml;
 
-  const anchor = "_Integration_with_SAP";
-  const anchorIdx = xml.indexOf(anchor);
+  const anchorIdx = xml.indexOf(config.anchors.integrationsBookmark);
   if (anchorIdx === -1) return xml;
 
   const paraEnd = xml.indexOf("</w:p>", anchorIdx) + "</w:p>".length;
@@ -401,14 +479,12 @@ function injectIntegrationsContent(xml: string, content: string): string {
   return xml.slice(0, paraEnd) + "\n" + contentPara + xml.slice(paraEnd);
 }
 
-function applyHeaderFooterSubstitutions(xml: string, intake: Intake): string {
-  return xml
-    .split("&lt;Customer Name&gt;")
-    .join(xmlEscape(sanitize(intake.customer_display_name)))
-    .split("&lt;RFP Name&gt;")
-    .join(xmlEscape(sanitize(intake.rfp_name)))
-    .split("CUSTOMER NAME")
-    .join(xmlEscape(sanitize(intake.customer_display_name)));
+function applyHeaderFooterSubstitutions(xml: string, intake: Intake, config: TemplateConfig): string {
+  let result = xml;
+  for (const { token, value } of config.headerFooter) {
+    result = result.split(token).join(xmlEscape(value(intake)));
+  }
+  return result;
 }
 
 // ── Preview server function (Sonnet + RAG + chat history → ProposalPreview) ────
@@ -525,15 +601,16 @@ export const generateProposalFn = createServerFn({ method: "POST" })
 
     // ── Phase 2: Assemble DOCX ────────────────────────────────────────────────
     const templateFilename = intake.product === "TM" ? TM_TEMPLATE : TA_TEMPLATE;
+    const config = TEMPLATE_CONFIGS[templateFilename];
     const templateBuffer = await getTemplateBuffer(templateFilename);
 
     const zip = await JSZip.loadAsync(templateBuffer);
 
     const docXml = await zip.file("word/document.xml")!.async("string");
-    let editedDocXml = applySubstitutions(docXml, intake);
-    editedDocXml = injectDeliverables(editedDocXml, intake.deliverables);
+    let editedDocXml = applySubstitutions(docXml, intake, config);
+    editedDocXml = injectDeliverables(editedDocXml, intake.deliverables, config);
     if (intake.integrations_content) {
-      editedDocXml = injectIntegrationsContent(editedDocXml, intake.integrations_content);
+      editedDocXml = injectIntegrationsContent(editedDocXml, intake.integrations_content, config);
     }
     zip.file("word/document.xml", editedDocXml);
 
@@ -543,7 +620,7 @@ export const generateProposalFn = createServerFn({ method: "POST" })
         filename.endsWith(".xml")
       ) {
         const hfXml = await zip.file(filename)!.async("string");
-        zip.file(filename, applyHeaderFooterSubstitutions(hfXml, intake));
+        zip.file(filename, applyHeaderFooterSubstitutions(hfXml, intake, config));
       }
     }
 
