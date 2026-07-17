@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useCallback } from "react";
 import { DocxViewerModal } from "@/components/docs/DocxViewerModal";
-import { Lock, Users, ClipboardList, BarChart3, Activity, RefreshCw, FileText, Eye, Mail, UserPlus, X } from "lucide-react";
+import { Lock, Users, ClipboardList, BarChart3, Activity, RefreshCw, FileText, Eye, Mail, UserPlus, X, Pencil } from "lucide-react";
 import { initials, urgencyClass, fmtMoney } from "@/lib/bid-constants";
 import type { Bid, AssessmentData, QualificationInsights } from "@/lib/bid-queries";
 import { useDocuments, type BidDocument, type DocType } from "@/lib/doc-queries";
@@ -20,6 +20,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
 import { useCurrentUser } from "@/lib/auth";
 
 export const DEFAULT_CRITERIA = [
@@ -564,6 +565,7 @@ function AssessmentResultTab({ bid }: { bid: Bid }) {
   const generateDealBrief = useGenerateDealBrief();
   const updateBid = useUpdateBid();
   const { user } = useCurrentUser();
+  const qc = useQueryClient();
   const [docxViewer, setDocxViewer] = useState<{ url: string; filename: string } | null>(null);
   const openDocx = useCallback((url: string, filename: string) => setDocxViewer({ url, filename }), []);
 
@@ -574,6 +576,8 @@ function AssessmentResultTab({ bid }: { bid: Bid }) {
   const [dirty, setDirty] = useState(false);
   const [initialised, setInitialised] = useState(false);
   const prevBidId = useRef<string | null>(null);
+  // Which criterion row is currently in "pen edit" mode
+  const [editingRow, setEditingRow] = useState<string | null>(null);
 
   if ((!initialised || prevBidId.current !== bid.id) && assessmentData && !isLoading) {
     prevBidId.current = bid.id;
@@ -622,6 +626,19 @@ function AssessmentResultTab({ bid }: { bid: Bid }) {
   function handleSetComment(id: string, val: string) {
     setComments((p) => ({ ...p, [id]: val }));
     setDirty(true);
+  }
+
+  async function handlePenEdit(criterionId: string, newScore: number, criterionName: string) {
+    const oldScore = scores[criterionId] ?? 0;
+    handleSetScore(criterionId, newScore);
+    setEditingRow(null);
+    // Log score override to activity
+    await (supabase as any).from("bid_activity_log").insert({
+      bid_id: bid.id,
+      user_id: user?.id ?? null,
+      action: `Score updated: "${criterionName}" — ${oldScore}/5 → ${newScore}/5`,
+    });
+    qc.invalidateQueries({ queryKey: ["bid-activity", bid.id] });
   }
 
   async function handleSave() {
@@ -749,14 +766,15 @@ function AssessmentResultTab({ bid }: { bid: Bid }) {
         </section>
       )}
 
-      {/* ── Parameter table (editable) ── */}
+      {/* ── Parameter table ── */}
       {hasScores && (
+        <TooltipProvider delayDuration={200}>
         <section className="bg-card hairline border rounded-xl overflow-hidden">
           <header className="px-3.5 py-2.5 border-b hairline border-border flex items-center justify-between">
             <h3 className="text-[13px] font-medium">Parameter Scores</h3>
             {isAiScored && (
               <span className="text-[10px] text-muted-foreground">
-                ✦ AI-drafted · {touchedIds.size > 0 ? `${touchedIds.size} score${touchedIds.size !== 1 ? "s" : ""} edited` : "click stars to edit"}
+                ✦ AI-drafted · {touchedIds.size > 0 ? `${touchedIds.size} score${touchedIds.size !== 1 ? "s" : ""} manually edited` : "click ✎ to override a score"}
               </span>
             )}
           </header>
@@ -767,7 +785,7 @@ function AssessmentResultTab({ bid }: { bid: Bid }) {
                   <th className="text-left px-3.5 py-2 font-medium w-8">#</th>
                   <th className="text-left px-3.5 py-2 font-medium">Parameter</th>
                   <th className="text-center px-3.5 py-2 font-medium w-14">Weight</th>
-                  <th className="text-left px-3.5 py-2 font-medium w-52">Score</th>
+                  <th className="text-left px-3.5 py-2 font-medium w-56">Score</th>
                   <th className="text-left px-3.5 py-2 font-medium hidden lg:table-cell">
                     {isAiScored ? "AI Rationale" : "Notes"}
                   </th>
@@ -781,9 +799,16 @@ function AssessmentResultTab({ bid }: { bid: Bid }) {
                   const contribution = (score / 5) * c.weight * 100;
                   const maxContrib = c.weight * 100;
                   const isEdited = touchedIds.has(c.id);
+                  const isRowEditing = editingRow === c.id;
                   const scoreColor = score >= 4 ? "var(--color-success-foreground)" : score === 3 ? "var(--color-warning-foreground)" : score > 0 ? "var(--color-danger-foreground)" : undefined;
+                  const rationale = rationales[c.id];
+                  const tooltipText = rationale
+                    ? rationale
+                    : score > 0
+                    ? `${score}/5 × ${Math.round(c.weight * 100)}% weight = ${contribution.toFixed(1)} pts`
+                    : null;
                   return (
-                    <tr key={c.id} className="hover:bg-muted/20 transition-colors">
+                    <tr key={c.id} className={`hover:bg-muted/20 transition-colors ${isRowEditing ? "bg-primary/5" : ""}`}>
                       <td className="px-3.5 py-3 text-muted-foreground">{i + 1}</td>
                       <td className="px-3.5 py-3">
                         <div className="font-medium leading-snug">{c.parameter}</div>
@@ -792,14 +817,16 @@ function AssessmentResultTab({ bid }: { bid: Bid }) {
                       <td className="px-3.5 py-3 text-center text-muted-foreground">{Math.round(c.weight * 100)}%</td>
                       <td className="px-3.5 py-3">
                         <div className="flex items-center gap-2">
+                          {/* Stars — read-only unless this row is being edited */}
                           <div className="flex gap-1">
                             {[1, 2, 3, 4, 5].map((n) => (
                               <button
                                 key={n}
                                 type="button"
-                                onClick={() => handleSetScore(c.id, n)}
-                                className="transition-transform hover:scale-110"
-                                style={{ background: "none", border: "none", padding: 0, cursor: "pointer", lineHeight: 1 }}
+                                disabled={!isRowEditing}
+                                onClick={() => handlePenEdit(c.id, n, c.parameter)}
+                                className={`transition-transform ${isRowEditing ? "hover:scale-110 cursor-pointer" : "cursor-default"}`}
+                                style={{ background: "none", border: "none", padding: 0, lineHeight: 1 }}
                               >
                                 <svg width="18" height="18" viewBox="0 0 20 20">
                                   <path
@@ -812,7 +839,27 @@ function AssessmentResultTab({ bid }: { bid: Bid }) {
                               </button>
                             ))}
                           </div>
-                          {isAiScored && score > 0 && (
+                          {/* Pen / status badge */}
+                          {isRowEditing ? (
+                            <button
+                              type="button"
+                              onClick={() => setEditingRow(null)}
+                              className="text-[9px] font-semibold px-1.5 py-0.5 rounded shrink-0 bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                              title="Cancel edit"
+                            >
+                              Cancel
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setEditingRow(c.id)}
+                              className="text-muted-foreground hover:text-primary transition-colors shrink-0 ml-0.5"
+                              title="Override score"
+                            >
+                              <Pencil className="size-3" />
+                            </button>
+                          )}
+                          {isAiScored && score > 0 && !isRowEditing && (
                             <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded shrink-0 ${isEdited ? "bg-[#fff0e8] text-orange-600 dark:bg-orange-500/15 dark:text-orange-400" : "bg-[#ede9fd] text-primary dark:bg-primary/15"}`}>
                               {isEdited ? "✎ Edited" : "✦ AI"}
                             </span>
@@ -833,12 +880,41 @@ function AssessmentResultTab({ bid }: { bid: Bid }) {
                         )}
                       </td>
                       <td className="px-3.5 py-3 text-center">
-                        {score > 0 ? (
-                          <span className="font-medium" style={{ color: scoreColor }}>{contribution.toFixed(1)}</span>
+                        {score > 0 && tooltipText ? (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span
+                                className="inline-flex flex-col items-center cursor-help gap-0.5 group"
+                              >
+                                <span
+                                  className="font-medium underline decoration-dotted underline-offset-2"
+                                  style={{ color: scoreColor }}
+                                >
+                                  {contribution.toFixed(1)}
+                                </span>
+                                <span className="text-muted-foreground text-[10px]">/{maxContrib.toFixed(0)}</span>
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent
+                              side="left"
+                              className="bg-popover text-popover-foreground border hairline border-border shadow-lg max-w-[280px] text-left p-3 leading-relaxed text-[11px] font-normal"
+                            >
+                              {rationale ? (
+                                <div className="space-y-1.5">
+                                  <div className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">AI Justification</div>
+                                  <p>{rationale}</p>
+                                  <div className="pt-1 border-t hairline border-border text-[10px] text-muted-foreground">
+                                    {score}/5 × {Math.round(c.weight * 100)}% = <span className="font-semibold" style={{ color: scoreColor }}>{contribution.toFixed(1)} pts</span> (max {maxContrib.toFixed(0)})
+                                  </div>
+                                </div>
+                              ) : (
+                                <span>{tooltipText}</span>
+                              )}
+                            </TooltipContent>
+                          </Tooltip>
                         ) : (
                           <span className="text-muted-foreground">—</span>
                         )}
-                        <span className="text-muted-foreground text-[10px]">/{maxContrib.toFixed(0)}</span>
                       </td>
                     </tr>
                   );
@@ -858,6 +934,7 @@ function AssessmentResultTab({ bid }: { bid: Bid }) {
             </table>
           </div>
         </section>
+        </TooltipProvider>
       )}
 
       {/* ── AI Analysis ── */}

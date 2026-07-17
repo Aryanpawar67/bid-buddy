@@ -327,6 +327,7 @@ Rather than splitting documents into chunks and embedding them, an LLM reads the
 
 **What this fixes for BidPursuit**
 
+
  **specifically:**
 
 - *"Which of iMocha's certifications, integrations, and AI-governance policies together satisfy this client's compliance section?"* — today this fails because the answer spans 4 docs with no single chunk connecting them. Graph RAG traverses the relationship path.

@@ -1,10 +1,14 @@
-import { useState } from "react";
-import { Check, Circle, AlertTriangle, MessageSquare, Users, FileText, Activity, LayoutList, Clock, CheckCircle2, Plus, X, UserPlus } from "lucide-react";
+import { useState, useEffect } from "react";
+import {
+  Check, Circle, AlertTriangle, MessageSquare, Users, FileText, Activity, LayoutList,
+  Clock, CheckCircle2, Plus, X, UserPlus, Sparkles, RefreshCw, Download, ChevronDown, ChevronRight,
+} from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import type { Bid } from "@/lib/bid-queries";
 import {
   useStageItems, useToggleQuestion, useToggleDeliverable, useBidTeam, useBidActivity,
   useCreateQuestion, useUpdateQuestionResponse, useTeamMembers,
+  useGenerateRfiQuestions, useBulkCreateQuestions,
 } from "@/lib/bid-queries";
 import { supabase } from "@/integrations/supabase/client";
 import { initials } from "@/lib/bid-constants";
@@ -14,12 +18,14 @@ import { DocPreviewModal } from "@/components/docs/DocPreviewModal";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { AdvanceStageFooter } from "./AdvanceStageFooter";
 import type { TabDef } from "./BidHeaderBar";
+import { useCurrentUser } from "@/lib/auth";
+import type { RfiQuestion, RfiCategory } from "@/lib/api/generate-rfi-questions";
+import { RFI_CATEGORIES } from "@/lib/api/generate-rfi-questions";
 
-export type RFITab = "overview" | "questionnaire" | "team" | "activity_log";
+export type RFITab = "overview" | "team" | "activity_log";
 
 export const RFI_TABS: TabDef[] = [
   { key: "overview", label: "Overview", icon: LayoutList },
-  { key: "questionnaire", label: "Questionnaire", icon: MessageSquare },
   { key: "team", label: "Team", icon: Users },
   { key: "activity_log", label: "Activity Log", icon: Activity },
 ];
@@ -35,78 +41,188 @@ function avatarColor(name: string): string {
   return colors[Math.abs(hash) % colors.length];
 }
 
+// ── XLSX download helper ──────────────────────────────────────────────────────
+
+async function downloadQuestionnaire(questions: RfiQuestion[], clientName: string) {
+  const XLSX = await import("xlsx");
+
+  const NAVY  = "1B3560";
+  const WHITE = "FFFFFF";
+  const BLUE  = "D6E8FF";
+
+  type CellStyle = Record<string, unknown>;
+
+  function mkCell(v: string | number, s: CellStyle): any {
+    return { v, t: typeof v === "number" ? "n" : "s", s };
+  }
+
+  const navyFill  = { patternType: "solid", fgColor: { rgb: NAVY } };
+  const blueFill  = { patternType: "solid", fgColor: { rgb: BLUE } };
+  const whiteFill = { patternType: "solid", fgColor: { rgb: WHITE } };
+  const navyFont  = (sz: number, bold = false) => ({ bold, color: { rgb: WHITE }, sz, name: "Calibri" });
+  const bodyFont  = (sz = 11, bold = false) => ({ bold, sz });
+  const left      = { horizontal: "left",   vertical: "top",    wrapText: true };
+  const center    = { horizontal: "center", vertical: "center" };
+
+  const ws: any = {};
+
+  // Rows 1-3: iMocha banner (merged A1:D3)
+  ws["A1"] = mkCell("  iMocha", { fill: navyFill, font: navyFont(20, true), alignment: center });
+  for (const ref of ["B1","C1","D1","A2","B2","C2","D2","A3","B3","C3","D3"]) {
+    ws[ref] = mkCell("", { fill: navyFill });
+  }
+
+  // Row 4: column headers
+  const hBase = { fill: navyFill, font: navyFont(11, true) };
+  ws["A4"] = mkCell("#",                      { ...hBase, alignment: center });
+  ws["B4"] = mkCell("Category",               { ...hBase, alignment: left });
+  ws["C4"] = mkCell("Clarification Required", { ...hBase, alignment: left });
+  ws["D4"] = mkCell("Client Response",        { ...hBase, alignment: left });
+
+  // Data rows (row 5 onward)
+  questions.forEach((q, i) => {
+    const row  = i + 5;
+    const fill = i % 2 === 0 ? blueFill : whiteFill;
+    ws[`A${row}`] = mkCell(i + 1,      { fill, font: bodyFont(11, true), alignment: center });
+    ws[`B${row}`] = mkCell(q.category, { fill, font: bodyFont(10),       alignment: left });
+    ws[`C${row}`] = mkCell(q.question, { fill, font: bodyFont(11),       alignment: left });
+    ws[`D${row}`] = mkCell("",         { fill: whiteFill, font: bodyFont(11), alignment: left });
+  });
+
+  const lastRow = questions.length + 4;
+  ws["!ref"]    = `A1:D${lastRow}`;
+  ws["!cols"]   = [{ wch: 5 }, { wch: 26 }, { wch: 65 }, { wch: 42 }];
+  ws["!rows"]   = [{ hpt: 26 }, { hpt: 10 }, { hpt: 10 }, { hpt: 20 }];
+  ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 2, c: 3 } }];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Clarification Questions");
+  const buf  = XLSX.write(wb, { type: "array", bookType: "xlsx", cellStyles: true });
+  const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href     = url;
+  a.download = `${clientName.replace(/[^a-zA-Z0-9]/g, "_")}_RFI_Clarification_Questions.xlsx`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// ── RFIWorkspace ──────────────────────────────────────────────────────────────
+
 export function RFIWorkspace({ bid, activeTab, onTabChange }: {
   bid: Bid;
   activeTab: string;
   onTabChange: (t: string) => void;
 }) {
-  const items = useStageItems(bid.id, "rfi");
-  const { data: team = [] } = useBidTeam(bid.id);
+  const { user } = useCurrentUser();
+  const items     = useStageItems(bid.id, "rfi");
+  const { data: team = [] }     = useBidTeam(bid.id);
   const { data: activity = [] } = useBidActivity(bid.id);
+  const { data: docs = [] }     = useDocuments({ bidId: bid.id });
   const [docPanelOpen, setDocPanelOpen] = useState(false);
 
-  const questions = items.data?.questions ?? [];
-  const deliverables = items.data?.deliverables ?? [];
-  const toggleQ = useToggleQuestion();
-  const toggleD = useToggleDeliverable();
+  const allQuestions  = items.data?.questions ?? [];
+  const deliverables  = items.data?.deliverables ?? [];
+  const toggleQ       = useToggleQuestion();
+  const toggleD       = useToggleDeliverable();
+  const generateRfi   = useGenerateRfiQuestions();
+  const bulkCreate    = useBulkCreateQuestions();
 
-  const total = questions.length;
-  const answered = questions.filter((q) => q.status === "done").length;
-  const inProgress = questions.filter((q) => q.status === "in_progress").length;
-  const pending = questions.filter((q) => q.status === "pending" || q.status === "blocked").length;
-  const pct = total ? Math.round((answered / total) * 100) : 0;
+  // Review panel state — persisted in sessionStorage so refresh doesn't lose it
+  const SESSION_KEY = `rfi_draft_${bid.id}`;
+  const [generated, setGeneratedRaw] = useState<RfiQuestion[] | null>(null);
+  const [selected,  setSelected]     = useState<Set<number>>(new Set());
+  const [showAllQs, setShowAllQs]    = useState(false);
 
-  const dl = daysLeft(bid.deadline);
+  // Restore draft from sessionStorage on mount
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem(SESSION_KEY);
+      if (saved) {
+        const { questions: qs, selectedIndices } = JSON.parse(saved);
+        setGeneratedRaw(qs);
+        setSelected(new Set(selectedIndices as number[]));
+      }
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function setGenerated(qs: RfiQuestion[] | null) {
+    setGeneratedRaw(qs);
+  }
+
+  // Sync review state to sessionStorage whenever it changes
+  useEffect(() => {
+    if (generated) {
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify({
+        questions: generated,
+        selectedIndices: Array.from(selected),
+      }));
+    } else {
+      sessionStorage.removeItem(SESSION_KEY);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [generated, selected]);
+
+  const hasIndexedDocs = docs.some((d: any) => d.embedding !== null);
+
+  // Separate active (pending/in_progress/done) from archived (blocked)
+  const questions = allQuestions.filter((q: any) => q.status !== "blocked");
+  const archived  = allQuestions.filter((q: any) => q.status === "blocked");
+
+  const total      = questions.length;
+  const answered   = questions.filter((q: any) => q.status === "done").length;
+  const inProgress = questions.filter((q: any) => q.status === "in_progress").length;
+  const pending    = questions.filter((q: any) => q.status === "pending").length;
+  const pct        = total ? Math.round((answered / total) * 100) : 0;
+
+  const dl       = daysLeft(bid.deadline);
   const clarDays = (bid as any).clarification_deadline
     ? Math.ceil((new Date((bid as any).clarification_deadline).getTime() - Date.now()) / 86400000)
     : null;
 
-  const health = total === 0 ? "Not Started" : pct >= 70 ? "On Track" : pct >= 40 ? "Needs Attention" : "At Risk";
+  const health      = total === 0 ? "Not Started" : pct >= 70 ? "On Track" : pct >= 40 ? "Needs Attention" : "At Risk";
   const healthColor = total === 0 ? "var(--color-muted-foreground)" : pct >= 70 ? "#16a34a" : pct >= 40 ? "#d97706" : "#dc2626";
-  const healthBg = total === 0 ? "var(--color-muted)" : pct >= 70 ? "#dcfce7" : pct >= 40 ? "#fef9c3" : "#fee2e2";
+  const healthBg    = total === 0 ? "var(--color-muted)" : pct >= 70 ? "#dcfce7" : pct >= 40 ? "#fef9c3" : "#fee2e2";
 
-  if (activeTab === "questionnaire") {
-    return (
-      <div className="px-6 py-5 max-w-[1100px]">
-        <div className="flex gap-4 items-start">
-          <div className="flex-1 min-w-0 bg-card hairline border rounded-xl overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3 border-b hairline border-border">
-              <h3 className="text-[13px] font-semibold">RFI Questions</h3>
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] text-muted-foreground">{answered}/{total} answered</span>
-                <button
-                  onClick={() => setDocPanelOpen((o) => !o)}
-                  title="Toggle documents"
-                  className={`p-1 rounded hover:bg-muted ${docPanelOpen ? "text-primary" : "text-muted-foreground"}`}
-                >
-                  <FileText className="size-3.5" />
-                </button>
-              </div>
-            </div>
-            {questions.length === 0 ? (
-              <div className="py-8 text-center text-[12px] text-muted-foreground">No questions added for this stage yet.</div>
-            ) : (
-              <ul className="divide-y hairline divide-border">
-                {questions.map((q, i) => (
-                  <QuestionRow
-                    key={q.id}
-                    num={i + 1}
-                    question={q}
-                    onCycle={() => {
-                      const next = q.status === "pending" ? "in_progress" : q.status === "in_progress" ? "done" : "pending";
-                      toggleQ.mutate({ id: q.id, status: next });
-                    }}
-                  />
-                ))}
-              </ul>
-            )}
-            <AddQuestionInline bidId={bid.id} stage="rfi" />
-          </div>
-          {docPanelOpen && <DocQuickPanel bidId={bid.id} onClose={() => setDocPanelOpen(false)} />}
-        </div>
-        <AdvanceStageFooter bid={bid} stage="rfi" />
-      </div>
-    );
+  function handleGenerate() {
+    generateRfi.mutate({ bidId: bid.id }, {
+      onSuccess: ({ questions: qs }) => {
+        setGenerated(qs);
+        setSelected(new Set(qs.map((_, i) => i))); // all pre-selected
+      },
+    });
+  }
+
+  async function handleConfirm() {
+    if (!generated) return;
+    const selectedQs = generated.filter((_, i) => selected.has(i));
+    const archivedQs = generated.filter((_, i) => !selected.has(i));
+
+    const rows = [
+      ...selectedQs.map((q, i) => ({
+        question_text: `[${q.category}] ${q.question}`,
+        status: "pending",
+        order_index: questions.length + i,
+      })),
+      ...archivedQs.map((q, i) => ({
+        question_text: q.question,
+        status: "blocked",
+        order_index: questions.length + selectedQs.length + i,
+      })),
+    ];
+
+    await bulkCreate.mutateAsync({ bidId: bid.id, rows });
+
+    await (supabase as any).from("bid_activity_log").insert({
+      bid_id: bid.id,
+      user_id: user?.id ?? null,
+      action: `AI generated ${selectedQs.length} RFI clarification questions (${archivedQs.length} archived)`,
+    });
+
+    await downloadQuestionnaire(selectedQs, bid.client_name);
+    setGenerated(null);
+    setSelected(new Set());
   }
 
   if (activeTab === "team") {
@@ -162,10 +278,11 @@ export function RFIWorkspace({ bid, activeTab, onTabChange }: {
     );
   }
 
-  // Overview tab
+  // ── Overview tab ────────────────────────────────────────────────────────────
+
   return (
-    <div className="px-6 py-5 max-w-[1100px]">
-      {/* Clarification deadline alert */}
+    <div className="px-6 py-5 flex gap-4 items-start">
+    <div className="flex-1 min-w-0 max-w-[1100px]">
       {clarDays !== null && clarDays <= 3 && (
         <div className="mb-4 flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/30 border hairline border-amber-400 text-[11px] text-amber-700 dark:text-amber-400">
           <AlertTriangle className="size-3.5 shrink-0" />
@@ -177,9 +294,7 @@ export function RFIWorkspace({ bid, activeTab, onTabChange }: {
         </div>
       )}
 
-      {/* Stats row */}
       <div className="grid grid-cols-4 gap-3 mb-5">
-        {/* Progress donut */}
         <div className="col-span-1 bg-card hairline border rounded-xl p-4 flex flex-col items-center justify-center gap-2">
           <svg width="80" height="80" viewBox="0 0 80 80">
             <circle cx="40" cy="40" r="34" fill="none" stroke="var(--color-muted)" strokeWidth="7" />
@@ -198,7 +313,6 @@ export function RFIWorkspace({ bid, activeTab, onTabChange }: {
           </div>
         </div>
 
-        {/* RFI Details */}
         <div className="col-span-2 bg-card hairline border rounded-xl p-4">
           <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-3">RFI Details</div>
           <div className="grid grid-cols-2 gap-y-2">
@@ -224,7 +338,6 @@ export function RFIWorkspace({ bid, activeTab, onTabChange }: {
           </div>
         </div>
 
-        {/* Health */}
         <div className="col-span-1 bg-card hairline border rounded-xl p-4 flex flex-col gap-3">
           <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">RFI Health</div>
           <span
@@ -241,7 +354,6 @@ export function RFIWorkspace({ bid, activeTab, onTabChange }: {
         </div>
       </div>
 
-      {/* Team strip */}
       {team.length > 0 && (
         <div className="bg-card hairline border rounded-xl p-4 mb-4 flex items-center gap-4">
           <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold shrink-0">Team</div>
@@ -275,49 +387,108 @@ export function RFIWorkspace({ bid, activeTab, onTabChange }: {
         </div>
       )}
 
-      {/* Progress bars legend */}
       <div className="flex items-center gap-4 mb-3 px-1">
         <LegendDot color="#491AEB" label={`Answered (${answered})`} />
         <LegendDot color="#f59e0b" label={`In Progress (${inProgress})`} />
         <LegendDot color="var(--color-border-strong)" label={`Pending (${pending})`} />
       </div>
 
-      {/* Questions list */}
       <div className="bg-card hairline border rounded-xl overflow-hidden mb-4">
+        {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b hairline border-border">
           <h3 className="text-[13px] font-semibold">Questions</h3>
-          <span className="text-[11px] text-muted-foreground">{total} total</span>
+          <div className="flex items-center gap-2">
+            {!generated && (
+              <span className="text-[11px] text-muted-foreground">{answered}/{total} answered</span>
+            )}
+            {!generated && (
+              <button
+                onClick={handleGenerate}
+                disabled={generateRfi.isPending || !hasIndexedDocs}
+                title={!hasIndexedDocs ? "Upload and index documents in Bid Details to enable AI generation" : "Generate clarification questions with AI"}
+                className="h-7 px-2.5 rounded-md bg-primary text-primary-foreground text-[11px] font-medium inline-flex items-center gap-1.5 disabled:opacity-40 hover:opacity-90 transition-opacity"
+              >
+                {generateRfi.isPending
+                  ? <><RefreshCw className="size-3 animate-spin" /> Generating…</>
+                  : <><Sparkles className="size-3" /> Generate</>}
+              </button>
+            )}
+            <button
+              onClick={() => setDocPanelOpen((o) => !o)}
+              title="Toggle documents panel"
+              className={`p-1 rounded hover:bg-muted ${docPanelOpen ? "text-primary" : "text-muted-foreground"}`}
+            >
+              <FileText className="size-3.5" />
+            </button>
+          </div>
         </div>
-        {questions.length === 0 ? (
-          <div className="py-8 text-center text-[12px] text-muted-foreground">No questions for this stage.</div>
-        ) : (
-          <ul className="divide-y hairline divide-border">
-            {questions.slice(0, 8).map((q, i) => (
-              <QuestionRow
-                key={q.id}
-                num={i + 1}
-                question={q}
-                onCycle={() => {
-                  const next = q.status === "pending" ? "in_progress" : q.status === "in_progress" ? "done" : "pending";
-                  toggleQ.mutate({ id: q.id, status: next });
-                }}
-              />
-            ))}
-          </ul>
+
+        {/* Generating banner */}
+        {generateRfi.isPending && (
+          <div className="flex items-center gap-2 px-4 py-2.5 bg-primary/5 text-primary text-[11px] border-b hairline border-primary/20">
+            <RefreshCw className="size-3 animate-spin shrink-0" />
+            Analyzing customer documents + iMocha KB · generating clarification questions…
+          </div>
         )}
-        {questions.length > 8 ? (
-          <button
-            onClick={() => onTabChange("questionnaire")}
-            className="w-full px-4 py-2.5 border-t hairline border-border text-[11px] text-primary font-medium hover:bg-muted/40 text-left"
-          >
-            View all {questions.length} questions →
-          </button>
+
+        {/* Review panel OR normal list */}
+        {generated ? (
+          <ReviewPanel
+            questions={generated}
+            selected={selected}
+            onToggle={(i) =>
+              setSelected((prev) => {
+                const next = new Set(prev);
+                if (next.has(i)) next.delete(i); else next.add(i);
+                return next;
+              })
+            }
+            onSelectAll={() => setSelected(new Set(generated.map((_, i) => i)))}
+            onDeselectAll={() => setSelected(new Set())}
+            onConfirm={handleConfirm}
+            onDiscard={() => { setGenerated(null); setSelected(new Set()); }}
+            isConfirming={bulkCreate.isPending}
+          />
         ) : (
-          <AddQuestionInline bidId={bid.id} stage="rfi" />
+          <>
+            {questions.length === 0 ? (
+              <div className="py-8 text-center">
+                <div className="text-[12px] text-muted-foreground mb-1">No questions added yet.</div>
+                {hasIndexedDocs && (
+                  <div className="text-[11px] text-muted-foreground/60 mt-0.5">
+                    Click Generate to auto-populate clarification questions from your documents.
+                  </div>
+                )}
+              </div>
+            ) : (
+              <ul className="divide-y hairline divide-border">
+                {(showAllQs ? questions : questions.slice(0, 8)).map((q: any, i: number) => (
+                  <QuestionRow
+                    key={q.id}
+                    num={i + 1}
+                    question={q}
+                    onCycle={() => {
+                      const next = q.status === "pending" ? "in_progress" : q.status === "in_progress" ? "done" : "pending";
+                      toggleQ.mutate({ id: q.id, status: next });
+                    }}
+                  />
+                ))}
+              </ul>
+            )}
+            {questions.length > 8 && (
+              <button
+                onClick={() => setShowAllQs((o) => !o)}
+                className="w-full px-4 py-2.5 border-t hairline border-border text-[11px] text-primary font-medium hover:bg-muted/40 text-left"
+              >
+                {showAllQs ? `▲ Show less` : `▼ Show all ${questions.length} questions`}
+              </button>
+            )}
+            {(showAllQs || questions.length <= 8) && <AddQuestionInline bidId={bid.id} stage="rfi" />}
+            <ArchivedSection questions={archived} />
+          </>
         )}
       </div>
 
-      {/* Deliverables */}
       {deliverables.length > 0 && (
         <div className="bg-card hairline border rounded-xl overflow-hidden">
           <div className="flex items-center justify-between px-4 py-3 border-b hairline border-border">
@@ -353,6 +524,142 @@ export function RFIWorkspace({ bid, activeTab, onTabChange }: {
 
       <AdvanceStageFooter bid={bid} stage="rfi" />
     </div>
+    {docPanelOpen && <DocQuickPanel bidId={bid.id} onClose={() => setDocPanelOpen(false)} />}
+    </div>
+  );
+}
+
+// ── ReviewPanel ───────────────────────────────────────────────────────────────
+
+function ReviewPanel({
+  questions,
+  selected,
+  onToggle,
+  onSelectAll,
+  onDeselectAll,
+  onConfirm,
+  onDiscard,
+  isConfirming,
+}: {
+  questions: RfiQuestion[];
+  selected: Set<number>;
+  onToggle: (i: number) => void;
+  onSelectAll: () => void;
+  onDeselectAll: () => void;
+  onConfirm: () => void;
+  onDiscard: () => void;
+  isConfirming: boolean;
+}) {
+  const selectedCount = selected.size;
+  const total         = questions.length;
+
+  // Group by category, preserving declaration order
+  const groups = RFI_CATEGORIES
+    .map((cat) => ({
+      cat,
+      items: questions
+        .map((q, idx) => ({ ...q, idx }))
+        .filter((q) => q.category === cat),
+    }))
+    .filter((g) => g.items.length > 0);
+
+  return (
+    <div className="flex flex-col">
+      {/* Category + checkbox list */}
+      <div className="max-h-[440px] overflow-y-auto divide-y hairline divide-border">
+        {groups.map(({ cat, items }) => (
+          <div key={cat}>
+            <div className="px-4 py-1.5 bg-muted/40 sticky top-0 z-10">
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+                {cat}
+              </span>
+            </div>
+            {items.map(({ question, idx }) => {
+              const isSelected = selected.has(idx);
+              return (
+                <label
+                  key={idx}
+                  className={`flex items-start gap-3 px-4 py-2.5 cursor-pointer transition-colors ${
+                    isSelected ? "hover:bg-muted/20" : "hover:bg-muted/10 opacity-50"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={() => onToggle(idx)}
+                    className="mt-0.5 size-3.5 shrink-0 accent-primary cursor-pointer"
+                  />
+                  <span className="text-[12px] leading-relaxed select-none">{question}</span>
+                </label>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+
+      {/* Footer */}
+      <div className="px-4 py-3 bg-muted/20 border-t hairline border-border flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <span className="text-[11px] text-muted-foreground">
+            <span className="font-semibold text-foreground">{selectedCount}</span> of {total} selected
+          </span>
+          <span className="text-muted-foreground/40">·</span>
+          <button onClick={onSelectAll} className="text-[11px] text-primary hover:underline">All</button>
+          <button onClick={onDeselectAll} className="text-[11px] text-muted-foreground hover:underline">None</button>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onDiscard}
+            disabled={isConfirming}
+            className="h-8 px-3 rounded-md hairline border text-[11px] text-muted-foreground hover:bg-muted disabled:opacity-40 transition-colors"
+          >
+            Discard
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={isConfirming || selectedCount === 0}
+            className="h-8 px-3.5 rounded-md bg-primary text-primary-foreground text-[11px] font-medium inline-flex items-center gap-1.5 disabled:opacity-40 hover:opacity-90 transition-opacity"
+          >
+            {isConfirming
+              ? <><RefreshCw className="size-3 animate-spin" /> Adding…</>
+              : <><Download className="size-3.5" /> Add to List & Download</>}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── ArchivedSection ───────────────────────────────────────────────────────────
+
+function ArchivedSection({ questions }: { questions: any[] }) {
+  const [open, setOpen] = useState(false);
+  if (questions.length === 0) return null;
+
+  return (
+    <div className="border-t hairline border-border">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-muted/20 transition-colors"
+      >
+        {open
+          ? <ChevronDown className="size-3.5 text-muted-foreground shrink-0" />
+          : <ChevronRight className="size-3.5 text-muted-foreground shrink-0" />}
+        <span className="text-[11px] text-muted-foreground">
+          Archived AI Suggestions — {questions.length}
+        </span>
+      </button>
+      {open && (
+        <ul className="pb-2 divide-y hairline divide-border/50">
+          {questions.map((q: any, i: number) => (
+            <li key={q.id} className="flex items-start gap-2.5 px-4 py-2 opacity-55">
+              <span className="text-[10px] text-muted-foreground w-4 shrink-0 mt-0.5">{i + 1}</span>
+              <span className="text-[11px] text-muted-foreground leading-relaxed">{q.question_text}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -364,10 +671,10 @@ function QuestionRow({ num, question, onCycle }: {
   onCycle: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const [draft, setDraft] = useState(question.response_text ?? "");
-  const updateResponse = useUpdateQuestionResponse();
+  const [draft, setDraft]       = useState(question.response_text ?? "");
+  const updateResponse          = useUpdateQuestionResponse();
 
-  const done = question.status === "done";
+  const done   = question.status === "done";
   const inProg = question.status === "in_progress";
 
   return (
@@ -381,15 +688,12 @@ function QuestionRow({ num, question, onCycle }: {
             done ? "bg-success-soft border-[#97C459]" : inProg ? "border-amber-400 bg-amber-50 dark:bg-amber-950/30" : "border-dashed border-border-strong",
           ].join(" ")}
         >
-          {done && <Check className="size-3 text-success-foreground" strokeWidth={2.5} />}
+          {done   && <Check className="size-3 text-success-foreground" strokeWidth={2.5} />}
           {inProg && <div className="size-2 rounded-full bg-amber-400" />}
           {!done && !inProg && <Circle className="size-2 text-muted-foreground/40" />}
         </button>
         <div className="flex-1 min-w-0">
-          <button
-            onClick={() => setExpanded((o) => !o)}
-            className="text-left w-full"
-          >
+          <button onClick={() => setExpanded((o) => !o)} className="text-left w-full">
             <div className={`text-[12.5px] leading-snug ${done ? "line-through text-muted-foreground" : ""}`}>
               {question.question_text}
             </div>
@@ -404,9 +708,7 @@ function QuestionRow({ num, question, onCycle }: {
             {question.assigned_team && (
               <span className="text-[10px] text-muted-foreground">{question.assigned_team.replace(/_/g, " ")}</span>
             )}
-            {question.response_text && (
-              <FileText className="size-3 text-muted-foreground" />
-            )}
+            {question.response_text && <FileText className="size-3 text-muted-foreground" />}
           </div>
         </div>
       </div>
@@ -440,7 +742,7 @@ function AddQuestionInline({ bidId, stage }: { bidId: string; stage: "rfi" | "rf
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [team, setTeam] = useState<"pre_sales" | "legal" | "finance">("pre_sales");
-  const create = useCreateQuestion();
+  const create          = useCreateQuestion();
 
   if (!open) {
     return (
@@ -535,7 +837,7 @@ function DocQuickPanel({ bidId, onClose }: { bidId: string; onClose: () => void 
 
 function AssignMemberPopover({ bidId, assignedUserIds }: { bidId: string; assignedUserIds: string[] }) {
   const { data: members = [] } = useTeamMembers();
-  const qc = useQueryClient();
+  const qc   = useQueryClient();
   const [open, setOpen] = useState(false);
 
   const unassigned = members.filter((m) => !assignedUserIds.includes(m.user_id));

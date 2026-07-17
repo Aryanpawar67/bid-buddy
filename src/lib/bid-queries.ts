@@ -598,6 +598,51 @@ export function useEnsureApprovals() {
   });
 }
 
+// ── useGenerateRfiQuestions ───────────────────────────────────────────────────
+
+export function useGenerateRfiQuestions() {
+  return useMutation({
+    mutationFn: async ({ bidId }: { bidId: string }) => {
+      const { data: { session } } = await supabase.auth.getSession();
+      const { generateRfiQuestionsFn } = await import("@/lib/api/generate-rfi-questions");
+      return generateRfiQuestionsFn({
+        data: { bidId },
+        headers: { authorization: `Bearer ${session?.access_token ?? ""}` },
+      });
+    },
+  });
+}
+
+// ── useBulkCreateQuestions ────────────────────────────────────────────────────
+
+export function useBulkCreateQuestions() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      bidId,
+      rows,
+    }: {
+      bidId: string;
+      rows: { question_text: string; status: string; order_index: number }[];
+    }) => {
+      const inserts = rows.map((r) => ({
+        bid_id: bidId,
+        stage: "rfi" as const,
+        assigned_team: "pre_sales" as const,
+        question_text: r.question_text,
+        status: r.status,
+        order_index: r.order_index,
+      }));
+      const { error } = await (supabase as any).from("bid_questions").insert(inserts);
+      if (error) throw error;
+    },
+    onSuccess: (_, { bidId }) => {
+      qc.invalidateQueries({ queryKey: ["stage-items", bidId, "rfi"] });
+      qc.invalidateQueries({ queryKey: ["bid-activity", bidId] });
+    },
+  });
+}
+
 export function useActionApproval() {
   const qc = useQueryClient();
   return useMutation({
