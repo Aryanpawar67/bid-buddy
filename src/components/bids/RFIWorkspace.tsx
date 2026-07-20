@@ -41,10 +41,21 @@ function avatarColor(name: string): string {
   return colors[Math.abs(hash) % colors.length];
 }
 
+// ── Parse DB question text back to category/question ─────────────────────────
+// DB stores as "[Category] Question text" — reverse that for XLSX re-download
+function parseDbQuestion(text: string): RfiQuestion {
+  const match = text.match(/^\[([^\]]+)\]\s*([\s\S]+)$/);
+  if (match && RFI_CATEGORIES.includes(match[1] as RfiCategory)) {
+    return { category: match[1] as RfiCategory, question: match[2].trim() };
+  }
+  return { category: "Scope & Delivery", question: text.trim() };
+}
+
 // ── XLSX download helper ──────────────────────────────────────────────────────
 
 async function downloadQuestionnaire(questions: RfiQuestion[], clientName: string) {
-  const XLSX = await import("xlsx");
+  // xlsx-js-style is a drop-in replacement for SheetJS that actually applies cell styles
+  const XLSX = await import("xlsx-js-style");
 
   const NAVY  = "1B3560";
   const WHITE = "FFFFFF";
@@ -400,6 +411,16 @@ export function RFIWorkspace({ bid, activeTab, onTabChange }: {
           <div className="flex items-center gap-2">
             {!generated && (
               <span className="text-[11px] text-muted-foreground">{answered}/{total} answered</span>
+            )}
+            {!generated && questions.length > 0 && (
+              <button
+                onClick={() => downloadQuestionnaire(questions.map((q: any) => parseDbQuestion(q.question_text)), bid.client_name)}
+                title="Download current questions as XLSX to send to client"
+                className="h-7 px-2.5 rounded-md hairline border bg-card text-[11px] font-medium inline-flex items-center gap-1.5 hover:bg-muted transition-colors"
+              >
+                <Download className="size-3" />
+                Download XLSX
+              </button>
             )}
             {!generated && (
               <button
