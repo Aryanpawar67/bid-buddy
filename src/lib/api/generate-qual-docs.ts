@@ -93,9 +93,9 @@ function bidStrength(score: number) {
 
 function paramStatus(score: number): string {
   if (score === 0) return "—";
-  if (score >= 4)  return "Go";
-  if (score === 3) return "Review";
-  return "Caution";
+  if (score >= 4)  return "SUPPORTED";
+  if (score === 3) return "PARTIAL";
+  return "GAP";
 }
 
 function paramStatusColour(score: number): string {
@@ -103,6 +103,93 @@ function paramStatusColour(score: number): string {
   if (score >= 4)  return C.go;
   if (score === 3) return C.warn;
   return C.nogo;
+}
+
+// ── Product line label ────────────────────────────────────────────────────────
+function productLineLabel(productType: string | null): string {
+  if (productType === "TM") return "Talent Management (Skills Intelligence)";
+  if (productType === "TA") return "Talent Acquisition (Skills Assessment)";
+  return "Skills Platform";
+}
+
+// ── Key Requirements by product type ─────────────────────────────────────────
+function keyRequirements(productType: string | null, bidType: string | null): string[] {
+  const pt = (productType ?? "").toUpperCase();
+  if (pt === "TM") return [
+    "Skills taxonomy design, ontology setup, and ongoing governance model",
+    "HRIS/LMS integration (Workday, SuccessFactors, SAP, Oracle or equivalent)",
+    "Skills gap analysis and personalised learning recommendations",
+    "Internal mobility, career pathing, and role-to-skill mapping",
+    "Workforce planning, succession planning, and talent intelligence dashboards",
+    "Manager validation, self-assessment, and continuous assessment campaigns",
+    "AI Skills Inference and skills intelligence analytics reporting",
+    "Data residency, SSO (SAML/OIDC), SCIM provisioning, and SOC2 / ISO 27001 compliance",
+  ];
+  if (pt === "TA") return [
+    "Pre-hire skills assessment library (3,000+ skills, multi-language support)",
+    "ATS integration (Workday Recruiting, SuccessFactors, Oracle, SmartRecruiters, iCIMS, or equivalent)",
+    "Conversational AI interviews and async video interview capability",
+    "Coding assessments and role-based assessment campaign management",
+    "Proctoring, anti-cheating, and candidate experience requirements",
+    "AI Skills Match and structured sifting / scoring methodology",
+    "Recruiter and hiring manager analytics, compliance reporting",
+    "Data residency, SSO (SAML/OIDC), SCIM, and SOC2 / ISO 27001 compliance",
+  ];
+  // Generic fallback when product type not specified
+  const typeLabel = (bidType ?? "RFP").toUpperCase();
+  return [
+    `Platform capabilities and solution scope for this ${typeLabel}`,
+    "HRIS / ATS integration requirements and system-of-record designation",
+    "User volumes, assessment frequency, and rollout geography",
+    "Analytics, reporting, and stakeholder dashboard expectations",
+    "Security, data residency, and compliance certifications required",
+    "Implementation timeline, migration scope, and UAT requirements",
+    "Commercial, licensing model, and support level expectations",
+  ];
+}
+
+// ── On-demand rationale generation (Haiku — fast, used when ad.rationales absent) ──
+async function ensureRationales(
+  scores: Record<string, number>,
+  bid: { client_name: string; title: string; type: string; product_type: string | null },
+): Promise<Record<string, string>> {
+  const scoredCriteria = CRITERIA.filter(c => (scores[c.id] ?? 0) > 0);
+  if (scoredCriteria.length === 0) return {};
+
+  const Anthropic = (await import("@anthropic-ai/sdk")).default;
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+  const criteriaBlock = scoredCriteria
+    .map(c => `  "${c.id}": { "name": "${c.parameter}", "score": ${scores[c.id]}/5 }`)
+    .join(",\n");
+
+  const resp = await anthropic.messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 1200,
+    messages: [{
+      role: "user",
+      content: `You are a bid qualification analyst writing internal leadership notes for a ${(bid.product_type ?? "skills platform")} opportunity with ${bid.client_name} (${bid.title}).
+
+For each criterion below, write a single concise sentence (max 20 words) that justifies the score from iMocha's perspective — what specifically makes this score appropriate for this deal.
+
+Criteria and scores:
+{
+${criteriaBlock}
+}
+
+Return ONLY valid JSON, no explanation:
+{ "rationales": { "criterion_id": "justification sentence", ... } }`,
+    }],
+  });
+
+  try {
+    const raw = resp.content.filter(b => b.type === "text").map(b => (b as any).text).join("");
+    const cleaned = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+    const parsed = JSON.parse(cleaned);
+    return parsed.rationales ?? {};
+  } catch {
+    return {};
+  }
 }
 
 // No-border spec (used to remove default table borders)
@@ -181,17 +268,20 @@ export const generateQualResultFn = createServerFn({ method: "POST" })
 
     const ad: any = bid.assessment_data ?? {};
     const scores: Record<string, number> = ad.scores ?? {};
-    const rationales: Record<string, string> = ad.rationales ?? {};
     const insights = ad.insights ?? null;
+    const rationales: Record<string, string> =
+      Object.keys(ad.rationales ?? {}).length > 0
+        ? (ad.rationales as Record<string, string>)
+        : await ensureRationales(scores, bid);
 
     const totalScore = Math.round(CRITERIA.reduce((s, c) => s + ((scores[c.id] ?? 0) / 5) * c.weight * 100, 0));
     const dec: string = bid.gonogo_decision ?? (totalScore >= 65 ? "go" : totalScore >= 45 ? "conditional_go" : "no_go");
     const logo = await getLogo();
     const today = fmtDate(new Date().toISOString());
     const deadline = bid.deadline ? fmtDate(bid.deadline) : "TBD";
-    const productLine = (bid.product_type ?? "") === "TM"
-      ? "Talent Management (Skills Intelligence)"
-      : "Talent Acquisition (Skills Assessment)";
+    const productLine = productLineLabel(bid.product_type);
+    const keyReqs = keyRequirements(bid.product_type, bid.type);
+    const dealValue = bid.value && bid.value > 0 ? fmtMoney(bid.value) : "TBD";
 
     // ── Cell helpers ────────────────────────────────────────────────────────
     function kpiCell(label: string, value: string, valueColour: string, shade: string): TableCell {
@@ -290,7 +380,7 @@ export const generateQualResultFn = createServerFn({ method: "POST" })
           new Table({
             width: { size: 100, type: WidthType.PERCENTAGE },
             rows: [new TableRow({ children: [
-              kpiCell("Deal Value",   fmtMoney(bid.value),       C.orange,            "FFF8F4"),
+              kpiCell("Deal Value",   dealValue,                 C.orange,            "FFF8F4"),
               kpiCell("Qual. Score",  `${totalScore}/100`,       decisionColour(dec), decisionTint(dec)),
               kpiCell("Decision",     decisionLabel(dec),         decisionColour(dec), decisionTint(dec)),
               kpiCell("Bid Strength", bidStrength(totalScore),   C.navy,              C.purpleTint),
@@ -304,10 +394,19 @@ export const generateQualResultFn = createServerFn({ method: "POST" })
             rows: [
               new TableRow({ children: [ovCell("Client", C.mutedBg, true), ovCell(bid.client_name, "FFFFFF"), ovCell("Product Line", C.mutedBg, true), ovCell(productLine, "FFFFFF")] }),
               new TableRow({ children: [ovCell("Bid Type", C.mutedBg, true), ovCell((bid.type ?? "—").toUpperCase(), "FFFFFF"), ovCell("Priority", C.mutedBg, true), ovCell(bid.priority ? bid.priority.charAt(0).toUpperCase() + bid.priority.slice(1) : "—", "FFFFFF")] }),
-              new TableRow({ children: [ovCell("Deal Value", C.mutedBg, true), ovCell(fmtMoney(bid.value), "FFFFFF"), ovCell("Deadline", C.mutedBg, true), ovCell(deadline, "FFFFFF")] }),
+              new TableRow({ children: [ovCell("Deal Value", C.mutedBg, true), ovCell(dealValue, "FFFFFF"), ovCell("Deadline", C.mutedBg, true), ovCell(deadline, "FFFFFF")] }),
               new TableRow({ children: [ovCell("Current Stage", C.mutedBg, true), ovCell("Deal Qualification", "FFFFFF"), ovCell("Bid Team Lead", C.mutedBg, true), ovCell(teamLead, "FFFFFF")] }),
             ],
           }),
+
+          // Key Requirements
+          new Paragraph({ spacing: { before: 280, after: 80 }, children: [new TextRun({ text: "Key Requirements", color: C.navy, bold: true, size: 26, font: "Calibri" })] }),
+          new Paragraph({ spacing: { before: 0, after: 80 }, children: [new TextRun({ text: `What ${bid.client_name} is looking for in this ${(bid.type ?? "bid").toUpperCase()}:`, color: C.muted, size: 18, font: "Calibri" })] }),
+          ...keyReqs.map(req => new Paragraph({
+            bullet: { level: 0 },
+            spacing: { before: 60, after: 60 },
+            children: [new TextRun({ text: req, size: 19, font: "Calibri", color: C.ink })],
+          })),
 
           // iMocha Fit Assessment table (with rationales as Leadership Notes)
           new Paragraph({ spacing: { before: 280, after: 80 }, children: [new TextRun({ text: "iMocha Fit Assessment", color: C.navy, bold: true, size: 26, font: "Calibri" })] }),
@@ -405,17 +504,19 @@ export const generateDealBriefFn = createServerFn({ method: "POST" })
 
     const ad: any = bid.assessment_data ?? {};
     const scores: Record<string, number> = ad.scores ?? {};
-    const rationales: Record<string, string> = ad.rationales ?? {};
     const insights = ad.insights ?? null;
+    const rationales: Record<string, string> =
+      Object.keys(ad.rationales ?? {}).length > 0
+        ? (ad.rationales as Record<string, string>)
+        : await ensureRationales(scores, bid);
 
     const totalScore = Math.round(CRITERIA.reduce((s, c) => s + ((scores[c.id] ?? 0) / 5) * c.weight * 100, 0));
     const dec: string = bid.gonogo_decision ?? (totalScore >= 65 ? "go" : totalScore >= 45 ? "conditional_go" : "no_go");
     const logo = await getLogo();
     const today = fmtDate(new Date().toISOString());
     const deadline = bid.deadline ? fmtDate(bid.deadline) : "TBD";
-    const productLine = (bid.product_type ?? "") === "TM"
-      ? "Talent Management (Skills Intelligence)"
-      : "Talent Acquisition (Skills Assessment)";
+    const productLine = productLineLabel(bid.product_type);
+    const dealValue = bid.value && bid.value > 0 ? fmtMoney(bid.value) : "TBD";
 
     // ── Cell helpers ────────────────────────────────────────────────────────
     function hdrCell(text: string, widthPct?: number): TableCell {
@@ -530,7 +631,7 @@ export const generateDealBriefFn = createServerFn({ method: "POST" })
             spacing: { before: 200, after: 20 },
             children: [
               new TextRun({ text: `${bid.client_name}`, color: C.purple, bold: true, size: 40, font: "Calibri" }),
-              new TextRun({ text: `   ${fmtMoney(bid.value)}`, color: C.orange, bold: true, size: 32, font: "Calibri" }),
+              new TextRun({ text: `   ${dealValue}`, color: C.orange, bold: true, size: 32, font: "Calibri" }),
             ],
           }),
           new Paragraph({
@@ -579,7 +680,7 @@ export const generateDealBriefFn = createServerFn({ method: "POST" })
               profileRow("Customer",       bid.client_name,                                       0),
               profileRow("Bid Type",        (bid.type ?? "—").toUpperCase(),                      1),
               profileRow("Product Line",    productLine,                                           2),
-              profileRow("Deal Value",      fmtMoney(bid.value),                                  3),
+              profileRow("Deal Value",      dealValue,                                            3),
               profileRow("Priority",        (bid.priority ?? "—").charAt(0).toUpperCase() + (bid.priority ?? "").slice(1), 4),
               profileRow("Deadline",        deadline,                                              5),
               profileRow("Decision",        decisionLabel(dec),                                    6),
