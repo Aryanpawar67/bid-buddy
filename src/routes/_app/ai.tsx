@@ -12,8 +12,10 @@ import {
 import { AiBidList, type AiMode } from "@/components/ai/AiBidList";
 import { AiChatPanel } from "@/components/ai/AiChatPanel";
 import { ConfigureDrawer } from "@/components/ai/ConfigureDrawer";
+import { QuestionnaireResponder } from "@/components/ai/QuestionnaireResponder";
 import { useDocuments } from "@/lib/doc-queries";
 import { useAiConfigure } from "@/lib/ai-configure-context";
+import { FileSpreadsheet, MessageSquare } from "lucide-react";
 
 const MODEL_STORAGE_KEY = "bid-compass:ai-model";
 const DEFAULT_MODEL = "claude-sonnet-4-6";
@@ -31,6 +33,7 @@ function AiPage() {
   const { open: configureOpen, setOpen: setConfigureOpen } = useAiConfigure();
   const { bidId: initialBidId } = Route.useSearch();
 
+  const [aiMode, setAiMode] = useState<"chat" | "questionnaire">("chat");
   const [mode, setMode] = useState<AiMode>("bid");
   const [selectedBidId, setSelectedBidId] = useState<string | null>(null);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
@@ -139,37 +142,72 @@ function AiPage() {
   }
 
   return (
-    <div className="h-full flex overflow-hidden">
-      <ConfigureDrawer open={configureOpen} onClose={() => setConfigureOpen(false)} />
-      <AiBidList
-        bids={bids}
-        sessions={sessionsMap}
-        globalSessions={globalSessionsQuery.data ?? []}
-        mode={mode}
-        onModeChange={handleModeChange}
-        selectedBidId={selectedBidId}
-        selectedSessionId={selectedSessionId}
-        onSelectSession={handleSelectSession}
-        onBidSelect={handleBidSelect}
-        onNewSession={handleNewSession}
-        creatingBidId={creatingBidId}
-      />
+    <div className="h-full flex flex-col overflow-hidden">
+      {/* Top mode tabs */}
+      <div className="shrink-0 flex items-center gap-1 px-4 py-2 border-b hairline border-border bg-card">
+        <button
+          onClick={() => setAiMode("chat")}
+          className={[
+            "h-7 px-3 rounded-md text-[11px] font-semibold inline-flex items-center gap-1.5 transition-colors",
+            aiMode === "chat"
+              ? "bg-primary text-white"
+              : "text-muted-foreground hover:bg-muted",
+          ].join(" ")}
+        >
+          <MessageSquare className="size-3" />
+          Chat
+        </button>
+        <button
+          onClick={() => setAiMode("questionnaire")}
+          className={[
+            "h-7 px-3 rounded-md text-[11px] font-semibold inline-flex items-center gap-1.5 transition-colors",
+            aiMode === "questionnaire"
+              ? "bg-primary text-white"
+              : "text-muted-foreground hover:bg-muted",
+          ].join(" ")}
+        >
+          <FileSpreadsheet className="size-3" />
+          Questionnaire Autopilot
+        </button>
+      </div>
 
-      <AiChatPanel
-        activeBid={activeBid}
-        isGlobal={mode === "global"}
-        sessionId={selectedSessionId}
-        messages={messages}
-        isStreaming={isStreaming}
-        streamingStatus={streamingStatus}
-        inputValue={inputValue}
-        onInputChange={setInputValue}
-        onSend={send}
-        model={model}
-        onModelChange={handleModelChange}
-        requestCount={requestCount}
-        bidDocs={bidDocs}
-      />
+      <div className="flex-1 flex overflow-hidden">
+        {aiMode === "chat" ? (
+          <>
+            <ConfigureDrawer open={configureOpen} onClose={() => setConfigureOpen(false)} />
+            <AiBidList
+              bids={bids}
+              sessions={sessionsMap}
+              globalSessions={globalSessionsQuery.data ?? []}
+              mode={mode}
+              onModeChange={handleModeChange}
+              selectedBidId={selectedBidId}
+              selectedSessionId={selectedSessionId}
+              onSelectSession={handleSelectSession}
+              onBidSelect={handleBidSelect}
+              onNewSession={handleNewSession}
+              creatingBidId={creatingBidId}
+            />
+            <AiChatPanel
+              activeBid={activeBid}
+              isGlobal={mode === "global"}
+              sessionId={selectedSessionId}
+              messages={messages}
+              isStreaming={isStreaming}
+              streamingStatus={streamingStatus}
+              inputValue={inputValue}
+              onInputChange={setInputValue}
+              onSend={send}
+              model={model}
+              onModelChange={handleModelChange}
+              requestCount={requestCount}
+              bidDocs={bidDocs}
+            />
+          </>
+        ) : (
+          <QuestionnaireResponder />
+        )}
+      </div>
     </div>
   );
 }
