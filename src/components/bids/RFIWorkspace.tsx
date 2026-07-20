@@ -51,64 +51,100 @@ function parseDbQuestion(text: string): RfiQuestion {
   return { category: "Scope & Delivery", question: text.trim() };
 }
 
-// ── XLSX download helper ──────────────────────────────────────────────────────
+// ── XLSX download helper (ExcelJS — supports embedded images + full styles) ────
 
 async function downloadQuestionnaire(questions: RfiQuestion[], clientName: string) {
-  // xlsx-js-style is a drop-in replacement for SheetJS that actually applies cell styles
-  const XLSX = await import("xlsx-js-style");
+  const ExcelJS = (await import("exceljs")).default;
 
-  const NAVY  = "1B3560";
-  const WHITE = "FFFFFF";
-  const BLUE  = "D6E8FF";
+  const NAVY  = "FF1B3560";
+  const BLUE  = "FFD6E8FF";
+  const WHITE = "FFFFFFFF";
 
-  type CellStyle = Record<string, unknown>;
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Clarification Questions");
 
-  function mkCell(v: string | number, s: CellStyle): any {
-    return { v, t: typeof v === "number" ? "n" : "s", s };
+  ws.columns = [
+    { key: "num",      width: 5  },
+    { key: "cat",      width: 26 },
+    { key: "question", width: 65 },
+    { key: "response", width: 42 },
+  ];
+
+  // ── Fetch + embed the iMocha logo ──────────────────────────────────────────
+  try {
+    const imgResp = await fetch("/imocha-logo.png");
+    const imgBuf  = await imgResp.arrayBuffer();
+    const imageId = wb.addImage({ buffer: imgBuf, extension: "png" });
+
+    // Rows 1–3 are the banner (height ~60px total). Place logo in those rows.
+    // Columns A–D span ~890px. Logo is 937×201px; scale to fit banner height.
+    ws.addImage(imageId, {
+      tl: { col: 0.15, row: 0.1 },
+      br: { col: 1.6,  row: 2.9 },
+      editAs: "oneCell",
+    });
+  } catch { /* logo fetch failed gracefully — banner still has navy bg */ }
+
+  // Rows 1–3: navy banner background (logo floats above these)
+  for (let r = 1; r <= 3; r++) {
+    const row = ws.getRow(r);
+    row.height = r === 1 ? 28 : 14;
+    ["A", "B", "C", "D"].forEach(col => {
+      const cell = ws.getCell(`${col}${r}`);
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: NAVY } };
+    });
   }
-
-  const navyFill  = { patternType: "solid", fgColor: { rgb: NAVY } };
-  const blueFill  = { patternType: "solid", fgColor: { rgb: BLUE } };
-  const whiteFill = { patternType: "solid", fgColor: { rgb: WHITE } };
-  const navyFont  = (sz: number, bold = false) => ({ bold, color: { rgb: WHITE }, sz, name: "Calibri" });
-  const bodyFont  = (sz = 11, bold = false) => ({ bold, sz });
-  const left      = { horizontal: "left",   vertical: "top",    wrapText: true };
-  const center    = { horizontal: "center", vertical: "center" };
-
-  const ws: any = {};
-
-  // Rows 1-3: iMocha banner (merged A1:D3)
-  ws["A1"] = mkCell("  iMocha", { fill: navyFill, font: navyFont(20, true), alignment: center });
-  for (const ref of ["B1","C1","D1","A2","B2","C2","D2","A3","B3","C3","D3"]) {
-    ws[ref] = mkCell("", { fill: navyFill });
-  }
+  // Merge A1:D3 for the banner block
+  ws.mergeCells("A1:D3");
 
   // Row 4: column headers
-  const hBase = { fill: navyFill, font: navyFont(11, true) };
-  ws["A4"] = mkCell("#",                      { ...hBase, alignment: center });
-  ws["B4"] = mkCell("Category",               { ...hBase, alignment: left });
-  ws["C4"] = mkCell("Clarification Required", { ...hBase, alignment: left });
-  ws["D4"] = mkCell("Client Response",        { ...hBase, alignment: left });
-
-  // Data rows (row 5 onward)
-  questions.forEach((q, i) => {
-    const row  = i + 5;
-    const fill = i % 2 === 0 ? blueFill : whiteFill;
-    ws[`A${row}`] = mkCell(i + 1,      { fill, font: bodyFont(11, true), alignment: center });
-    ws[`B${row}`] = mkCell(q.category, { fill, font: bodyFont(10),       alignment: left });
-    ws[`C${row}`] = mkCell(q.question, { fill, font: bodyFont(11),       alignment: left });
-    ws[`D${row}`] = mkCell("",         { fill: whiteFill, font: bodyFont(11), alignment: left });
+  ws.getRow(4).height = 20;
+  const headers = ["#", "Category", "Clarification Required", "Client Response"];
+  const cols    = ["A", "B", "C", "D"];
+  headers.forEach((h, i) => {
+    const cell = ws.getCell(`${cols[i]}4`);
+    cell.value = h;
+    cell.fill  = { type: "pattern", pattern: "solid", fgColor: { argb: NAVY } };
+    cell.font  = { bold: true, color: { argb: WHITE }, size: 11, name: "Calibri" };
+    cell.alignment = { horizontal: i === 0 ? "center" : "left", vertical: "middle", wrapText: true };
   });
 
-  const lastRow = questions.length + 4;
-  ws["!ref"]    = `A1:D${lastRow}`;
-  ws["!cols"]   = [{ wch: 5 }, { wch: 26 }, { wch: 65 }, { wch: 42 }];
-  ws["!rows"]   = [{ hpt: 26 }, { hpt: 10 }, { hpt: 10 }, { hpt: 20 }];
-  ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 2, c: 3 } }];
+  // Data rows
+  questions.forEach((q, i) => {
+    const rowNum = i + 5;
+    const fill   = { type: "pattern" as const, pattern: "solid" as const, fgColor: { argb: i % 2 === 0 ? BLUE : WHITE } };
+    const row    = ws.getRow(rowNum);
+    row.height   = 40;
 
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Clarification Questions");
-  const buf  = XLSX.write(wb, { type: "array", bookType: "xlsx", cellStyles: true });
+    const numCell = ws.getCell(`A${rowNum}`);
+    numCell.value     = i + 1;
+    numCell.fill      = fill;
+    numCell.font      = { bold: true, size: 11, name: "Calibri" };
+    numCell.alignment = { horizontal: "center", vertical: "top" };
+
+    const catCell = ws.getCell(`B${rowNum}`);
+    catCell.value     = q.category;
+    catCell.fill      = fill;
+    catCell.font      = { size: 10, name: "Calibri" };
+    catCell.alignment = { horizontal: "left", vertical: "top", wrapText: true };
+
+    const qCell = ws.getCell(`C${rowNum}`);
+    qCell.value     = q.question;
+    qCell.fill      = fill;
+    qCell.font      = { size: 11, name: "Calibri" };
+    qCell.alignment = { horizontal: "left", vertical: "top", wrapText: true };
+
+    const rCell = ws.getCell(`D${rowNum}`);
+    rCell.value     = "";
+    rCell.fill      = { type: "pattern", pattern: "solid", fgColor: { argb: WHITE } };
+    rCell.font      = { size: 11, name: "Calibri" };
+    rCell.alignment = { horizontal: "left", vertical: "top", wrapText: true };
+  });
+
+  // Freeze pane after header row
+  ws.views = [{ state: "frozen", xSplit: 0, ySplit: 4 }];
+
+  const buf  = await wb.xlsx.writeBuffer();
   const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement("a");

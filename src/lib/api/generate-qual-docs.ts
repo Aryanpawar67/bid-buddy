@@ -594,11 +594,9 @@ export const generateDealBriefFn = createServerFn({ method: "POST" })
         headers: {
           default: new Header({
             children: [new Paragraph({
-              shading: { type: ShadingType.SOLID, color: C.purple },
+              alignment: AlignmentType.RIGHT,
               children: [
-                new ImageRun({ data: logo, transformation: { width: 75, height: 16 }, type: "png" }),
-                new TextRun({ text: "  iMocha Bid Compass", color: C.white, bold: true, size: 18, font: "Calibri" }),
-                new TextRun({ text: "        CONFIDENTIAL — INTERNAL", color: "CCBBFF", size: 14, font: "Calibri" }),
+                new TextRun({ text: "iMocha Bid Compass  ·  CONFIDENTIAL — INTERNAL", color: C.muted, size: 14, font: "Calibri" }),
               ],
             })],
           }),
