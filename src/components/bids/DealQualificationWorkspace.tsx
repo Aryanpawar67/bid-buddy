@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useCallback } from "react";
 import { DocxViewerModal } from "@/components/docs/DocxViewerModal";
-import { Lock, Users, ClipboardList, BarChart3, Activity, RefreshCw, FileText, Eye, Mail, UserPlus, X, Pencil } from "lucide-react";
+import { Lock, Users, ClipboardList, BarChart3, Activity, RefreshCw, FileText, UserPlus, X, Pencil } from "lucide-react";
 import { initials, urgencyClass, fmtMoney } from "@/lib/bid-constants";
 import type { Bid, AssessmentData, QualificationInsights } from "@/lib/bid-queries";
 import { useDocuments, type BidDocument, type DocType } from "@/lib/doc-queries";
@@ -989,16 +989,16 @@ function AssessmentResultTab({ bid }: { bid: Bid }) {
             disabled={generateQualResult.isPending}
             className="flex-1 h-9 rounded-md bg-primary text-primary-foreground text-[12px] font-medium disabled:opacity-40 hover:opacity-90 inline-flex items-center justify-center gap-1.5 transition-opacity"
           >
-            <Mail className="size-3.5" />
-            {generateQualResult.isPending ? "Generating…" : "Notify Bid Team"}
+            <FileText className="size-3.5" />
+            {generateQualResult.isPending ? "Generating…" : "Deal Brief"}
           </button>
           <button
             onClick={() => generateDealBrief.mutate(bid.id, { onSuccess: (r) => { if (r?.url) openDocx(r.url, r.filename); } })}
             disabled={generateDealBrief.isPending}
             className="flex-1 h-9 rounded-md hairline border bg-card text-[12px] font-medium disabled:opacity-40 hover:bg-muted inline-flex items-center justify-center gap-1.5 transition-colors"
           >
-            <Eye className="size-3.5" />
-            {generateDealBrief.isPending ? "Generating…" : "Deal Brief"}
+            <BarChart3 className="size-3.5" />
+            {generateDealBrief.isPending ? "Generating…" : "Bid Qual. Result"}
           </button>
         </div>
       )}
