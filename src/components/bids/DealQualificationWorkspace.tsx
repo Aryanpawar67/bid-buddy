@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useCallback } from "react";
 import { DocxViewerModal } from "@/components/docs/DocxViewerModal";
-import { Lock, Users, ClipboardList, BarChart3, Activity, RefreshCw, FileText, UserPlus, X, Pencil } from "lucide-react";
+import { Lock, Users, ClipboardList, BarChart3, Activity, RefreshCw, FileText, UserPlus, X, Pencil, Eye } from "lucide-react";
 import { initials, urgencyClass, fmtMoney } from "@/lib/bid-constants";
 import type { Bid, AssessmentData, QualificationInsights } from "@/lib/bid-queries";
 import { useDocuments, type BidDocument, type DocType } from "@/lib/doc-queries";
