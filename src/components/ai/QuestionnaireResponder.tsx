@@ -184,6 +184,10 @@ export function QuestionnaireResponder() {
   const [file, setFile] = useState<File | null>(null);
   const [bidId, setBidId] = useState<string>("__global");
 
+  // Multi-sheet
+  const [sheetNames, setSheetNames] = useState<string[]>([]);
+  const [selectedSheet, setSelectedSheet] = useState(0);
+
   // Analysis
   const [analysis, setAnalysis] = useState<SheetAnalysis | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
@@ -202,6 +206,17 @@ export function QuestionnaireResponder() {
 
   // ── File handling ───────────────────────────────────────────────────────────
 
+  // Stored workbook reference so we can re-analyze when user switches sheet
+  const wbRef = useRef<ExcelJS.Workbook | null>(null);
+
+  function applyAnalysis(a: SheetAnalysis) {
+    setAnalysis(a);
+    setQuestionCol(a.suggested.questionCol);
+    setAnswerCol(a.suggested.answerCol);
+    setStatusCol(a.suggested.statusCol);
+    setHeaderRows(a.suggested.headerRows);
+  }
+
   async function handleFile(f: File) {
     setFile(f);
     setParseError(null);
@@ -211,19 +226,33 @@ export function QuestionnaireResponder() {
       const buf = await f.arrayBuffer();
       const wb = new ExcelJS.Workbook();
       await wb.xlsx.load(buf);
-      const ws = wb.worksheets[0];
-      if (!ws) throw new Error("No worksheets found in this file.");
+      wbRef.current = wb;
 
-      const a = analyzeWorksheet(ws);
-      setAnalysis(a);
-      setQuestionCol(a.suggested.questionCol);
-      setAnswerCol(a.suggested.answerCol);
-      setStatusCol(a.suggested.statusCol);
-      setHeaderRows(a.suggested.headerRows);
+      const names = wb.worksheets.map((s) => s.name);
+      if (!names.length) throw new Error("No worksheets found in this file.");
+      setSheetNames(names);
+
+      // Prefer an English-named sheet; fall back to first
+      const EN_PREF = /\ben\b|english|eng/i;
+      const bestIdx = names.findIndex((n) => EN_PREF.test(n));
+      const idx = bestIdx >= 0 ? bestIdx : 0;
+      setSelectedSheet(idx);
+
+      const a = analyzeWorksheet(wb.worksheets[idx]);
+      applyAnalysis(a);
       setStep("confirm");
     } catch (e: any) {
       setParseError(e.message ?? "Failed to parse file.");
     }
+  }
+
+  function switchSheet(idx: number) {
+    if (!wbRef.current) return;
+    setSelectedSheet(idx);
+    const ws = wbRef.current.worksheets[idx];
+    if (!ws) return;
+    const a = analyzeWorksheet(ws);
+    applyAnalysis(a);
   }
 
   // ── Parse questions with confirmed config ───────────────────────────────────
@@ -232,12 +261,13 @@ export function QuestionnaireResponder() {
     if (!file || !analysis) return;
     setParseError(null);
 
-    // Re-parse using confirmed column settings
-    file.arrayBuffer().then(async (buf) => {
-      const wb = new ExcelJS.Workbook();
-      await wb.xlsx.load(buf);
-      const ws = wb.worksheets[0];
-      if (!ws) return;
+    // Use the cached workbook + selected sheet
+    const wb = wbRef.current;
+    if (!wb) return;
+    const ws = wb.worksheets[selectedSheet];
+    if (!ws) return;
+
+    void (async () => {
 
       const qColNum = colLetterToNum(questionCol);
       const rows: ParsedRow[] = [];
@@ -254,7 +284,7 @@ export function QuestionnaireResponder() {
       }
       setQuestions(rows);
       setStep("preview");
-    });
+    })();
   }
 
   // ── Answering ───────────────────────────────────────────────────────────────
@@ -310,10 +340,10 @@ export function QuestionnaireResponder() {
   async function downloadResult() {
     if (!file || !answered.length) return;
 
-    const buf = await file.arrayBuffer();
-    const wb = new ExcelJS.Workbook();
-    await wb.xlsx.load(buf);
-    const ws = wb.worksheets[0];
+    // Use cached workbook — preserves the selected sheet
+    const wb = wbRef.current;
+    if (!wb) return;
+    const ws = wb.worksheets[selectedSheet];
     if (!ws) return;
 
     const aCol = colLetterToNum(answerCol);
@@ -358,6 +388,9 @@ export function QuestionnaireResponder() {
   function reset() {
     setFile(null);
     setAnalysis(null);
+    setSheetNames([]);
+    setSelectedSheet(0);
+    wbRef.current = null;
     setQuestions([]);
     setAnswered([]);
     setParseError(null);
@@ -458,6 +491,35 @@ export function QuestionnaireResponder() {
                 </p>
               </div>
             </div>
+
+            {/* Sheet selector — shown when workbook has multiple sheets */}
+            {sheetNames.length > 1 && (
+              <div>
+                <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold mb-2">
+                  Sheet
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {sheetNames.map((name, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => switchSheet(idx)}
+                      className={[
+                        "h-7 px-3 rounded-md text-[11px] font-medium border hairline transition-colors",
+                        selectedSheet === idx
+                          ? "bg-primary text-white border-primary"
+                          : "bg-card text-foreground border-border hover:bg-muted",
+                      ].join(" ")}
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  Select the sheet that contains the questionnaire to answer
+                </p>
+              </div>
+            )}
 
             {/* AI-detected column table */}
             <div>
