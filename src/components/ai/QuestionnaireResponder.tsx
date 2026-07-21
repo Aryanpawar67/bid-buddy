@@ -408,12 +408,19 @@ export function QuestionnaireResponder() {
     const aCol = colLetterToNum(answerCol);
     const sCol = colLetterToNum(statusCol);
 
-    if (headerRows > 0) {
-      const hRow = ws.getRow(1);
-      hRow.getCell(aCol).value = "iMocha Response";
-      hRow.getCell(aCol).font = { bold: true };
-      hRow.getCell(sCol).value = "Coverage";
-      hRow.getCell(sCol).font = { bold: true };
+    // Write column labels to the actual header row (not row 1 which may be a merged title)
+    // Only fill if the cell is currently empty — preserve original headers
+    const headerRowIdx = headerRows > 0 ? headerRows : 1;
+    const hRow = ws.getRow(headerRowIdx);
+    const aHeaderCell = hRow.getCell(aCol);
+    const sHeaderCell = hRow.getCell(sCol);
+    if (!String(aHeaderCell.value ?? "").trim()) {
+      aHeaderCell.value = "iMocha Response";
+      aHeaderCell.font = { bold: true };
+    }
+    if (!String(sHeaderCell.value ?? "").trim()) {
+      sHeaderCell.value = "Coverage";
+      sHeaderCell.font = { bold: true };
     }
 
     for (const a of answered) {
@@ -431,6 +438,9 @@ export function QuestionnaireResponder() {
 
     ws.getColumn(aCol).width = 60;
     ws.getColumn(sCol).width = 18;
+
+    // Make Excel open to the answered sheet, not sheet 0
+    wb.views = [{ activeTab: selectedSheet, type: "normal" } as any];
 
     const out = await wb.xlsx.writeBuffer();
     const blob = new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });

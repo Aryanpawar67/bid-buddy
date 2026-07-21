@@ -72,8 +72,8 @@ async function answerOne(
   const sources = [...new Set(chunks.map((c) => c.doc_name))];
 
   const systemPrompt = context
-    ? `You are an iMocha RFP response specialist. Answer the vendor assessment question below using ONLY the knowledge base excerpts provided. Be specific, factual, and concise (2–4 sentences). If the excerpts don't fully cover the question, answer what you can from them and note any gaps briefly.`
-    : `You are an iMocha RFP response specialist. No knowledge base content was retrieved for this question. Provide a short, honest placeholder answer based on iMocha's general product capabilities (TA: assessments, AI interviews, ATS integrations; TM: skills intelligence, competency management, HRIS integrations; both: SOC2 Type II, ISO 27001, SSO/SAML, REST API). Keep it to 2 sentences and note that detailed confirmation is required.`;
+    ? `You are an iMocha RFP response specialist. Answer the vendor assessment question below using ONLY the knowledge base excerpts provided. Be specific, factual, and concise (2–4 sentences). If the excerpts don't fully cover the question, answer what you can from them and note any gaps briefly. Always respond in English regardless of the language of the question.`
+    : `You are an iMocha RFP response specialist. No knowledge base content was retrieved for this question. Provide a short, honest placeholder answer based on iMocha's general product capabilities (TA: assessments, AI interviews, ATS integrations; TM: skills intelligence, competency management, HRIS integrations; both: SOC2 Type II, ISO 27001, SSO/SAML, REST API). Keep it to 2 sentences and note that detailed confirmation is required. Always respond in English.`;
 
   const userContent = context
     ? `KNOWLEDGE BASE EXCERPTS:\n${context}\n\nVENDOR ASSESSMENT QUESTION:\n${question}`
