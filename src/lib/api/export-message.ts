@@ -58,6 +58,19 @@ function parseInlineRuns(text: string, opts: { bold?: boolean; size?: number } =
 
 type DocChild = Paragraph | Table;
 
+// True if a line is a markdown table separator: --- | --- | --- (with or without pipes)
+function isSepLine(s: string): boolean {
+  const t = s.trim();
+  return /^[-\s|:=]+$/.test(t) && t.includes("-") && (t.includes("|") || t.length >= 3);
+}
+
+// Parse a raw table line into cells, handling both | a | b | and a | b formats
+function parseCells(tl: string): string[] {
+  const t = tl.trim();
+  const inner = t.startsWith("|") && t.endsWith("|") ? t.slice(1, -1) : t;
+  return inner.split("|").map((c) => c.trim());
+}
+
 function parseMarkdownToDocx(markdown: string): DocChild[] {
   const lines = markdown.split("\n");
   const elements: DocChild[] = [];
@@ -86,7 +99,7 @@ function parseMarkdownToDocx(markdown: string): DocChild[] {
     }
 
     // ── Horizontal rule ──────────────────────────────────────────────────────
-    if (/^[-*_]{3,}$/.test(line.trim())) {
+    if (/^[-*_]{3,}$/.test(line.trim()) && !line.includes("|")) {
       elements.push(
         new Paragraph({
           children: [new TextRun({ text: "", size: 8 })],
@@ -97,20 +110,25 @@ function parseMarkdownToDocx(markdown: string): DocChild[] {
       i++; continue;
     }
 
-    // ── Table — detect by leading pipe ───────────────────────────────────────
-    if (line.trim().startsWith("|") && line.trim().endsWith("|")) {
+    // ── Table — handles both | col | col | and col | col (no leading/trailing pipe) ──
+    // Trigger when: line has pipes AND either it starts with | or next line is a separator
+    const trimmed = line.trim();
+    const hasPipes = (trimmed.match(/\|/g) ?? []).length >= 1;
+    const nextIsSep = isSepLine(lines[i + 1] ?? "");
+    if (hasPipes && (trimmed.startsWith("|") || nextIsSep)) {
       const tableLines: string[] = [];
-      while (i < lines.length && lines[i].trim().startsWith("|")) {
-        // skip separator rows like |---|---|
-        if (!/^[\s|:=-]+$/.test(lines[i])) {
-          tableLines.push(lines[i]);
-        }
+      while (i < lines.length) {
+        const tl = lines[i];
+        const trimTl = tl.trim();
+        const tlHasPipes = (trimTl.match(/\|/g) ?? []).length >= 1;
+        // Stop collecting when we hit a line with no pipes (and it's not a separator)
+        if (!tlHasPipes && !isSepLine(tl)) break;
+        // Skip separator rows (--- | ---)
+        if (!isSepLine(tl) && trimTl) tableLines.push(tl);
         i++;
       }
       if (tableLines.length > 0) {
-        const parsedRows = tableLines.map((tl) =>
-          tl.trim().slice(1, -1).split("|").map((cell) => cell.trim())
-        );
+        const parsedRows = tableLines.map((tl) => parseCells(tl));
         const colCount = Math.max(...parsedRows.map((r) => r.length));
         const colWidth = Math.floor(9360 / colCount); // total usable width in twips ÷ cols
 

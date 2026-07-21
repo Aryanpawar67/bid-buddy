@@ -1,7 +1,7 @@
 import { useState } from "react";
 import {
   Check, Circle, AlertTriangle, MessageSquare, Users, Activity,
-  LayoutList, CheckCircle2, Sparkles, BookOpen, FileText, ArrowRight, Plus, UserPlus, X,
+  LayoutList, CheckCircle2, Sparkles, BookOpen, FileText, ArrowRight, Plus, UserPlus, X, Loader2,
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import type { Bid } from "@/lib/bid-queries";
@@ -14,6 +14,9 @@ import { useDocuments, type BidDocument } from "@/lib/doc-queries";
 import { DocPreviewModal } from "@/components/docs/DocPreviewModal";
 import { AdvanceStageFooter } from "./AdvanceStageFooter";
 import type { TabDef } from "./BidHeaderBar";
+import { ProposalModal } from "@/components/ai/ProposalModal";
+import { useAiSessions, useCreateAiSession } from "@/lib/ai-queries";
+import { useCurrentUser } from "@/lib/auth";
 
 export type RFPTab = "overview" | "clarifications" | "team" | "activity_log";
 
@@ -47,6 +50,30 @@ export function RFPWorkspace({ bid, activeTab, onTabChange }: { bid: Bid; active
   const { data: team = [] } = useBidTeam(bid.id);
   const { data: activity = [] } = useBidActivity(bid.id);
   const [docPanelOpen, setDocPanelOpen] = useState(false);
+
+  // Generate Proposal
+  const { data: sessions = [] } = useAiSessions(bid.id);
+  const createSession = useCreateAiSession();
+  const { user, primaryRole } = useCurrentUser();
+  const canGenerateProposal = primaryRole === "pre_sales" || primaryRole === "admin";
+  const [proposalOpen, setProposalOpen] = useState(false);
+  const [proposalSessionId, setProposalSessionId] = useState<string | null>(null);
+  const [creatingSession, setCreatingSession] = useState(false);
+
+  async function openProposalModal() {
+    let sessionId = sessions[0]?.id ?? null;
+    if (!sessionId) {
+      setCreatingSession(true);
+      try {
+        const s = await createSession.mutateAsync({ bidId: bid.id, userId: user!.id, model: "claude-sonnet-4-6" });
+        sessionId = s.id;
+      } finally {
+        setCreatingSession(false);
+      }
+    }
+    setProposalSessionId(sessionId);
+    setProposalOpen(true);
+  }
 
   const deliverables = items.data?.deliverables ?? [];
   const questions = items.data?.questions ?? [];
@@ -260,8 +287,41 @@ export function RFPWorkspace({ bid, activeTab, onTabChange }: { bid: Bid; active
         </div>
 
         <div className="grid grid-cols-3 gap-2 mt-3">
+          {/* Generate Proposal — opens ProposalModal inline for pre_sales/admin */}
+          {canGenerateProposal ? (
+            <button
+              onClick={openProposalModal}
+              disabled={creatingSession}
+              className="flex items-center gap-2.5 p-2.5 rounded-lg bg-card/80 hairline border border-orange-400/40 hover:bg-orange-50/50 dark:hover:bg-orange-950/20 transition-colors text-left disabled:opacity-50"
+            >
+              <div className="size-7 rounded-md bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center shrink-0">
+                {creatingSession
+                  ? <Loader2 className="size-3.5 text-orange-500 animate-spin" />
+                  : <FileText className="size-3.5 text-orange-500" />}
+              </div>
+              <div className="min-w-0">
+                <div className="text-[11px] font-semibold leading-tight text-orange-600 dark:text-orange-400">
+                  ✦ Generate Proposal
+                </div>
+                <div className="text-[10px] text-muted-foreground">AI-authored from your template</div>
+              </div>
+            </button>
+          ) : (
+            <Link
+              to="/ai"
+              search={{ bidId: bid.id }}
+              className="flex items-center gap-2.5 p-2.5 rounded-lg bg-card/80 hairline border border-border hover:bg-card transition-colors"
+            >
+              <div className="size-7 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
+                <FileText className="size-3.5 text-primary" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-[11px] font-semibold leading-tight">Generate Proposal Draft</div>
+                <div className="text-[10px] text-muted-foreground">AI-authored from your template</div>
+              </div>
+            </Link>
+          )}
           {[
-            { icon: FileText, label: "Generate Proposal Draft", desc: "AI-authored from your template" },
             { icon: MessageSquare, label: "Answer Clarifications", desc: `${questions.filter(q => q.status !== "done").length} pending questions` },
             { icon: BookOpen, label: "Search Knowledge Hub", desc: "Find relevant past proposals" },
           ].map((action) => (
@@ -402,6 +462,17 @@ export function RFPWorkspace({ bid, activeTab, onTabChange }: { bid: Bid; active
         </div>
       )}
       <AdvanceStageFooter bid={bid} stage="rfp" />
+
+      {/* Proposal modal — wired to the bid's latest (or freshly created) AI session */}
+      {proposalOpen && proposalSessionId && (
+        <ProposalModal
+          open={proposalOpen}
+          onClose={() => { setProposalOpen(false); setProposalSessionId(null); }}
+          bidId={bid.id}
+          sessionId={proposalSessionId}
+          clientName={bid.client_name}
+        />
+      )}
     </div>
   );
 }
