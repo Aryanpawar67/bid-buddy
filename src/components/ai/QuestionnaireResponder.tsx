@@ -1,9 +1,10 @@
 import { useRef, useState } from "react";
-import { Download, FileSpreadsheet, Loader2, CheckCircle2, AlertCircle, X, ChevronDown } from "lucide-react";
+import { Download, FileSpreadsheet, Loader2, CheckCircle2, AlertCircle, X, ChevronDown, Pencil, Sparkles } from "lucide-react";
 import { useCurrentUser } from "@/lib/auth";
 import { useBids } from "@/lib/bid-queries";
 import { supabase } from "@/integrations/supabase/client";
 import { answerQuestionnaireFn } from "@/lib/api/answer-questionnaire";
+import { detectColumnsFn } from "@/lib/api/detect-questionnaire-columns";
 import ExcelJS from "exceljs";
 
 type Confidence = "high" | "medium" | "low";
@@ -190,6 +191,9 @@ export function QuestionnaireResponder() {
 
   // Analysis
   const [analysis, setAnalysis] = useState<SheetAnalysis | null>(null);
+  const [aiReasoning, setAiReasoning] = useState<string | null>(null);
+  const [aiDetectionFailed, setAiDetectionFailed] = useState(false);
+  const [manualMode, setManualMode] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
 
   // User-confirmed config (seeded from analysis.suggested)
@@ -199,7 +203,7 @@ export function QuestionnaireResponder() {
   const [headerRows, setHeaderRows] = useState(1);
 
   // Flow
-  const [step, setStep] = useState<"upload" | "confirm" | "preview" | "answering" | "done">("upload");
+  const [step, setStep] = useState<"upload" | "detecting" | "confirm" | "preview" | "answering" | "done">("upload");
   const [questions, setQuestions] = useState<ParsedRow[]>([]);
   const [answered, setAnswered] = useState<AnswerRow[]>([]);
   const [progress, setProgress] = useState(0);
@@ -209,7 +213,7 @@ export function QuestionnaireResponder() {
   // Stored workbook reference so we can re-analyze when user switches sheet
   const wbRef = useRef<ExcelJS.Workbook | null>(null);
 
-  function applyAnalysis(a: SheetAnalysis) {
+  function applyHeuristic(a: SheetAnalysis) {
     setAnalysis(a);
     setQuestionCol(a.suggested.questionCol);
     setAnswerCol(a.suggested.answerCol);
@@ -217,10 +221,37 @@ export function QuestionnaireResponder() {
     setHeaderRows(a.suggested.headerRows);
   }
 
+  async function runAiDetection(a: SheetAnalysis, token: string) {
+    setAiDetectionFailed(false);
+    setAiReasoning(null);
+    try {
+      const result = await detectColumnsFn({
+        data: {
+          columns: a.cols.map((c) => ({ letter: c.letter, header: c.header, samples: c.samples })),
+          totalRows: a.totalDataRows,
+          availableLetters: a.cols.map((c) => c.letter),
+        },
+        headers: { authorization: `Bearer ${token}` },
+      });
+      setQuestionCol(result.questionCol);
+      setAnswerCol(result.answerCol);
+      setStatusCol(result.statusCol);
+      setHeaderRows(result.headerRows);
+      setAiReasoning(result.reasoning);
+    } catch {
+      // Haiku failed — keep heuristic values, flag it
+      setAiDetectionFailed(true);
+    }
+    setStep("confirm");
+  }
+
   async function handleFile(f: File) {
     setFile(f);
     setParseError(null);
     setAnalysis(null);
+    setAiReasoning(null);
+    setAiDetectionFailed(false);
+    setManualMode(false);
 
     try {
       const buf = await f.arrayBuffer();
@@ -232,27 +263,33 @@ export function QuestionnaireResponder() {
       if (!names.length) throw new Error("No worksheets found in this file.");
       setSheetNames(names);
 
-      // Prefer an English-named sheet; fall back to first
       const EN_PREF = /\ben\b|english|eng/i;
       const bestIdx = names.findIndex((n) => EN_PREF.test(n));
       const idx = bestIdx >= 0 ? bestIdx : 0;
       setSelectedSheet(idx);
 
       const a = analyzeWorksheet(wb.worksheets[idx]);
-      applyAnalysis(a);
-      setStep("confirm");
+      applyHeuristic(a); // seed with heuristic while Haiku runs
+      setStep("detecting");
+
+      const { data: { session } } = await supabase.auth.getSession();
+      await runAiDetection(a, session?.access_token ?? "");
     } catch (e: any) {
       setParseError(e.message ?? "Failed to parse file.");
+      setStep("upload");
     }
   }
 
-  function switchSheet(idx: number) {
+  async function switchSheet(idx: number) {
     if (!wbRef.current) return;
     setSelectedSheet(idx);
     const ws = wbRef.current.worksheets[idx];
     if (!ws) return;
     const a = analyzeWorksheet(ws);
-    applyAnalysis(a);
+    applyHeuristic(a);
+    setStep("detecting");
+    const { data: { session } } = await supabase.auth.getSession();
+    await runAiDetection(a, session?.access_token ?? "");
   }
 
   // ── Parse questions with confirmed config ───────────────────────────────────
@@ -388,6 +425,9 @@ export function QuestionnaireResponder() {
   function reset() {
     setFile(null);
     setAnalysis(null);
+    setAiReasoning(null);
+    setAiDetectionFailed(false);
+    setManualMode(false);
     setSheetNames([]);
     setSelectedSheet(0);
     wbRef.current = null;
@@ -470,6 +510,20 @@ export function QuestionnaireResponder() {
                 <AlertCircle className="size-3.5 shrink-0 mt-0.5" /> {parseError}
               </div>
             )}
+          </div>
+        )}
+
+        {/* ── Detecting ───────────────────────────────────────────────────── */}
+        {step === "detecting" && (
+          <div className="max-w-lg flex flex-col items-center justify-center py-16 gap-4">
+            <div className="size-10 rounded-full bg-primary/10 flex items-center justify-center">
+              <Sparkles className="size-5 text-primary animate-pulse" />
+            </div>
+            <div className="text-center">
+              <p className="text-[13px] font-medium">Analysing spreadsheet structure…</p>
+              <p className="text-[11px] text-muted-foreground mt-1">Haiku is reading column headers and sample data to identify questions and response columns</p>
+            </div>
+            <Loader2 className="size-4 text-primary animate-spin" />
           </div>
         )}
 
@@ -573,34 +627,73 @@ export function QuestionnaireResponder() {
 
             {/* Editable column assignment */}
             <div>
-              <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold mb-2">
-                Confirm column assignment
-              </p>
+              {/* AI reasoning / failure banner */}
+              {aiReasoning && !aiDetectionFailed && (
+                <div className="flex items-start gap-2 p-2.5 rounded-lg bg-primary/5 border hairline border-primary/20 mb-3">
+                  <Sparkles className="size-3.5 text-primary shrink-0 mt-0.5" />
+                  <p className="text-[11px] text-foreground leading-relaxed">
+                    <span className="font-semibold text-primary">Haiku: </span>{aiReasoning}
+                  </p>
+                </div>
+              )}
+              {aiDetectionFailed && (
+                <div className="flex items-start gap-2 p-2.5 rounded-lg bg-amber-50 border hairline border-amber-200 dark:bg-amber-900/20 dark:border-amber-800 mb-3">
+                  <AlertCircle className="size-3.5 text-amber-600 shrink-0 mt-0.5" />
+                  <p className="text-[11px] text-amber-800 dark:text-amber-300">
+                    AI detection failed — showing best-guess from column analysis. Please verify and adjust below.
+                  </p>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">
+                  Confirm column assignment
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setManualMode((m) => !m)}
+                  className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+                >
+                  <Pencil className="size-3" />
+                  {manualMode ? "Back to dropdowns" : "Type column letters manually"}
+                </button>
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
-                <ColPicker
-                  label="Read questions from"
-                  value={questionCol}
-                  onChange={setQuestionCol}
-                  cols={analysis.cols}
-                  accent="primary"
-                  hint="Column that contains the vendor's questions / requirements"
-                />
-                <ColPicker
-                  label="Write iMocha responses to"
-                  value={answerCol}
-                  onChange={setAnswerCol}
-                  cols={analysis.cols}
-                  accent="emerald"
-                  hint="Blank column where AI answers will be written"
-                />
-                <ColPicker
-                  label="Write coverage badge to"
-                  value={statusCol}
-                  onChange={setStatusCol}
-                  cols={analysis.cols}
-                  accent="amber"
-                  hint="Column for Supported / Partial / Review Required badge"
-                />
+                {manualMode ? (
+                  <>
+                    <ManualColInput label="Read questions from" value={questionCol} onChange={setQuestionCol} accent="primary" hint="Column letter containing the questions / requirements" />
+                    <ManualColInput label="Write iMocha responses to" value={answerCol} onChange={setAnswerCol} accent="emerald" hint="Empty column where AI answers will be written" />
+                    <ManualColInput label="Write coverage badge to" value={statusCol} onChange={setStatusCol} accent="amber" hint="Column for Supported / Partial / Review Required" />
+                  </>
+                ) : (
+                  <>
+                    <ColPicker
+                      label="Read questions from"
+                      value={questionCol}
+                      onChange={setQuestionCol}
+                      cols={analysis.cols}
+                      accent="primary"
+                      hint="Column that contains the vendor's questions / requirements"
+                    />
+                    <ColPicker
+                      label="Write iMocha responses to"
+                      value={answerCol}
+                      onChange={setAnswerCol}
+                      cols={analysis.cols}
+                      accent="emerald"
+                      hint="Blank column where AI answers will be written"
+                    />
+                    <ColPicker
+                      label="Write coverage badge to"
+                      value={statusCol}
+                      onChange={setStatusCol}
+                      cols={analysis.cols}
+                      accent="amber"
+                      hint="Column for Supported / Partial / Review Required badge"
+                    />
+                  </>
+                )}
                 <div>
                   <label className="text-[10px] uppercase tracking-wider text-muted-foreground block mb-1">
                     Header rows to skip
@@ -776,6 +869,41 @@ function ColPicker({
         </select>
         <ChevronDown className="size-3 text-muted-foreground absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
       </div>
+      <p className="text-[10px] text-muted-foreground mt-1">{hint}</p>
+    </div>
+  );
+}
+
+function ManualColInput({
+  label, value, onChange, accent, hint,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  accent: "primary" | "emerald" | "amber";
+  hint: string;
+}) {
+  const ring = accent === "primary" ? "focus:ring-primary/40" : accent === "emerald" ? "focus:ring-emerald-400/40" : "focus:ring-amber-400/40";
+  const badge = accent === "primary"
+    ? "bg-primary/10 text-primary"
+    : accent === "emerald"
+      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+      : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400";
+
+  return (
+    <div>
+      <label className="text-[10px] uppercase tracking-wider text-muted-foreground block mb-1">
+        {label}
+        <span className={`ml-1.5 px-1.5 py-0.5 rounded text-[9px] font-semibold ${badge}`}>{value || "?"}</span>
+      </label>
+      <input
+        type="text"
+        value={value}
+        maxLength={3}
+        placeholder="e.g. C"
+        onChange={(e) => onChange(e.target.value.toUpperCase())}
+        className={`w-full h-8 rounded-md hairline border border-border bg-card px-3 text-[12px] text-foreground font-mono text-center focus:outline-none focus:ring-2 ${ring}`}
+      />
       <p className="text-[10px] text-muted-foreground mt-1">{hint}</p>
     </div>
   );
