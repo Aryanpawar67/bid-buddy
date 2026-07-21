@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { indexDocument } from "@/lib/api/doc-functions";
 import {
   Document,
   Packer,
@@ -216,6 +217,23 @@ async function authUser(req: ReturnType<typeof getRequest>) {
   return user;
 }
 
+// ── Conflict check helper ─────────────────────────────────────────────────────
+async function checkExisting(bidId: string, folder: string): Promise<{ id: string; name: string; storage_path: string } | null> {
+  const { data } = await (supabaseAdmin.from("bid_documents") as any)
+    .select("id, name, storage_path")
+    .eq("bid_id", bidId)
+    .ilike("storage_path", `%/${folder}/%`)
+    .order("size_bytes", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return data ?? null;
+}
+
+async function deleteDoc(doc: { id: string; storage_path: string }) {
+  await supabaseAdmin.storage.from("bid-documents").remove([doc.storage_path]);
+  await (supabaseAdmin.from("bid_documents") as any).delete().eq("id", doc.id);
+}
+
 // ── Storage upload + bid_documents insert ─────────────────────────────────────
 async function uploadDoc(opts: {
   buffer: Buffer;
@@ -229,7 +247,7 @@ async function uploadDoc(opts: {
     .from("bid-documents")
     .upload(path, opts.buffer, { upsert: true, contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
 
-  await supabaseAdmin.from("bid_documents").insert({
+  const { data: inserted } = await (supabaseAdmin.from("bid_documents") as any).insert({
     bid_id: opts.bidId,
     name: opts.filename,
     type: "reference",
@@ -238,7 +256,13 @@ async function uploadDoc(opts: {
     size_bytes: opts.buffer.byteLength,
     uploaded_by: opts.userId,
     source: "generated",
-  } as never);
+  }).select("id").single();
+
+  if (inserted?.id) {
+    indexDocument({ data: { documentId: inserted.id } }).catch((err) =>
+      console.error("[generate-qual-docs] indexDocument failed:", err)
+    );
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -247,9 +271,15 @@ async function uploadDoc(opts: {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const generateQualResultFn = createServerFn({ method: "POST" })
-  .handler(async ({ data }: { data: { bidId: string } }) => {
+  .handler(async ({ data }: { data: { bidId: string; force?: boolean } }) => {
     const user = await authUser(getRequest());
     if (!user) return new Response("Unauthorized", { status: 401 });
+
+    const existing = await checkExisting(data.bidId, "qual-result");
+    if (existing && !data.force) {
+      return { conflict: true as const, existingName: existing.name, existingId: existing.id };
+    }
+    if (existing && data.force) await deleteDoc(existing);
 
     const [bidRes, teamRes] = await Promise.all([
       supabaseAdmin.from("bids").select("*").eq("id", data.bidId).maybeSingle(),
@@ -482,9 +512,15 @@ export const generateQualResultFn = createServerFn({ method: "POST" })
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const generateDealBriefFn = createServerFn({ method: "POST" })
-  .handler(async ({ data }: { data: { bidId: string } }) => {
+  .handler(async ({ data }: { data: { bidId: string; force?: boolean } }) => {
     const user = await authUser(getRequest());
     if (!user) return new Response("Unauthorized", { status: 401 });
+
+    const existing = await checkExisting(data.bidId, "deal-brief");
+    if (existing && !data.force) {
+      return { conflict: true as const, existingName: existing.name, existingId: existing.id };
+    }
+    if (existing && data.force) await deleteDoc(existing);
 
     const [bidRes, teamRes, profileRes] = await Promise.all([
       supabaseAdmin.from("bids").select("*").eq("id", data.bidId).maybeSingle(),

@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useCallback } from "react";
+import { toast } from "sonner";
 import { DocxViewerModal } from "@/components/docs/DocxViewerModal";
 import { Lock, Users, ClipboardList, BarChart3, Activity, RefreshCw, FileText, UserPlus, X, Pencil, Eye } from "lucide-react";
 import { initials, urgencyClass, fmtMoney } from "@/lib/bid-constants";
@@ -984,7 +985,24 @@ function AssessmentResultTab({ bid }: { bid: Bid }) {
           <button
             onClick={() => generateQualResult.mutate(
               { bidId: bid.id, clientName: bid.client_name, decision: bid.gonogo_decision ?? "no_go", totalScore },
-              { onSuccess: (r) => { if (r?.url) openDocx(r.url, r.filename); } },
+              {
+                onSuccess: (r) => {
+                  if ("conflict" in r && r.conflict) {
+                    toast.warning(`Deal Brief already exists: ${r.existingName}`, {
+                      description: "Replace it or keep the existing one.",
+                      action: {
+                        label: "Replace",
+                        onClick: () => generateQualResult.mutate(
+                          { bidId: bid.id, clientName: bid.client_name, decision: bid.gonogo_decision ?? "no_go", totalScore, force: true },
+                          { onSuccess: (res) => { if ("url" in res && res.url) openDocx(res.url, res.filename); } }
+                        ),
+                      },
+                    });
+                  } else if ("url" in r && r.url) {
+                    openDocx(r.url, r.filename);
+                  }
+                },
+              },
             )}
             disabled={generateQualResult.isPending}
             className="flex-1 h-9 rounded-md bg-primary text-primary-foreground text-[12px] font-medium disabled:opacity-40 hover:opacity-90 inline-flex items-center justify-center gap-1.5 transition-opacity"
@@ -993,7 +1011,27 @@ function AssessmentResultTab({ bid }: { bid: Bid }) {
             {generateQualResult.isPending ? "Generating…" : "Deal Brief"}
           </button>
           <button
-            onClick={() => generateDealBrief.mutate(bid.id, { onSuccess: (r) => { if (r?.url) openDocx(r.url, r.filename); } })}
+            onClick={() => generateDealBrief.mutate(
+              { bidId: bid.id },
+              {
+                onSuccess: (r) => {
+                  if ("conflict" in r && r.conflict) {
+                    toast.warning(`Bid Qual. Result already exists: ${r.existingName}`, {
+                      description: "Replace it or keep the existing one.",
+                      action: {
+                        label: "Replace",
+                        onClick: () => generateDealBrief.mutate(
+                          { bidId: bid.id, force: true },
+                          { onSuccess: (res) => { if ("url" in res && res.url) openDocx(res.url, res.filename); } }
+                        ),
+                      },
+                    });
+                  } else if ("url" in r && r.url) {
+                    openDocx(r.url, r.filename);
+                  }
+                },
+              }
+            )}
             disabled={generateDealBrief.isPending}
             className="flex-1 h-9 rounded-md hairline border bg-card text-[12px] font-medium disabled:opacity-40 hover:bg-muted inline-flex items-center justify-center gap-1.5 transition-colors"
           >

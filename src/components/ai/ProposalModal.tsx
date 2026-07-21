@@ -49,10 +49,9 @@ export function ProposalModal({ open, onClose, bidId, sessionId, clientName }: P
     );
   }
 
-  async function handleGenerateDocx() {
+  async function handleGenerateDocx(force = false) {
     if (!preview) return;
     setError(null);
-    console.log("[ProposalModal] handleGenerateDocx called, preview:", preview.rfp_name);
     const intake: Intake = {
       ...preview,
       prepared_for: coverFields.prepared_for || "[TO PROVIDE: contact name & title]",
@@ -60,19 +59,28 @@ export function ProposalModal({ open, onClose, bidId, sessionId, clientName }: P
       spoc_email: coverFields.spoc_email || "[TO PROVIDE: Sales SPOC email]",
     };
     try {
-      console.log("[ProposalModal] calling generateMutation...");
-      const res = await generateMutation.mutateAsync({ bidId, sessionId, intake, format });
-      console.log("[ProposalModal] mutateAsync resolved, res:", res, "ok:", res?.ok, "status:", res?.status);
+      const result = await generateMutation.mutateAsync({ bidId, sessionId, intake, format, force });
+
+      if (result.conflict) {
+        toast.warning(`Proposal already exists: ${result.existingName}`, {
+          description: "Replace it or keep the existing one.",
+          action: {
+            label: "Replace",
+            onClick: () => handleGenerateDocx(true),
+          },
+        });
+        return;
+      }
+
+      const res = result._res;
       if (!res || typeof res.blob !== "function") {
         throw new Error(`Response is not a fetch Response — got: ${JSON.stringify(res)}`);
       }
       const blob = await res.blob();
-      console.log("[ProposalModal] blob size:", blob.size, "type:", blob.type);
       const url = URL.createObjectURL(blob);
       const contentDisposition = res.headers.get("Content-Disposition") ?? "";
       const filenameMatch = contentDisposition.match(/filename="([^"]+)"/);
       const filename = filenameMatch?.[1] ?? "proposal.docx";
-      console.log("[ProposalModal] downloading as:", filename);
       const a = document.createElement("a");
       a.href = url;
       a.download = filename;

@@ -314,13 +314,41 @@ export const reindexAll = createServerFn({ method: "POST" })
   .inputValidator(z.object({}))
   .handler(async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: docs, error } = await (supabaseAdmin as any)
+    const { data: allDocs, error } = await (supabaseAdmin as any)
       .from("bid_documents")
-      .select("id");
+      .select("id, name, bid_id, storage_path, size_bytes")
+      .order("size_bytes", { ascending: false });
     if (error) throw error;
 
+    // Deduplicate: group by (bid_id + name). Keep the largest; delete the rest.
+    const seen = new Map<string, string>(); // key → kept id
+    const toDelete: { id: string; storage_path: string }[] = [];
+
+    for (const doc of allDocs ?? []) {
+      const key = `${doc.bid_id ?? "global"}::${doc.name}`;
+      if (seen.has(key)) {
+        toDelete.push({ id: doc.id, storage_path: doc.storage_path });
+      } else {
+        seen.set(key, doc.id);
+      }
+    }
+
+    // Delete duplicate storage files + DB rows
+    let deleted = 0;
+    for (const dup of toDelete) {
+      try {
+        await supabaseAdmin.storage.from("bid-documents").remove([dup.storage_path]);
+        await (supabaseAdmin as any).from("bid_documents").delete().eq("id", dup.id);
+        deleted++;
+      } catch (err) {
+        console.error(`reindexAll: delete duplicate ${dup.id} failed`, err);
+      }
+    }
+
+    // Reindex survivors
+    const survivors = (allDocs ?? []).filter((d: any) => !toDelete.some((x) => x.id === d.id));
     let indexed = 0;
-    for (const doc of docs ?? []) {
+    for (const doc of survivors) {
       try {
         await indexDocument({ data: { documentId: doc.id } });
         indexed++;
@@ -328,7 +356,7 @@ export const reindexAll = createServerFn({ method: "POST" })
         console.error(`reindexAll: failed for ${doc.id}`, err);
       }
     }
-    return { indexed, total: docs?.length ?? 0 };
+    return { indexed, deleted, total: survivors.length };
   });
 
 // ── getDocPreview ─────────────────────────────────────────────────────────────

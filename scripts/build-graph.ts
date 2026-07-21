@@ -214,20 +214,12 @@ async function processDocument(doc: { id: string; name: string; storage_path: st
 
 // ── main ──────────────────────────────────────────────────────────────────────
 
-// Only the global KB docs that need (re)extraction
-const FAILED_NAMES = [
-  "TA_Fn_Requriment.docx",
-  "Technical.docx",
-  "Security.docx",
-  "TA_Analytics_.docx",
-  "SI_Fn_Requirement.docx",
-  "Support & Project Management.docx",
-];
+// Only bid-scoped uploaded (client-sent) docs — skip generated outputs
 const { data: docs, error } = await (supabase as any)
   .from("bid_documents")
   .select("id, name, storage_path")
-  .is("bid_id", null)
-  .in("name", FAILED_NAMES)
+  .not("bid_id", "is", null)
+  .eq("source", "uploaded")
   .order("created_at", { ascending: true });
 
 if (error) { console.error("Failed to fetch documents:", error); process.exit(1); }

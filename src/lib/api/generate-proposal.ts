@@ -4,6 +4,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import JSZip from "jszip";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { indexDocument } from "@/lib/api/doc-functions";
 
 // ── Template cache ─────────────────────────────────────────────────────────────
 const templateCache: Record<string, Buffer> = {};
@@ -173,6 +174,7 @@ const InputSchema = z.object({
   sessionId: z.string().uuid(),
   intake: IntakeSchema.optional(),
   format: z.enum(["docx", "pdf"]).default("docx"),
+  force: z.boolean().optional(),
 });
 
 // ── RAG helpers ────────────────────────────────────────────────────────────────
@@ -560,6 +562,26 @@ export const generateProposalFn = createServerFn({ method: "POST" })
     const { data: { user }, error: authErr } = await supabaseAdmin.auth.getUser(token);
     if (authErr || !user) return new Response("Unauthorized", { status: 401 });
 
+    // ── Conflict check: one proposal per bid ──────────────────────────────────
+    const { data: existingProposal } = await (supabaseAdmin.from("bid_documents") as any)
+      .select("id, name, storage_path")
+      .eq("bid_id", data.bidId)
+      .eq("type", "proposal")
+      .order("size_bytes", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (existingProposal && !data.force) {
+      return new Response(
+        JSON.stringify({ conflict: true, existingName: existingProposal.name, existingId: existingProposal.id }),
+        { status: 409, headers: { "Content-Type": "application/json" } }
+      );
+    }
+    if (existingProposal && data.force) {
+      await supabaseAdmin.storage.from("bid-documents").remove([existingProposal.storage_path]);
+      await (supabaseAdmin.from("bid_documents") as any).delete().eq("id", existingProposal.id);
+    }
+
     // ── Phase 1: Author via Haiku (skipped when pre-authored intake provided) ─
     let intake: Intake;
     if (data.intake) {
@@ -676,7 +698,7 @@ export const generateProposalFn = createServerFn({ method: "POST" })
       .upload(storagePath, outputBuffer, { contentType, upsert: true });
     if (storageErr) console.error("[generate-proposal] storage upload error:", storageErr);
 
-    await (supabaseAdmin.from("bid_documents") as any).insert({
+    const { data: insertedDoc } = await (supabaseAdmin.from("bid_documents") as any).insert({
       bid_id: data.bidId,
       name: filename,
       type: "proposal",
@@ -685,7 +707,13 @@ export const generateProposalFn = createServerFn({ method: "POST" })
       size_bytes: outputBuffer.length,
       uploaded_by: user.id,
       source: "generated",
-    });
+    }).select("id").single();
+
+    if (insertedDoc?.id) {
+      indexDocument({ data: { documentId: insertedDoc.id } }).catch((err) =>
+        console.error("[generate-proposal] indexDocument failed:", err)
+      );
+    }
 
     return new Response(outputBuffer, {
       headers: {

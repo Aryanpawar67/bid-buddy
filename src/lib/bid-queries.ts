@@ -340,16 +340,27 @@ export function useGenerateQualAssessment() {
 export function useGenerateQualResult() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ bidId, clientName, decision, totalScore }: {
+    mutationFn: async ({ bidId, clientName, decision, totalScore, force }: {
       bidId: string;
       clientName: string;
       decision: string;
       totalScore: number;
+      force?: boolean;
     }) => {
       const { generateQualResultFn } = await import("@/lib/api/generate-qual-docs");
       const { data: { session } } = await supabase.auth.getSession();
 
-      // Fetch team emails at click-time (not on render) to avoid CORS spam
+      const result = await generateQualResultFn({
+        data: { bidId, force },
+        headers: { authorization: `Bearer ${session?.access_token ?? ""}` },
+      }) as { conflict: true; existingName: string; existingId: string } | { url: string; filename: string };
+
+      if ("conflict" in result && result.conflict) return result;
+
+      const { url, filename } = result as { url: string; filename: string };
+      if (!url) throw new Error("Generation failed — no download URL");
+
+      // Fetch team emails + open mailto for team notification
       const { data: teamRows } = await (supabase as any)
         .from("bid_assignments")
         .select("profiles!bid_assignments_user_id_fkey(email)")
@@ -359,13 +370,6 @@ export function useGenerateQualResult() {
         .filter(Boolean)
         .join(",");
 
-      const { url, filename } = await generateQualResultFn({
-        data: { bidId },
-        headers: { authorization: `Bearer ${session?.access_token ?? ""}` },
-      }) as { url: string; filename: string };
-      if (!url) throw new Error("Generation failed — no download URL");
-
-      // Open mailto for team notification
       const decLabel = decision === "go" ? "GO" : decision === "conditional_go" ? "CONDITIONAL GO" : "NO GO";
       const subject = encodeURIComponent(`[Bid Compass] Qual Result — ${clientName} | ${decLabel}`);
       const body = encodeURIComponent(
@@ -375,7 +379,8 @@ export function useGenerateQualResult() {
 
       return { url, filename };
     },
-    onSuccess: (_d, { bidId }) => {
+    onSuccess: (result, { bidId }) => {
+      if ("conflict" in result && result.conflict) return;
       qc.invalidateQueries({ queryKey: ["documents", { bidId }] });
     },
   });
@@ -497,17 +502,22 @@ export function useTeamMembers() {
 export function useGenerateDealBrief() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (bidId: string) => {
+    mutationFn: async ({ bidId, force }: { bidId: string; force?: boolean }) => {
       const { generateDealBriefFn } = await import("@/lib/api/generate-qual-docs");
       const { data: { session } } = await supabase.auth.getSession();
-      const { url, filename } = await generateDealBriefFn({
-        data: { bidId },
+      const result = await generateDealBriefFn({
+        data: { bidId, force },
         headers: { authorization: `Bearer ${session?.access_token ?? ""}` },
-      }) as { url: string; filename: string };
+      }) as { conflict: true; existingName: string; existingId: string } | { url: string; filename: string };
+
+      if ("conflict" in result && result.conflict) return result;
+
+      const { url, filename } = result as { url: string; filename: string };
       if (!url) throw new Error("Generation failed — no download URL");
       return { url, filename };
     },
-    onSuccess: (_d, bidId) => {
+    onSuccess: (result, { bidId }) => {
+      if ("conflict" in result && result.conflict) return;
       qc.invalidateQueries({ queryKey: ["documents", { bidId }] });
     },
     onError: (e) => {

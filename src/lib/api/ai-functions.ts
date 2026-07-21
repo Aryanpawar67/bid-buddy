@@ -42,6 +42,7 @@ export async function generateProposal(input: {
   sessionId: string;
   intake?: Intake;
   format?: "docx" | "pdf";
+  force?: boolean;
 }): Promise<Response> {
   const { data: { session } } = await import("@/integrations/supabase/client").then(
     (m) => m.supabase.auth.getSession()

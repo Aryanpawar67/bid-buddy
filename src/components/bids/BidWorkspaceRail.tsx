@@ -10,6 +10,7 @@ import {
 } from "@/lib/bid-queries";
 import { DEFAULT_CRITERIA, computeScore } from "./DealQualificationWorkspace";
 import { useCurrentUser } from "@/lib/auth";
+import { toast } from "sonner";
 
 type Props = {
   bid: Bid;
@@ -178,12 +179,25 @@ function DealQualRail({
         <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
           <button
             onClick={() =>
-              generateQualResult.mutate({
-                bidId: bid.id,
-                clientName: bid.client_name,
-                decision: bid.gonogo_decision ?? "no_go",
-                totalScore,
-              })
+              generateQualResult.mutate(
+                { bidId: bid.id, clientName: bid.client_name, decision: bid.gonogo_decision ?? "no_go", totalScore },
+                {
+                  onSuccess: (r) => {
+                    if ("conflict" in r && r.conflict) {
+                      toast.warning(`Qual Result already exists: ${r.existingName}`, {
+                        description: "Replace it or keep the existing one.",
+                        action: {
+                          label: "Replace",
+                          onClick: () => generateQualResult.mutate({
+                            bidId: bid.id, clientName: bid.client_name,
+                            decision: bid.gonogo_decision ?? "no_go", totalScore, force: true,
+                          }),
+                        },
+                      });
+                    }
+                  },
+                }
+              )
             }
             disabled={generateQualResult.isPending || !canGenerate}
             className="h-8 rounded-md bg-primary text-primary-foreground text-[11px] font-medium disabled:opacity-40 hover:opacity-90 transition-opacity"
@@ -191,7 +205,28 @@ function DealQualRail({
             {generateQualResult.isPending ? "Generating…" : "Qual Result Doc"}
           </button>
           <button
-            onClick={() => generateDealBrief.mutate(bid.id)}
+            onClick={() =>
+              generateDealBrief.mutate(
+                { bidId: bid.id },
+                {
+                  onSuccess: (r) => {
+                    if ("conflict" in r && r.conflict) {
+                      toast.warning(`Deal Brief already exists: ${r.existingName}`, {
+                        description: "Replace it or keep the existing one.",
+                        action: {
+                          label: "Replace",
+                          onClick: () => generateDealBrief.mutate({ bidId: bid.id, force: true },
+                            { onSuccess: (res) => { if ("url" in res && res.url) window.open(res.url, "_blank"); } }
+                          ),
+                        },
+                      });
+                    } else if ("url" in r && r.url) {
+                      window.open(r.url, "_blank");
+                    }
+                  },
+                }
+              )
+            }
             disabled={generateDealBrief.isPending || !canGenerate}
             className="h-8 rounded-md hairline border bg-card text-[11px] font-medium disabled:opacity-40 hover:bg-muted transition-colors"
           >

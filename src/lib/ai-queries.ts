@@ -400,11 +400,16 @@ export function useGenerateProposal() {
       sessionId: string;
       intake?: import("@/lib/api/generate-proposal").Intake;
       format?: "docx" | "pdf";
+      force?: boolean;
     }) => {
       const { generateProposal } = await import("@/lib/api/ai-functions");
       const res = await generateProposal(input);
+      if (res.status === 409) {
+        const conflict = await res.json() as { conflict: true; existingName: string; existingId: string };
+        return { conflict: true as const, existingName: conflict.existingName, existingId: conflict.existingId, _res: null as null };
+      }
       if (!res.ok) throw new Error("Proposal generation failed");
-      return res;
+      return { conflict: false as const, existingName: "", existingId: "", _res: res };
     },
   });
 }
