@@ -70,17 +70,39 @@ const Q_KEYWORDS = /question|requirement|specification|description|criterion|ite
 const A_KEYWORDS = /answer|response|vendor|reply|comment|your response|proposal|provided by|fill|input/i;
 const S_KEYWORDS = /status|coverage|confidence|rating|score|evaluation|result|assessment|verdict/i;
 
+function findHeaderRow(ws: ExcelJS.Worksheet): number {
+  // Merged title rows (common in Asian company spreadsheets) return the same
+  // value for every column via ExcelJS. The real header row is the first row
+  // where at least 2 adjacent cells have distinct non-empty values.
+  const scanCols = Math.min(ws.columnCount || 10, 10);
+  for (let r = 1; r <= 6; r++) {
+    const row = ws.getRow(r);
+    const seen = new Set<string>();
+    let nonEmpty = 0;
+    for (let c = 1; c <= scanCols; c++) {
+      const val = String(row.getCell(c).value ?? "").trim();
+      if (val) { seen.add(val); nonEmpty++; }
+    }
+    // Diverse values in multiple columns → this is the real header row
+    if (nonEmpty >= 2 && seen.size >= 2) return r;
+  }
+  return 1;
+}
+
 function analyzeWorksheet(ws: ExcelJS.Worksheet): SheetAnalysis {
   const lastCol = ws.columnCount || 10;
   const lastRow = ws.rowCount || 1;
   const SAMPLE_ROWS = 10;
-  const DATA_START = 2; // assume row 1 is header initially
+
+  // Detect the actual header row — skips merged title rows
+  const headerRowNum = findHeaderRow(ws);
+  const DATA_START = headerRowNum + 1;
 
   const cols: ColInfo[] = [];
 
   for (let c = 1; c <= Math.min(lastCol, 26); c++) {
     const letter = colNumToLetter(c);
-    const headerCell = ws.getRow(1).getCell(c);
+    const headerCell = ws.getRow(headerRowNum).getCell(c);
     const header = String(headerCell.value ?? "").trim();
 
     const samples: string[] = [];
@@ -141,13 +163,13 @@ function analyzeWorksheet(ws: ExcelJS.Worksheet): SheetAnalysis {
   const aBest = [...cols].sort((a, b) => scoreA(b, qBest) - scoreA(a, qBest))[0]?.letter ?? "B";
   const sBest = [...cols].sort((a, b) => scoreS(b, qBest, aBest) - scoreS(a, qBest, aBest))[0]?.letter ?? "C";
 
-  const dataRowCount = Math.max(0, lastRow - 1);
+  const dataRowCount = Math.max(0, lastRow - headerRowNum);
 
   return {
     cols,
     totalDataRows: dataRowCount,
-    detectedHeaderRows: 1,
-    suggested: { questionCol: qBest, answerCol: aBest, statusCol: sBest, headerRows: 1 },
+    detectedHeaderRows: headerRowNum,
+    suggested: { questionCol: qBest, answerCol: aBest, statusCol: sBest, headerRows: headerRowNum },
   };
 }
 
@@ -427,6 +449,11 @@ export function QuestionnaireResponder() {
                 <p className="text-[12px] font-semibold text-foreground truncate">{file?.name}</p>
                 <p className="text-[11px] text-muted-foreground mt-0.5">
                   {analysis.cols.length} columns detected · ~{analysis.totalDataRows} data rows
+                  {analysis.detectedHeaderRows > 1 && (
+                    <span className="ml-1.5 text-[10px] bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 px-1.5 py-0.5 rounded font-medium">
+                      title row detected — headers read from row {analysis.detectedHeaderRows}
+                    </span>
+                  )}
                 </p>
               </div>
             </div>
