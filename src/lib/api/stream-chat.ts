@@ -120,11 +120,26 @@ function cosineSimilarity(a: number[], b: number[]): number {
 // Graph RAG: BFS 1-hop traversal from query-matched entities
 async function runGraphSearch(query: string, bidId: string | null): Promise<ChunkRow[]> {
   try {
-    // 1. Embed query and find closest entities by vector similarity (no RPC needed)
+    // 1. Embed query and find closest entities — scoped to visible docs
     const queryEmbedding = await embedText(query);
+
+    // Determine which document IDs are in scope:
+    //   global chat (bidId=null) → only global KB docs (bid_id IS NULL)
+    //   bid chat → global KB docs + this bid's docs
+    const docQuery = (supabaseAdmin as any)
+      .from("bid_documents")
+      .select("id");
+    const { data: scopedDocs } = bidId
+      ? await docQuery.or(`bid_id.is.null,bid_id.eq.${bidId}`)
+      : await docQuery.is("bid_id", null);
+
+    const scopedDocIds: string[] = (scopedDocs ?? []).map((d: any) => d.id as string);
+    if (!scopedDocIds.length) return [];
+
     const { data: allEntities } = await (supabaseAdmin as any)
       .from("kg_entities")
-      .select("id, name, embedding");
+      .select("id, name, embedding")
+      .in("document_id", scopedDocIds);
     if (!allEntities?.length) return [];
 
     const scored = (allEntities as { id: string; name: string; embedding: number[] | string }[])

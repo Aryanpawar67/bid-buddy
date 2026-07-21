@@ -275,7 +275,7 @@ export const generateQualResultFn = createServerFn({ method: "POST" })
     const user = await authUser(getRequest());
     if (!user) return new Response("Unauthorized", { status: 401 });
 
-    const existing = await checkExisting(data.bidId, "qual-result");
+    const existing = await checkExisting(data.bidId, "deal-brief");
     if (existing && !data.force) {
       return { conflict: true as const, existingName: existing.name, existingId: existing.id };
     }
@@ -516,7 +516,7 @@ export const generateDealBriefFn = createServerFn({ method: "POST" })
     const user = await authUser(getRequest());
     if (!user) return new Response("Unauthorized", { status: 401 });
 
-    const existing = await checkExisting(data.bidId, "deal-brief");
+    const existing = await checkExisting(data.bidId, "qual-result");
     if (existing && !data.force) {
       return { conflict: true as const, existingName: existing.name, existingId: existing.id };
     }
