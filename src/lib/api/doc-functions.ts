@@ -124,6 +124,121 @@ async function extractText(buffer: Buffer, ext: string): Promise<string> {
   return "";
 }
 
+// ── entity extraction (Graph RAG) ─────────────────────────────────────────────
+
+interface ExtractedEntity { name: string; type: string; description?: string }
+interface ExtractedRelationship { source: string; target: string; type: string; description?: string }
+
+async function extractAndIndexEntities(
+  fullDocText: string,
+  documentId: string,
+  rawChunks: string[]
+): Promise<void> {
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+  let entities: ExtractedEntity[] = [];
+  let relationships: ExtractedRelationship[] = [];
+
+  try {
+    const resp = await anthropic.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 4096,
+      system: [{ type: "text", text: fullDocText, cache_control: { type: "ephemeral" } }],
+      messages: [{
+        role: "user",
+        content: `Extract key entities and relationships from this document for a knowledge graph.
+
+Return raw JSON only (no markdown fences):
+{
+  "entities": [{"name":"<exact name>","type":"<TYPE>","description":"<1 sentence>"}],
+  "relationships": [{"source":"<entity name>","target":"<entity name>","type":"<TYPE>","description":"<1 sentence>"}]
+}
+
+Entity types: STANDARD, FEATURE, INTEGRATION, CONCEPT, PRODUCT, POLICY, METRIC, ORG
+Relationship types: REQUIRES, SUPPORTS, PART_OF, INTEGRATES_WITH, USES, COMPLIES_WITH, MEASURES
+
+Rules:
+- Extract 10–25 important entities; quality over quantity
+- Use the exact name as it appears in the document
+- Only list relationships between entities you extracted
+- Focus on facts that enable cross-document multi-hop reasoning`,
+      }],
+    });
+
+    const raw = resp.content.find((b) => b.type === "text")?.text?.trim() ?? "{}";
+    // Strip markdown fences if Haiku wraps the JSON
+    const jsonStr = raw.replace(/^```[a-z]*\n?/i, "").replace(/\n?```$/i, "").trim();
+    const parsed = JSON.parse(jsonStr);
+    entities = Array.isArray(parsed.entities) ? parsed.entities : [];
+    relationships = Array.isArray(parsed.relationships) ? parsed.relationships : [];
+  } catch {
+    return; // non-fatal: skip entity extraction on parse/API error
+  }
+
+  if (!entities.length) return;
+
+  // Embed entity names + descriptions
+  const entityTexts = entities.map((e) => `${e.name}: ${e.description ?? e.type}`);
+  let embeddings: number[][];
+  try {
+    embeddings = await embedBatch(entityTexts);
+  } catch {
+    embeddings = entities.map(() => new Array(1024).fill(0));
+  }
+
+  // Delete stale kg data for this document (cascade handles relationships + chunk links)
+  await (supabaseAdmin as any).from("kg_entities").delete().eq("document_id", documentId);
+
+  // Insert entities
+  const entityRows = entities.map((e, i) => ({
+    document_id: documentId,
+    name: e.name,
+    type: e.type,
+    description: e.description ?? null,
+    embedding: JSON.stringify(embeddings[i]),
+  }));
+  const { data: inserted, error: entityErr } = await (supabaseAdmin as any)
+    .from("kg_entities")
+    .insert(entityRows)
+    .select("id, name");
+  if (entityErr || !inserted?.length) return;
+
+  const entityIdMap = new Map<string, string>(
+    (inserted as { id: string; name: string }[]).map((e) => [e.name.toLowerCase(), e.id])
+  );
+
+  // Insert relationships (map names → IDs)
+  const relRows = relationships
+    .map((r) => ({
+      source_entity_id: entityIdMap.get(r.source.toLowerCase()),
+      target_entity_id: entityIdMap.get(r.target.toLowerCase()),
+      relationship_type: r.type,
+      description: r.description ?? null,
+      document_id: documentId,
+    }))
+    .filter((r) => r.source_entity_id && r.target_entity_id);
+
+  if (relRows.length) {
+    await (supabaseAdmin as any).from("kg_relationships").insert(relRows);
+  }
+
+  // Link entities to chunks via substring match
+  const chunkEntityRows: { document_id: string; chunk_index: number; entity_id: string }[] = [];
+  for (const e of inserted as { id: string; name: string }[]) {
+    const needle = e.name.toLowerCase();
+    for (let i = 0; i < rawChunks.length; i++) {
+      if (rawChunks[i].toLowerCase().includes(needle)) {
+        chunkEntityRows.push({ document_id: documentId, chunk_index: i, entity_id: e.id });
+      }
+    }
+  }
+  if (chunkEntityRows.length) {
+    await (supabaseAdmin as any)
+      .from("kg_chunk_entities")
+      .upsert(chunkEntityRows, { onConflict: "document_id,chunk_index,entity_id" });
+  }
+}
+
 // ── indexDocument ─────────────────────────────────────────────────────────────
 export const indexDocument = createServerFn({ method: "POST" })
   .inputValidator(z.object({ documentId: z.string().uuid() }))
@@ -185,6 +300,11 @@ export const indexDocument = createServerFn({ method: "POST" })
       .update({ embedding: JSON.stringify(allEmbeddings[0]) })
       .eq("id", data.documentId);
     if (updateErr) throw updateErr;
+
+    // 9. Extract entities + relationships for Graph RAG (best-effort, non-blocking)
+    extractAndIndexEntities(text, data.documentId, rawChunks).catch((err) =>
+      console.error("[indexDocument] entity extraction failed:", err)
+    );
 
     return { chunksIndexed: chunks.length };
   });

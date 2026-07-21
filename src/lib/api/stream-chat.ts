@@ -111,9 +111,98 @@ async function fetchPinnedChunks(docIds: string[]): Promise<ChunkRow[]> {
   }
 }
 
+function cosineSimilarity(a: number[], b: number[]): number {
+  let dot = 0, na = 0, nb = 0;
+  for (let i = 0; i < a.length; i++) { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i]; }
+  return dot / (Math.sqrt(na) * Math.sqrt(nb) || 1);
+}
+
+// Graph RAG: BFS 1-hop traversal from query-matched entities
+async function runGraphSearch(query: string, bidId: string | null): Promise<ChunkRow[]> {
+  try {
+    // 1. Embed query and find closest entities by vector similarity (no RPC needed)
+    const queryEmbedding = await embedText(query);
+    const { data: allEntities } = await (supabaseAdmin as any)
+      .from("kg_entities")
+      .select("id, name, embedding");
+    if (!allEntities?.length) return [];
+
+    const scored = (allEntities as { id: string; name: string; embedding: number[] | string }[])
+      .map((e) => {
+        const emb = typeof e.embedding === "string" ? JSON.parse(e.embedding) : e.embedding;
+        return { id: e.id, score: cosineSimilarity(queryEmbedding, emb) };
+      })
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10)
+      .filter((e) => e.score > 0.4);
+
+    const matchedEntities = scored;
+
+    if (!matchedEntities?.length) return [];
+
+    const seedIds: string[] = matchedEntities.map((e: any) => e.id);
+
+    // 2. 1-hop: collect neighbor entity IDs via relationships
+    const { data: rels } = await (supabaseAdmin as any)
+      .from("kg_relationships")
+      .select("source_entity_id, target_entity_id")
+      .or(`source_entity_id.in.(${seedIds.join(",")}),target_entity_id.in.(${seedIds.join(",")})`);
+
+    const allEntityIds = new Set<string>(seedIds);
+    for (const r of rels ?? []) {
+      allEntityIds.add(r.source_entity_id);
+      allEntityIds.add(r.target_entity_id);
+    }
+
+    // 3. Fetch chunk links for all entity IDs
+    const { data: chunkLinks } = await (supabaseAdmin as any)
+      .from("kg_chunk_entities")
+      .select("document_id, chunk_index")
+      .in("entity_id", [...allEntityIds]);
+
+    if (!chunkLinks?.length) return [];
+
+    // Group chunk_index by document_id for batch fetch
+    const byDoc = new Map<string, number[]>();
+    for (const link of chunkLinks) {
+      if (!byDoc.has(link.document_id)) byDoc.set(link.document_id, []);
+      byDoc.get(link.document_id)!.push(link.chunk_index);
+    }
+
+    // 4. Fetch chunk text, scoped to bid
+    const allChunks: ChunkRow[] = [];
+    for (const [docId, indices] of byDoc) {
+      const { data: rows } = await (supabaseAdmin as any)
+        .from("bid_document_chunks")
+        .select("chunk_text, bid_documents(name, bid_id)")
+        .eq("document_id", docId)
+        .in("chunk_index", indices);
+
+      for (const row of rows ?? []) {
+        const chunkBidId: string | null = row.bid_documents?.bid_id ?? null;
+        // Scope: global docs always; bid docs only when bidId matches
+        if (chunkBidId !== null && chunkBidId !== bidId) continue;
+        allChunks.push({
+          doc_name: row.bid_documents?.name ?? "Unknown",
+          chunk_text: row.chunk_text,
+        });
+      }
+    }
+
+    return allChunks;
+  } catch {
+    return [];
+  }
+}
+
 async function runSearch(query: string, bidId: string | null): Promise<ChunkRow[]> {
   try {
-    const embedding = await embedText(query);
+    // Run hybrid vector search and graph traversal in parallel
+    const [embedding, graphChunks] = await Promise.all([
+      embedText(query),
+      runGraphSearch(query, bidId),
+    ]);
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data } = await (supabaseAdmin.rpc as any)("hybrid_search_chunks", {
       query_text: query,
@@ -122,10 +211,18 @@ async function runSearch(query: string, bidId: string | null): Promise<ChunkRow[
       match_count: 50,
       min_similarity: 0.4,
     });
-    const candidates = (data ?? []) as ChunkRow[];
-    return await rerank(query, candidates);
+    const vectorChunks = (data ?? []) as ChunkRow[];
+
+    // Merge: deduplicate graph chunks against vector results (fingerprint on first 120 chars)
+    const seen = new Set(vectorChunks.map((c) => c.chunk_text.slice(0, 120)));
+    const merged = [
+      ...vectorChunks,
+      ...graphChunks.filter((c) => !seen.has(c.chunk_text.slice(0, 120))),
+    ];
+
+    return await rerank(query, merged);
   } catch {
-    // Voyage down → try FTS-only with zero vector, skip rerank
+    // Voyage down → FTS-only fallback (no graph, no rerank)
     try {
       const zero = JSON.stringify(new Array(1024).fill(0));
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
