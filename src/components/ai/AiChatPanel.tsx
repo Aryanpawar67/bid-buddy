@@ -134,6 +134,14 @@ export function AiChatPanel({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // Auto-resize textarea to content, capped at ~8 lines
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  }, [inputValue]);
+
   // Filtered doc list for the @ dropdown
   const mentionDocs = mentionQuery !== null
     ? bidDocs.filter((d) =>
@@ -556,8 +564,8 @@ export function AiChatPanel({
               }
               rows={1}
               disabled={isStreaming}
-              className="flex-1 resize-none text-[12px] bg-background border hairline border-border rounded-lg px-3 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 disabled:opacity-50 max-h-32 overflow-y-auto"
-              style={{ minHeight: "36px" }}
+              className="flex-1 resize-none text-[12px] bg-background border hairline border-border rounded-lg px-3 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 disabled:opacity-50 overflow-y-auto"
+              style={{ minHeight: "36px", maxHeight: "200px" }}
             />
             <button
               onClick={() => handleSend()}
