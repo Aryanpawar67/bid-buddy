@@ -66,9 +66,10 @@ function colLetterToNum(letter: string): number {
 
 // ── XLSX structure analysis ───────────────────────────────────────────────────
 
-const Q_KEYWORDS = /question|requirement|specification|description|criterion|item|parameter|ask|query|field|statement|topic/i;
-const A_KEYWORDS = /answer|response|vendor|reply|comment|your response|proposal|provided by|fill|input/i;
-const S_KEYWORDS = /status|coverage|confidence|rating|score|evaluation|result|assessment|verdict/i;
+// Multilingual role keywords — EN + common Asian/European RFP languages
+const Q_KEYWORDS = /question|requirement|specification|description|criterion|item|parameter|ask|query|field|statement|topic|yêu cầu|câu hỏi|требование|anforderung|exigence|requisito|要求|요구사항/i;
+const A_KEYWORDS = /answer|response|vendor|reply|comment|your response|proposal|provided by|fill|input|đối tác|ghi chú của đối|partner note|supplier|nhà cung|phản hồi nhà|ответ поставщика|lieferant|fournisseur|proveedor|回答|공급업체/i;
+const S_KEYWORDS = /status|coverage|confidence|rating|score|evaluation|result|assessment|verdict|phản hồi đáp|tuân thủ|соответствие|bewertung|évaluation|evaluación|状态|상태/i;
 
 function findHeaderRow(ws: ExcelJS.Worksheet): number {
   // Merged title rows (common in Asian company spreadsheets) return the same
