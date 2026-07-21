@@ -60,6 +60,17 @@ function confidenceFor(chunkCount: number): "high" | "medium" | "low" {
   return "low";
 }
 
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/^#{1,6}\s+/gm, "")        // ## headers
+    .replace(/^\s*[-*]\s+/gm, "")        // - bullets
+    .replace(/\*\*(.+?)\*\*/gs, "$1")    // **bold**
+    .replace(/\*(.+?)\*/gs, "$1")        // *italic*
+    .replace(/`(.+?)`/g, "$1")           // `code`
+    .replace(/\n{3,}/g, "\n\n")          // collapse excess blank lines
+    .trim();
+}
+
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 async function answerOne(
@@ -71,26 +82,39 @@ async function answerOne(
   const context = formatChunks(chunks);
   const sources = [...new Set(chunks.map((c) => c.doc_name))];
 
-  const systemPrompt = context
-    ? `You are an iMocha RFP response specialist. Answer the vendor assessment question below using ONLY the knowledge base excerpts provided. Be specific, factual, and concise (2–4 sentences). If the excerpts don't fully cover the question, answer what you can from them and note any gaps briefly. Always respond in English regardless of the language of the question.`
-    : `You are an iMocha RFP response specialist. No knowledge base content was retrieved for this question. Provide a short, honest placeholder answer based on iMocha's general product capabilities (TA: assessments, AI interviews, ATS integrations; TM: skills intelligence, competency management, HRIS integrations; both: SOC2 Type II, ISO 27001, SSO/SAML, REST API). Keep it to 2 sentences and note that detailed confirmation is required. Always respond in English.`;
+  const systemPrompt = `You are an iMocha pre-sales specialist writing vendor security assessment responses on behalf of iMocha. Your answers will be pasted directly into a client's procurement spreadsheet and read by their security or procurement team — they must be professional, confident, and immediately usable.
+
+FORMATTING — strictly enforced:
+- Plain prose only. No markdown of any kind: no # headers, no - or * bullets, no **bold**, no numbered lists, no code blocks.
+- Write in continuous sentences. If you need to cover multiple points, separate them with semicolons or conjunctions within the same paragraph.
+- 3 to 5 sentences per answer. Neither too brief nor too long.
+
+TONE AND CONTENT:
+- Write in first-person plural as iMocha: "iMocha implements...", "Our platform enforces...", "We maintain..."
+- Be affirmative and specific. State what iMocha does — not what it "may" or "could" do.
+- Do not reference your source material. Never say "Based on the knowledge base", "According to the excerpts", or "The provided documents indicate". Just state facts.
+- Do not say "I don't have sufficient information" or "This is not available". If specifics are thin, speak to iMocha's general security posture and close with: "Detailed documentation and audit evidence can be provided upon request."
+- For security and compliance questions, draw on iMocha's known certifications and controls where applicable: SOC 2 Type II, ISO 27001, GDPR, encryption at rest (AES-256) and in transit (TLS 1.2+), SSO/SAML 2.0, MFA, role-based access control, annual penetration testing.
+- Always respond in English regardless of the language of the question.`;
 
   const userContent = context
-    ? `KNOWLEDGE BASE EXCERPTS:\n${context}\n\nVENDOR ASSESSMENT QUESTION:\n${question}`
-    : `VENDOR ASSESSMENT QUESTION:\n${question}`;
+    ? `KNOWLEDGE BASE EXCERPTS:\n${context}\n\nQUESTION:\n${question}`
+    : `QUESTION:\n${question}`;
 
   const msg = await anthropic.messages.create({
     model: "claude-haiku-4-5-20251001",
-    max_tokens: 400,
+    max_tokens: 500,
     system: systemPrompt,
     messages: [{ role: "user", content: userContent }],
   });
 
-  const answer = msg.content
+  const raw = msg.content
     .filter((b) => b.type === "text")
     .map((b) => (b as any).text)
     .join("")
     .trim();
+
+  const answer = stripMarkdown(raw);
 
   return { row, answer, confidence: confidenceFor(chunks.length), sources };
 }
