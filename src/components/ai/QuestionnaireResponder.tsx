@@ -201,6 +201,8 @@ export function QuestionnaireResponder() {
   const [answerCol, setAnswerCol] = useState("B");
   const [statusCol, setStatusCol] = useState("C");
   const [headerRows, setHeaderRows] = useState(1);
+  // Columns that provide per-row context for each question (e.g. Domain, Category)
+  const [contextCols, setContextCols] = useState<string[]>([]);
 
   // Flow
   const [step, setStep] = useState<"upload" | "detecting" | "confirm" | "preview" | "answering" | "done">("upload");
@@ -219,6 +221,7 @@ export function QuestionnaireResponder() {
     setAnswerCol(a.suggested.answerCol);
     setStatusCol(a.suggested.statusCol);
     setHeaderRows(a.suggested.headerRows);
+    setContextCols([]); // heuristic doesn't detect context cols
   }
 
   async function runAiDetection(a: SheetAnalysis, token: string) {
@@ -237,6 +240,7 @@ export function QuestionnaireResponder() {
       setAnswerCol(result.answerCol);
       setStatusCol(result.statusCol);
       setHeaderRows(result.headerRows);
+      setContextCols(result.contextCols ?? []);
       setAiReasoning(result.reasoning);
     } catch {
       // Haiku failed — keep heuristic values, flag it
@@ -307,12 +311,30 @@ export function QuestionnaireResponder() {
     void (async () => {
 
       const qColNum = colLetterToNum(questionCol);
+      // Build context column descriptors (letter → column number + header label)
+      const ctxCols = contextCols
+        .filter((l) => l !== questionCol && l !== answerCol && l !== statusCol)
+        .map((l) => ({
+          num: colLetterToNum(l),
+          header: analysis?.cols.find((c) => c.letter === l)?.header || l,
+        }));
+
       const rows: ParsedRow[] = [];
       ws.eachRow((row, rowNum) => {
         if (rowNum <= headerRows) return;
-        const cell = row.getCell(qColNum);
-        const text = String(cell.value ?? "").trim();
-        if (text) rows.push({ row: rowNum, text });
+        const text = String(row.getCell(qColNum).value ?? "").trim();
+        if (!text) return;
+
+        // Prefix context column values onto the question text
+        const ctxParts = ctxCols
+          .map(({ num, header }) => {
+            const val = String(row.getCell(num).value ?? "").trim();
+            return val ? `${header}: ${val}` : null;
+          })
+          .filter(Boolean) as string[];
+
+        const enriched = ctxParts.length ? `[${ctxParts.join(" | ")}]\n${text}` : text;
+        rows.push({ row: rowNum, text: enriched });
       });
 
       if (!rows.length) {
@@ -428,6 +450,7 @@ export function QuestionnaireResponder() {
     setAiReasoning(null);
     setAiDetectionFailed(false);
     setManualMode(false);
+    setContextCols([]);
     setSheetNames([]);
     setSelectedSheet(0);
     wbRef.current = null;
@@ -706,6 +729,56 @@ export function QuestionnaireResponder() {
                   <p className="text-[10px] text-muted-foreground mt-1">Rows at the top that contain headers, not questions</p>
                 </div>
               </div>
+
+              {/* Context columns — optional per-row enrichment */}
+              <div className="mt-4 pt-4 border-t hairline border-border">
+                <div className="flex items-center gap-2 mb-1">
+                  <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">
+                    Context columns
+                  </p>
+                  <span className="text-[10px] text-muted-foreground font-normal normal-case">(optional)</span>
+                </div>
+                <p className="text-[11px] text-muted-foreground mb-2.5 leading-relaxed">
+                  Select columns whose values help clarify each question — e.g. Domain, Category, Section.
+                  Their values will be prefixed to each question when Claude generates answers.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {analysis.cols
+                    .filter((c) => c.letter !== questionCol && c.letter !== answerCol && c.letter !== statusCol)
+                    .map((c) => {
+                      const active = contextCols.includes(c.letter);
+                      return (
+                        <button
+                          key={c.letter}
+                          type="button"
+                          onClick={() =>
+                            setContextCols((prev) =>
+                              active ? prev.filter((l) => l !== c.letter) : [...prev, c.letter],
+                            )
+                          }
+                          className={[
+                            "h-7 px-2.5 rounded-md text-[11px] border hairline transition-colors inline-flex items-center gap-1.5",
+                            active
+                              ? "bg-primary text-white border-primary"
+                              : "bg-card text-foreground border-border hover:bg-muted",
+                          ].join(" ")}
+                        >
+                          <span className="font-mono font-bold">{c.letter}</span>
+                          {c.header && (
+                            <span className={`text-[10px] ${active ? "opacity-80" : "text-muted-foreground"}`}>
+                              — {c.header.slice(0, 22)}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                </div>
+                {contextCols.length > 0 && (
+                  <p className="text-[10px] text-primary mt-2">
+                    Column{contextCols.length > 1 ? "s" : ""} {contextCols.join(", ")} will be included as context with each question
+                  </p>
+                )}
+              </div>
             </div>
 
             {parseError && (
@@ -733,6 +806,9 @@ export function QuestionnaireResponder() {
                 <p className="text-[12px] font-medium">{file?.name}</p>
                 <p className="text-[11px] text-muted-foreground mt-0.5">
                   {questions.length} questions · column {questionCol} · responses → {answerCol} · badge → {statusCol}
+                  {contextCols.length > 0 && (
+                    <span className="ml-1 text-primary">· context: {contextCols.join(", ")}</span>
+                  )}
                 </p>
               </div>
               <button

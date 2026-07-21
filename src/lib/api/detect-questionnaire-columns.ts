@@ -14,6 +14,7 @@ export type ColDetectResult = {
   answerCol: string;
   statusCol: string;
   headerRows: number;
+  contextCols: string[]; // columns whose values clarify/categorise the question (e.g. Domain, Category)
   reasoning: string;
 };
 
@@ -45,14 +46,18 @@ ${colDesc}
 
 Your task: identify which column serves each role.
 
-QUESTION column  — contains the vendor's questions, requirements, or criteria to be answered (usually long text, high fill rate)
-RESPONSE column  — where the vendor (iMocha) should write answers (usually empty or nearly empty — this is the write target)
-STATUS column    — compliance/coverage badge column (Comply / Partial / N/A or similar — often empty, next to response)
-HEADER ROWS      — how many rows at the top to skip (title rows + column header rows combined)
+QUESTION column   — contains the vendor's questions, requirements, or criteria to be answered (usually long text, high fill rate)
+RESPONSE column   — where the vendor (iMocha) should write answers (usually empty or nearly empty — this is the write target)
+STATUS column     — compliance/coverage badge column (Comply / Partial / N/A or similar)
+CONTEXT columns   — columns whose per-row values provide useful context about the question WITHOUT being the question itself.
+                    Examples: Domain, Category, Sub-category, Section, Topic, Reference ID, Control ID.
+                    These are typically short text (category labels or IDs) and help iMocha give a more targeted answer.
+                    Return an empty array if no obvious context columns exist.
+HEADER ROWS       — how many rows at the top to skip (title rows + column header rows combined)
 
 Rules:
 - QUESTION and RESPONSE must be different columns
-- If no obvious STATUS column exists, pick the emptiest column after RESPONSE
+- CONTEXT columns must not include the QUESTION, RESPONSE, or STATUS columns
 - Only use letters from this list: ${data.availableLetters.join(", ")}
 
 Return ONLY valid JSON, no markdown fences:
@@ -61,12 +66,13 @@ Return ONLY valid JSON, no markdown fences:
   "answerCol": "<letter>",
   "statusCol": "<letter>",
   "headerRows": <number>,
+  "contextCols": ["<letter>", ...],
   "reasoning": "<one concise sentence explaining the key signals>"
 }`;
 
     const msg = await anthropic.messages.create({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 300,
+      max_tokens: 400,
       messages: [{ role: "user", content: prompt }],
     });
 
@@ -83,6 +89,12 @@ Return ONLY valid JSON, no markdown fences:
     if (!valid.has(result.questionCol)) result.questionCol = data.availableLetters[0] ?? "A";
     if (!valid.has(result.answerCol)) result.answerCol = data.availableLetters[1] ?? "B";
     if (!valid.has(result.statusCol)) result.statusCol = data.availableLetters[2] ?? "C";
+
+    // Validate and filter contextCols
+    const mainCols = new Set([result.questionCol, result.answerCol, result.statusCol]);
+    result.contextCols = (result.contextCols ?? []).filter(
+      (l) => valid.has(l) && !mainCols.has(l),
+    );
 
     return result;
   },
