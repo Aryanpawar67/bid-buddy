@@ -9,13 +9,14 @@ import { PORTALS } from "@/lib/bid-constants";
 import { useCurrentUser } from "@/lib/auth";
 import { useRef, useState } from "react";
 import { useUploadAndIndexDocument } from "@/lib/doc-queries";
-import { Paperclip, X as XIcon } from "lucide-react";
+import { Paperclip, X as XIcon, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { toast } from "sonner";
 
 const schema = z.object({
   client_name: z.string().trim().min(1).max(120),
   title: z.string().trim().min(1).max(160),
   type: z.enum(["rfp", "rfi", "rfq", "direct"]),
-  product_type: z.enum(["TA", "TM"]).optional().or(z.literal("")).transform((v) => v || undefined),
+  product_type: z.enum(["TA", "TM", "BOTH"]).optional().or(z.literal("")).transform((v) => v || undefined),
   procurement_portal: z.string().min(1),
   deadline: z.string().min(1),
   clarification_deadline: z.string().optional().or(z.literal("")),
@@ -40,7 +41,9 @@ export function IntakeModal({
   const navigate = useNavigate();
   const qc = useQueryClient();
   const upload = useUploadAndIndexDocument();
-  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+
+  type FileEntry = { file: File; status: "pending" | "uploading" | "done" | "error"; error?: string };
+  const [fileEntries, setFileEntries] = useState<FileEntry[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const {
@@ -55,11 +58,11 @@ export function IntakeModal({
 
   function addFiles(incoming: File[]) {
     const valid = incoming.filter((f) => f.size <= 26_214_400 && /\.(pdf|docx|xlsx)$/i.test(f.name));
-    setPendingFiles((prev) => [...prev, ...valid]);
+    setFileEntries((prev) => [...prev, ...valid.map((file) => ({ file, status: "pending" as const }))]);
   }
 
   function removeFile(i: number) {
-    setPendingFiles((prev) => prev.filter((_, j) => j !== i));
+    setFileEntries((prev) => prev.filter((_, j) => j !== i));
   }
 
   async function onSubmit(data: FormData) {
@@ -68,7 +71,7 @@ export function IntakeModal({
       client_name: data.client_name,
       title: data.title,
       type: data.type,
-      product_type: (data.product_type as "TA" | "TM" | undefined) ?? null,
+      product_type: (data.product_type as "TA" | "TM" | "BOTH" | undefined) ?? null,
       procurement_portal: data.procurement_portal,
       deadline: data.deadline,
       clarification_deadline: data.clarification_deadline || null,
@@ -100,23 +103,26 @@ export function IntakeModal({
       metadata: { client: data.client_name },
     });
 
-    // Upload any attached documents linked to the new bid
-    for (const file of pendingFiles) {
+    // Upload attached documents with per-file status tracking
+    for (let i = 0; i < fileEntries.length; i++) {
+      setFileEntries((prev) => prev.map((e, j) => j === i ? { ...e, status: "uploading" } : e));
       try {
         await upload.mutateAsync({
-          file,
+          file: fileEntries[i].file,
           type: "rfp",
           bidId: row.id,
           stage: "deal_qualification",
         });
+        setFileEntries((prev) => prev.map((e, j) => j === i ? { ...e, status: "done" } : e));
       } catch (e) {
-        console.error("Doc upload failed:", e);
+        setFileEntries((prev) => prev.map((e2, j) => j === i ? { ...e2, status: "error", error: e instanceof Error ? e.message : "Upload failed" } : e2));
       }
     }
 
     qc.invalidateQueries({ queryKey: ["bids"] });
+    toast.success(`Bid created — ${data.client_name}`, { description: data.title });
     reset();
-    setPendingFiles([]);
+    setFileEntries([]);
     onOpenChange(false);
     navigate({ to: "/bids/$id", params: { id: row.id } });
   }
@@ -142,11 +148,12 @@ export function IntakeModal({
               <option value="direct">Direct</option>
             </select>
           </F>
-          <F label="Product (TA / TM)">
+          <F label="Product (TA / TM / Both)">
             <select {...register("product_type")} className={inputCls}>
               <option value="">— select —</option>
               <option value="TA">TA — Talent Acquisition / Skills Assessment</option>
               <option value="TM">TM — Talent Management / Skills Intelligence</option>
+              <option value="BOTH">Both TA + TM</option>
             </select>
           </F>
           <F label="Procurement portal" className="col-span-2">
@@ -193,27 +200,36 @@ export function IntakeModal({
               onClick={() => fileInputRef.current?.click()}
               className="border-2 border-dashed rounded-md px-3 py-3 cursor-pointer hover:border-primary/50 transition-colors"
             >
-              {pendingFiles.length === 0 ? (
+              {fileEntries.length === 0 ? (
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <Paperclip className="size-3.5 shrink-0" />
                   <span className="text-[11px]">Click to attach files</span>
                 </div>
               ) : (
                 <div className="space-y-1.5">
-                  {pendingFiles.map((f, i) => (
+                  {fileEntries.map((entry, i) => (
                     <div key={i} className="flex items-center gap-2 text-[11px]">
-                      <Paperclip className="size-3 text-muted-foreground shrink-0" />
-                      <span className="truncate flex-1 text-foreground">{f.name}</span>
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); removeFile(i); }}
-                        className="shrink-0 text-muted-foreground hover:text-destructive"
-                      >
-                        <XIcon className="size-3" />
-                      </button>
+                      {entry.status === "uploading" && <Loader2 className="size-3 text-primary shrink-0 animate-spin" />}
+                      {entry.status === "done" && <CheckCircle2 className="size-3 text-green-500 shrink-0" />}
+                      {entry.status === "error" && <AlertCircle className="size-3 text-destructive shrink-0" />}
+                      {entry.status === "pending" && <Paperclip className="size-3 text-muted-foreground shrink-0" />}
+                      <span className={`truncate flex-1 ${entry.status === "error" ? "text-destructive" : "text-foreground"}`}>
+                        {entry.file.name}
+                        {entry.status === "uploading" && <span className="text-muted-foreground ml-1">Uploading…</span>}
+                        {entry.status === "error" && <span className="ml-1 text-[10px]">({entry.error})</span>}
+                      </span>
+                      {entry.status === "pending" && (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); removeFile(i); }}
+                          className="shrink-0 text-muted-foreground hover:text-destructive"
+                        >
+                          <XIcon className="size-3" />
+                        </button>
+                      )}
                     </div>
                   ))}
-                  <div className="text-[10px] text-primary mt-1">+ Add more files</div>
+                  {!isSubmitting && <div className="text-[10px] text-primary mt-1">+ Add more files</div>}
                 </div>
               )}
             </div>

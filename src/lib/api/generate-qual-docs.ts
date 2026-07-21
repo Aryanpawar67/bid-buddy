@@ -110,6 +110,7 @@ function paramStatusColour(score: number): string {
 function productLineLabel(productType: string | null): string {
   if (productType === "TM") return "Talent Management (Skills Intelligence)";
   if (productType === "TA") return "Talent Acquisition (Skills Assessment)";
+  if (productType === "BOTH") return "TA + TM — Full Skills Platform";
   return "Skills Platform";
 }
 
@@ -134,6 +135,16 @@ function keyRequirements(productType: string | null, bidType: string | null): st
     "Proctoring, anti-cheating, and candidate experience requirements",
     "AI Skills Match and structured sifting / scoring methodology",
     "Recruiter and hiring manager analytics, compliance reporting",
+    "Data residency, SSO (SAML/OIDC), SCIM, and SOC2 / ISO 27001 compliance",
+  ];
+  if (pt === "BOTH") return [
+    "Pre-hire and in-role skills assessment across TA and TM use cases",
+    "ATS + HRIS integration (covering both recruiting and talent management systems)",
+    "Unified skills ontology bridging talent acquisition and workforce development",
+    "AI Skills Match for hiring and AI Skills Inference for internal mobility",
+    "Career pathing, internal mobility, and skills gap analysis",
+    "Conversational AI interviews, async video, and structured assessment campaigns",
+    "Consolidated analytics spanning recruitment, onboarding, and L&D impact",
     "Data residency, SSO (SAML/OIDC), SCIM, and SOC2 / ISO 27001 compliance",
   ];
   // Generic fallback when product type not specified
@@ -416,6 +427,28 @@ export const generateQualResultFn = createServerFn({ method: "POST" })
               kpiCell("Bid Strength", bidStrength(totalScore),   C.navy,              C.purpleTint),
             ]})],
           }),
+
+          // Executive Summary
+          new Paragraph({ spacing: { before: 280, after: 80 }, children: [new TextRun({ text: "Executive Summary", color: C.navy, bold: true, size: 26, font: "Calibri" })] }),
+          new Paragraph({
+            shading: { type: ShadingType.SOLID, color: C.purpleTint },
+            spacing: { before: 60, after: 80 },
+            indent: { left: 160, right: 160 },
+            children: [new TextRun({
+              text: insights?.recommendation
+                ?? `${bid.client_name} has submitted a ${(bid.type ?? "bid").toUpperCase()} aligned to iMocha's ${productLine} offering. Run the AI Assessment in the Assessment & Result tab to generate the executive summary.`,
+              size: 20, font: "Calibri", color: C.ink,
+            })],
+          }),
+
+          // Key Win Themes
+          new Paragraph({ spacing: { before: 220, after: 80 }, children: [new TextRun({ text: "Key Win Themes", color: C.navy, bold: true, size: 26, font: "Calibri" })] }),
+          ...(insights?.strengths?.length
+            ? (insights.strengths as string[]).map((s: string) =>
+                new Paragraph({ bullet: { level: 0 }, spacing: { before: 60, after: 60 }, children: [new TextRun({ text: s, size: 19, font: "Calibri", color: C.ink })] })
+              )
+            : [new Paragraph({ spacing: { before: 0, after: 80 }, children: [new TextRun({ text: "Run the AI Assessment to generate key win themes.", size: 19, font: "Calibri", color: C.muted, italics: true })] })]
+          ),
 
           // Opportunity Overview
           new Paragraph({ spacing: { before: 280, after: 80 }, children: [new TextRun({ text: "Opportunity Overview", color: C.navy, bold: true, size: 26, font: "Calibri" })] }),
