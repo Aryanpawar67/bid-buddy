@@ -84,8 +84,8 @@ const OutputSchema = z.object({
         question: z.string().min(10),
       })
     )
-    .min(10)
-    .max(25),
+    .min(1)
+    .max(20),
 });
 
 function buildPrompt(bid: { client_name: string; type?: string; value?: number }, contextText: string): string {
@@ -100,7 +100,8 @@ iMocha platform — core capabilities:
 CONTEXT (use to inform the questions — do NOT cite this in the questions):
 ${contextText || "No documents uploaded — generate questions typical for an enterprise skills assessment procurement."}
 
-Generate 15–20 targeted clarification questions that iMocha must have answered before drafting a proposal.
+Generate up to 20 targeted clarification questions that iMocha must have answered before drafting a proposal.
+HARD LIMIT: never exceed 20 questions total. Do not pad to reach 20 — only include questions that are genuinely necessary given the client's documents. Fewer is better than generic. Rank by priority: questions that block the proposal scope or commercial terms come first.
 
 CRITICAL LANGUAGE RULES — violations will be rejected:
 1. NEVER start a question with "The RFP/RFI/document references...", "As stated in...", "The document mentions...", "Based on the RFP...", "The evaluation criteria...", or any phrase that cites a document or source.
@@ -115,7 +116,7 @@ CONTENT RULES:
 - Specific — informed by the context above, not generic boilerplate
 - Actionable — the answer directly affects iMocha's proposed solution, integration plan, or commercial terms
 - Professional — suitable for a formal clarification letter sent to the client
-- Cover ALL 6 categories, minimum 2 questions each
+- Cover as many of the 6 categories as the document warrants; do not force questions into a category just to fill it
 
 Categories: ${RFI_CATEGORIES.join(" | ")}
 
@@ -197,7 +198,7 @@ export const regenerateRfiCategoryFn = createServerFn({ method: "POST" })
       questions: z.array(z.object({
         category: z.string(),
         question: z.string().min(10),
-      })).min(2).max(6),
+      })).min(1).max(4),
     });
 
     const prompt = `You are an experienced iMocha pre-sales professional writing a formal clarification letter to ${bid.client_name}.
@@ -207,7 +208,8 @@ iMocha platform: Skills Assessments (TA), Skills Intelligence (TM), integrations
 CONTEXT:
 ${contextText || "No documents uploaded — use typical enterprise procurement knowledge."}
 
-Generate 3–5 targeted clarification questions for the "${category}" category only.
+Generate up to 4 targeted clarification questions for the "${category}" category only.
+Only include questions genuinely warranted by the context — do not pad to reach 4. Rank by priority.
 
 RULES:
 1. NEVER reference documents: no "The RFP states…", "As mentioned…", "Based on the document…"

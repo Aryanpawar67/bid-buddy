@@ -246,10 +246,18 @@ export function RFIWorkspace({ bid, activeTab, onTabChange }: {
 
   async function handleConfirm() {
     if (!generated) return;
+
+    // Delete all existing RFI questions for this bid before inserting the new set.
+    // Prevents accumulation from repeated generations.
+    const existingIds = allQuestions.map((q: any) => q.id);
+    if (existingIds.length > 0) {
+      await (supabase as any).from("bid_questions").delete().in("id", existingIds);
+    }
+
     const rows = generated.map((q, i) => ({
       question_text: `[${q.category}] ${q.question}`,
       status: "pending",
-      order_index: questions.length + i,
+      order_index: i,
     }));
 
     await bulkCreate.mutateAsync({ bidId: bid.id, rows });
