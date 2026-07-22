@@ -1,41 +1,32 @@
 import { useState } from "react";
 import {
-  Check, Circle, AlertTriangle, MessageSquare, Users, Activity,
-  LayoutList, CheckCircle2, Sparkles, BookOpen, FileText, ArrowRight, Plus, UserPlus, X, Loader2,
+  Circle, Users, Activity,
+  LayoutList, CheckCircle2, ArrowRight, UserPlus, X, Loader2, ChevronRight,
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import type { Bid } from "@/lib/bid-queries";
-import { useStageItems, useToggleQuestion, useToggleDeliverable, useBidTeam, useBidActivity, useCreateQuestion, useUpdateQuestionResponse, useTeamMembers } from "@/lib/bid-queries";
+import { useStageItems, useToggleDeliverable, useBidTeam, useBidActivity, useTeamMembers } from "@/lib/bid-queries";
 import { initials } from "@/lib/bid-constants";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { useDocuments, type BidDocument } from "@/lib/doc-queries";
-import { DocPreviewModal } from "@/components/docs/DocPreviewModal";
 import { AdvanceStageFooter } from "./AdvanceStageFooter";
 import type { TabDef } from "./BidHeaderBar";
 import { ProposalModal } from "@/components/ai/ProposalModal";
 import { useAiSessions, useCreateAiSession } from "@/lib/ai-queries";
 import { useCurrentUser } from "@/lib/auth";
+import type { ProposalPreview } from "@/lib/api/generate-proposal";
 
-export type RFPTab = "overview" | "clarifications" | "team" | "activity_log";
+export type RFPTab = "overview" | "team" | "activity_log";
 
 export const RFP_TABS: TabDef[] = [
   { key: "overview", label: "Overview", icon: LayoutList },
-  { key: "clarifications", label: "Clarifications (Q&A)", icon: MessageSquare },
   { key: "team", label: "Team", icon: Users },
   { key: "activity_log", label: "Activity Log", icon: Activity },
 ];
 
 function daysLeft(deadline: string) {
   return Math.ceil((new Date(deadline).getTime() - Date.now()) / 86400000);
-}
-
-function avatarColor(name: string): string {
-  const colors = ["#491AEB", "#0891b2", "#16a34a", "#d97706", "#dc2626", "#7c3aed", "#db2777"];
-  let hash = 0;
-  for (const c of name) hash = (hash * 31 + c.charCodeAt(0)) & 0xffffffff;
-  return colors[Math.abs(hash) % colors.length];
 }
 
 const STATUS_STYLE: Record<string, { bg: string; color: string; label: string }> = {
@@ -49,7 +40,6 @@ export function RFPWorkspace({ bid, activeTab, onTabChange }: { bid: Bid; active
   const items = useStageItems(bid.id, "rfp");
   const { data: team = [] } = useBidTeam(bid.id);
   const { data: activity = [] } = useBidActivity(bid.id);
-  const [docPanelOpen, setDocPanelOpen] = useState(false);
 
   // Generate Proposal
   const { data: sessions = [] } = useAiSessions(bid.id);
@@ -59,6 +49,14 @@ export function RFPWorkspace({ bid, activeTab, onTabChange }: { bid: Bid; active
   const [proposalOpen, setProposalOpen] = useState(false);
   const [proposalSessionId, setProposalSessionId] = useState<string | null>(null);
   const [creatingSession, setCreatingSession] = useState(false);
+
+  // Proposal preview — persisted in sessionStorage keyed by bidId
+  const [proposalPreview, setProposalPreview] = useState<ProposalPreview | null>(() => {
+    try {
+      const s = sessionStorage.getItem(`rfp_preview_${bid.id}`);
+      return s ? JSON.parse(s) : null;
+    } catch { return null; }
+  });
 
   async function openProposalModal() {
     let sessionId = sessions[0]?.id ?? null;
@@ -75,84 +73,20 @@ export function RFPWorkspace({ bid, activeTab, onTabChange }: { bid: Bid; active
     setProposalOpen(true);
   }
 
+  function handleProposalGenerated(preview: ProposalPreview) {
+    setProposalPreview(preview);
+    try { sessionStorage.setItem(`rfp_preview_${bid.id}`, JSON.stringify(preview)); } catch {}
+  }
+
   const deliverables = items.data?.deliverables ?? [];
-  const questions = items.data?.questions ?? [];
-  const toggleQ = useToggleQuestion();
   const toggleD = useToggleDeliverable();
 
   const totalSections = deliverables.length;
   const completedSections = deliverables.filter((d) => d.status === "done").length;
   const inProgressSections = deliverables.filter((d) => d.status === "in_progress").length;
   const pendingSections = deliverables.filter((d) => d.status === "pending").length;
-  const pct = totalSections ? Math.round((completedSections / totalSections) * 100) : 0;
 
   const dl = daysLeft(bid.deadline);
-  const health = totalSections === 0 ? "Not Started" : pct >= 70 ? "On Track" : pct >= 40 ? "Needs Attention" : "At Risk";
-  const healthColor = totalSections === 0 ? "var(--color-muted-foreground)" : pct >= 70 ? "#16a34a" : pct >= 40 ? "#d97706" : "#dc2626";
-  const healthBg = totalSections === 0 ? "var(--color-muted)" : pct >= 70 ? "#dcfce7" : pct >= 40 ? "#fef9c3" : "#fee2e2";
-
-  if (activeTab === "clarifications") {
-    return (
-      <div className="px-6 py-5 max-w-[1100px]">
-        <div className="mb-4 p-3.5 rounded-xl bg-primary/5 border hairline border-primary/20 flex items-start gap-3">
-          <Sparkles className="size-4 text-primary shrink-0 mt-0.5" />
-          <div className="flex-1 min-w-0">
-            <div className="text-[12.5px] font-semibold text-primary">Use RFx Responder to answer these questions</div>
-            <div className="text-[11px] text-muted-foreground mt-0.5">
-              The AI agent can search your Knowledge Hub and draft precise answers to customer clarifications.
-            </div>
-          </div>
-          <Link
-            to="/ai"
-            search={{ bidId: bid.id }}
-            className="h-8 px-3.5 rounded-md bg-primary text-primary-foreground text-[11px] font-semibold hover:opacity-90 transition-opacity shrink-0 inline-flex items-center gap-1.5"
-          >
-            Open RFx Responder <ArrowRight className="size-3" />
-          </Link>
-        </div>
-
-        <div className="flex gap-4 items-start">
-          <div className="flex-1 min-w-0 bg-card hairline border rounded-xl overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3 border-b hairline border-border">
-              <h3 className="text-[13px] font-semibold">Customer Clarifications</h3>
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] text-muted-foreground">
-                  {questions.filter(q => q.status === "done").length}/{questions.length} answered
-                </span>
-                <button
-                  onClick={() => setDocPanelOpen(o => !o)}
-                  title="Toggle documents"
-                  className={`p-1 rounded hover:bg-muted ${docPanelOpen ? "text-primary" : "text-muted-foreground"}`}
-                >
-                  <FileText className="size-3.5" />
-                </button>
-              </div>
-            </div>
-            {questions.length === 0 ? (
-              <div className="py-8 text-center text-[12px] text-muted-foreground">No clarification questions added yet.</div>
-            ) : (
-              <ul className="divide-y hairline divide-border">
-                {questions.map((q, i) => (
-                  <ClarificationRow
-                    key={q.id}
-                    num={i + 1}
-                    question={q}
-                    onCycle={() => {
-                      const next = q.status === "pending" ? "in_progress" : q.status === "in_progress" ? "done" : "pending";
-                      toggleQ.mutate({ id: q.id, status: next });
-                    }}
-                  />
-                ))}
-              </ul>
-            )}
-            <RFPAddQuestionInline bidId={bid.id} />
-          </div>
-          {docPanelOpen && <DocQuickPanel bidId={bid.id} onClose={() => setDocPanelOpen(false)} />}
-        </div>
-        <AdvanceStageFooter bid={bid} stage="rfp" />
-      </div>
-    );
-  }
 
   if (activeTab === "team") {
     return (
@@ -208,138 +142,38 @@ export function RFPWorkspace({ bid, activeTab, onTabChange }: { bid: Bid; active
   // Overview tab
   return (
     <div className="px-6 py-5 max-w-[1100px]">
-      {/* Stats row */}
-      <div className="grid grid-cols-4 gap-3 mb-5">
-        {/* Progress donut */}
-        <div className="col-span-1 bg-card hairline border rounded-xl p-4 flex flex-col items-center justify-center gap-2">
-          <svg width="80" height="80" viewBox="0 0 80 80">
-            <circle cx="40" cy="40" r="34" fill="none" stroke="var(--color-muted)" strokeWidth="7" />
-            <circle
-              cx="40" cy="40" r="34" fill="none"
-              stroke="#fd5b0e" strokeWidth="7"
-              strokeDasharray={`${(pct / 100) * 213.6} 213.6`}
-              strokeLinecap="round"
-              transform="rotate(-90 40 40)"
-              style={{ transition: "stroke-dasharray .5s ease" }}
-            />
-            <text x="40" y="44" textAnchor="middle" fontSize="16" fontWeight="800" fill="currentColor">{pct}%</text>
-          </svg>
-          <div className="text-[10px] text-muted-foreground text-center">
-            <span className="text-foreground font-semibold">{completedSections}</span> of {totalSections} done
-          </div>
-        </div>
-
-        {/* Proposal Details */}
-        <div className="col-span-2 bg-card hairline border rounded-xl p-4">
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-3">Proposal Details</div>
-          <div className="grid grid-cols-2 gap-y-2">
-            <KV label="Due Date" value={bid.deadline ? new Date(bid.deadline).toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" }) : "—"} />
-            <KV label="Time Remaining" value={dl < 0 ? `${Math.abs(dl)}d over` : `${dl}d left`} urgent={dl <= 5} />
-            <KV label="Total Sections" value={String(totalSections)} />
-            <KV label="Clarifications" value={String(questions.length)} />
-            <KV label="In Progress" value={String(inProgressSections)} />
-            <KV label="Pending" value={String(pendingSections)} />
-          </div>
-        </div>
-
-        {/* Proposal Health */}
-        <div className="col-span-1 bg-card hairline border rounded-xl p-4 flex flex-col gap-3">
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Proposal Health</div>
-          <span
-            className="self-start text-[11px] font-bold px-2.5 py-1 rounded-full"
-            style={{ background: healthBg, color: healthColor }}
+      {/* Action buttons */}
+      <div className="flex items-center gap-3 mb-5">
+        {canGenerateProposal && (
+          <button
+            onClick={openProposalModal}
+            disabled={creatingSession}
+            className="h-9 px-4 rounded-lg text-white text-[12px] font-semibold hover:opacity-90 transition-opacity inline-flex items-center gap-2 disabled:opacity-50"
+            style={{ background: "#fd5b0e" }}
           >
-            {health}
-          </span>
-          <div className="flex flex-col gap-1.5 mt-auto">
-            <HealthCheck label="Sections assigned" ok={totalSections > 0} />
-            <HealthCheck label="On submission schedule" ok={pct >= 40} />
-            <HealthCheck label="Deadline not overdue" ok={dl >= 0} />
-            <HealthCheck label="Clarifications addressed" ok={questions.length === 0 || questions.filter(q => q.status === "done").length / questions.length >= 0.5} />
-          </div>
-        </div>
+            {creatingSession && <Loader2 className="size-3.5 animate-spin" />}
+            ✦ Generate Proposal
+          </button>
+        )}
+        <Link
+          to="/ai"
+          search={{ bidId: bid.id }}
+          className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-[12px] font-semibold hover:opacity-90 transition-opacity inline-flex items-center gap-2"
+        >
+          Open RFx Responder <ArrowRight className="size-3.5" />
+        </Link>
       </div>
 
-      {/* AI Command Center strip — RFP is tightly linked to the AI */}
-      <div
-        className="mb-5 rounded-xl p-4 border hairline"
-        style={{ background: "linear-gradient(135deg, rgba(73,26,235,.07) 0%, rgba(253,91,14,.06) 100%)", borderColor: "rgba(73,26,235,.2)" }}
-      >
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-start gap-3">
-            <div className="size-9 rounded-lg bg-primary flex items-center justify-center shrink-0">
-              <Sparkles className="size-4 text-white" />
-            </div>
-            <div>
-              <div className="text-[13px] font-bold">RFx Responder</div>
-              <div className="text-[11px] text-muted-foreground mt-0.5">
-                Generate proposals, answer clarifications, and search your Knowledge Hub with AI.
-              </div>
-            </div>
-          </div>
-          <Link
-            to="/ai"
-            search={{ bidId: bid.id }}
-            className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-[12px] font-semibold hover:opacity-90 transition-opacity shrink-0 inline-flex items-center gap-2"
-          >
-            Open RFx Responder <ArrowRight className="size-3.5" />
-          </Link>
-        </div>
-
-        <div className="grid grid-cols-3 gap-2 mt-3">
-          {/* Generate Proposal — opens ProposalModal inline for pre_sales/admin */}
-          {canGenerateProposal ? (
-            <button
-              onClick={openProposalModal}
-              disabled={creatingSession}
-              className="flex items-center gap-2.5 p-2.5 rounded-lg bg-card/80 hairline border border-orange-400/40 hover:bg-orange-50/50 dark:hover:bg-orange-950/20 transition-colors text-left disabled:opacity-50"
-            >
-              <div className="size-7 rounded-md bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center shrink-0">
-                {creatingSession
-                  ? <Loader2 className="size-3.5 text-orange-500 animate-spin" />
-                  : <FileText className="size-3.5 text-orange-500" />}
-              </div>
-              <div className="min-w-0">
-                <div className="text-[11px] font-semibold leading-tight text-orange-600 dark:text-orange-400">
-                  ✦ Generate Proposal
-                </div>
-                <div className="text-[10px] text-muted-foreground">AI-authored from your template</div>
-              </div>
-            </button>
-          ) : (
-            <Link
-              to="/ai"
-              search={{ bidId: bid.id }}
-              className="flex items-center gap-2.5 p-2.5 rounded-lg bg-card/80 hairline border border-border hover:bg-card transition-colors"
-            >
-              <div className="size-7 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
-                <FileText className="size-3.5 text-primary" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-[11px] font-semibold leading-tight">Generate Proposal Draft</div>
-                <div className="text-[10px] text-muted-foreground">AI-authored from your template</div>
-              </div>
-            </Link>
-          )}
-          {[
-            { icon: MessageSquare, label: "Answer Clarifications", desc: `${questions.filter(q => q.status !== "done").length} pending questions` },
-            { icon: BookOpen, label: "Search Knowledge Hub", desc: "Find relevant past proposals" },
-          ].map((action) => (
-            <Link
-              key={action.label}
-              to="/ai"
-              search={{ bidId: bid.id }}
-              className="flex items-center gap-2.5 p-2.5 rounded-lg bg-card/80 hairline border border-border hover:bg-card transition-colors"
-            >
-              <div className="size-7 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
-                <action.icon className="size-3.5 text-primary" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-[11px] font-semibold leading-tight">{action.label}</div>
-                <div className="text-[10px] text-muted-foreground">{action.desc}</div>
-              </div>
-            </Link>
-          ))}
+      {/* Proposal Details */}
+      <div className="bg-card hairline border rounded-xl p-4 mb-5">
+        <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-3">Proposal Details</div>
+        <div className="grid grid-cols-6 gap-y-2 gap-x-6">
+          <KV label="Due Date" value={bid.deadline ? new Date(bid.deadline).toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" }) : "—"} />
+          <KV label="Time Remaining" value={dl < 0 ? `${Math.abs(dl)}d over` : `${dl}d left`} urgent={dl <= 5} />
+          <KV label="Sections Tracked" value={String(totalSections)} />
+          <KV label="Completed" value={String(completedSections)} />
+          <KV label="In Progress" value={String(inProgressSections)} />
+          <KV label="Pending" value={String(pendingSections)} />
         </div>
       </div>
 
@@ -420,50 +254,19 @@ export function RFPWorkspace({ bid, activeTab, onTabChange }: { bid: Bid; active
         )}
       </div>
 
-      {/* Proposal Metrics row */}
-      {totalSections > 0 && (
-        <div className="grid grid-cols-3 gap-3">
-          <MetricCard
-            title="Completion"
-            items={[
-              { label: "Total Sections", value: String(totalSections) },
-              { label: "Completed", value: String(completedSections), color: "#16a34a" },
-              { label: "In Progress", value: String(inProgressSections), color: "#1d4ed8" },
-              { label: "Pending", value: String(pendingSections), color: "var(--color-muted-foreground)" },
-            ]}
-          />
-          <MetricCard
-            title="Clarifications"
-            items={[
-              { label: "Total Questions", value: String(questions.length) },
-              { label: "Answered", value: String(questions.filter(q => q.status === "done").length), color: "#16a34a" },
-              { label: "Pending", value: String(questions.filter(q => q.status !== "done").length), color: "#d97706" },
-            ]}
-          />
-          <div className="bg-card hairline border rounded-xl p-4">
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-3">Review Timeline</div>
-            {[
-              { label: "SME Review", done: completedSections >= totalSections * 0.3 },
-              { label: "Internal Review", done: completedSections >= totalSections * 0.6 },
-              { label: "Executive Review", done: completedSections >= totalSections * 0.8 },
-              { label: "Final Submission", done: completedSections === totalSections },
-            ].map((step) => (
-              <div key={step.label} className="flex items-center gap-2 py-1.5">
-                {step.done
-                  ? <CheckCircle2 className="size-3.5 text-success-foreground shrink-0" />
-                  : <Circle className="size-3.5 text-muted-foreground/40 shrink-0" />}
-                <span className={`text-[11px] ${step.done ? "text-foreground" : "text-muted-foreground"}`}>{step.label}</span>
-                <span className="ml-auto text-[9px] font-medium" style={{ color: step.done ? "#16a34a" : "var(--color-muted-foreground)" }}>
-                  {step.done ? "Done" : "Pending"}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
+      {/* Proposal Preview Panel — shown after Generate Proposal runs */}
+      {proposalPreview && (
+        <ProposalPreviewPanel
+          preview={proposalPreview}
+          onDismiss={() => {
+            setProposalPreview(null);
+            try { sessionStorage.removeItem(`rfp_preview_${bid.id}`); } catch {}
+          }}
+        />
       )}
+
       <AdvanceStageFooter bid={bid} stage="rfp" />
 
-      {/* Proposal modal — wired to the bid's latest (or freshly created) AI session */}
       {proposalOpen && proposalSessionId && (
         <ProposalModal
           open={proposalOpen}
@@ -471,172 +274,83 @@ export function RFPWorkspace({ bid, activeTab, onTabChange }: { bid: Bid; active
           bidId={bid.id}
           sessionId={proposalSessionId}
           clientName={bid.client_name}
+          onGenerated={handleProposalGenerated}
         />
       )}
     </div>
   );
 }
 
-// ── ClarificationRow ──────────────────────────────────────────────────────────
+// ── ProposalPreviewPanel ──────────────────────────────────────────────────────
 
-function ClarificationRow({ num, question, onCycle }: { num: number; question: any; onCycle: () => void }) {
-  const [expanded, setExpanded] = useState(false);
-  const [draft, setDraft] = useState(question.response_text ?? "");
-  const updateResponse = useUpdateQuestionResponse();
+function ProposalPreviewPanel({ preview, onDismiss }: { preview: ProposalPreview; onDismiss: () => void }) {
+  const [expanded, setExpanded] = useState<string | null>(null);
 
-  const done = question.status === "done";
-  const inProg = question.status === "in_progress";
+  const textSections = [
+    { key: "pleased", title: "Executive Summary — We Are Pleased to Present", content: preview.exec_summary.pleased },
+    { key: "aligned", title: "Executive Summary — Strategic Alignment", content: preview.exec_summary.aligned },
+    { key: "confident", title: "Executive Summary — Our Confidence", content: preview.exec_summary.confident },
+    { key: "scope", title: "Scope Introduction", content: preview.scope_intro },
+  ];
 
   return (
-    <li className="px-4 py-3 hover:bg-muted/20 transition-colors">
-      <div className="flex items-start gap-3">
-        <span className="text-[10px] text-muted-foreground w-5 shrink-0 mt-0.5">{num}</span>
-        <button
-          onClick={(e) => { e.stopPropagation(); onCycle(); }}
-          className={[
-            "size-[18px] rounded-full flex items-center justify-center shrink-0 mt-0.5 hairline border transition-colors",
-            done ? "bg-success-soft border-[#97C459]" : inProg ? "border-amber-400 bg-amber-50 dark:bg-amber-950/30" : "border-dashed border-border-strong",
-          ].join(" ")}
-        >
-          {done && <Check className="size-3 text-success-foreground" strokeWidth={2.5} />}
-          {inProg && <div className="size-2 rounded-full bg-amber-400" />}
-          {!done && !inProg && <Circle className="size-2 text-muted-foreground/40" />}
+    <div className="bg-card hairline border rounded-xl overflow-hidden mb-4">
+      <div
+        className="flex items-center justify-between px-4 py-3 border-b hairline border-border"
+        style={{ background: "rgba(253,91,14,.06)" }}
+      >
+        <div className="flex items-center gap-2.5">
+          <span className="text-[10px] font-bold text-orange-600 dark:text-orange-400 uppercase tracking-wider">
+            ✦ Proposal Preview
+          </span>
+          <span className="text-[10px] text-muted-foreground">
+            · {preview.product} · {preview.customer_display_name}
+          </span>
+        </div>
+        <button onClick={onDismiss} className="text-muted-foreground hover:text-foreground transition-colors">
+          <X className="size-3.5" />
         </button>
-        <div className="flex-1 min-w-0">
-          <button onClick={() => setExpanded(o => !o)} className="text-left w-full">
-            <div className={`text-[12.5px] leading-snug ${done ? "line-through text-muted-foreground" : ""}`}>
-              {question.question_text}
-            </div>
-          </button>
-          <div className="flex items-center gap-2 mt-1">
-            <span className={[
-              "text-[9px] font-semibold px-1.5 py-0.5 rounded",
-              done ? "bg-success-soft text-success-foreground" : inProg ? "bg-amber-100 text-amber-700" : "bg-muted text-muted-foreground"
-            ].join(" ")}>
-              {done ? "Answered" : inProg ? "Drafting" : "Pending"}
-            </span>
-            {question.assigned_team && (
-              <span className="text-[10px] text-muted-foreground">{question.assigned_team.replace(/_/g, " ")}</span>
-            )}
-            {question.response_text && <FileText className="size-3 text-muted-foreground" />}
-          </div>
-        </div>
       </div>
-      {expanded && (
-        <div className="mt-2 ml-8">
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Your response</div>
-          <textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder="Draft your response here… (auto-saves on blur)"
-            className="w-full text-[12px] bg-muted/30 hairline border rounded-md p-2 resize-none min-h-[5rem] focus:outline-none focus:ring-1 focus:ring-ring"
-            onBlur={() => {
-              if (draft !== (question.response_text ?? "")) {
-                const nextStatus = question.status === "pending" && draft.trim() ? "in_progress" : undefined;
-                updateResponse.mutate({ id: question.id, responseText: draft, status: nextStatus });
-              }
-            }}
-          />
-          <button onClick={() => setExpanded(false)} className="mt-1 text-[10px] text-muted-foreground hover:text-foreground">
-            ▲ Collapse
+
+      <div className="divide-y hairline divide-border">
+        {textSections.map(({ key, title, content }) => (
+          <div key={key}>
+            <button
+              onClick={() => setExpanded(e => e === key ? null : key)}
+              className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/20 transition-colors text-left"
+            >
+              <span className="text-[12px] font-medium">{title}</span>
+              <ChevronRight className={`size-3.5 text-muted-foreground transition-transform shrink-0 ${expanded === key ? "rotate-90" : ""}`} />
+            </button>
+            {expanded === key && (
+              <div className="px-4 pb-4">
+                <p className="text-[12px] text-foreground leading-relaxed">{content}</p>
+              </div>
+            )}
+          </div>
+        ))}
+
+        <div>
+          <button
+            onClick={() => setExpanded(e => e === "deliverables" ? null : "deliverables")}
+            className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/20 transition-colors text-left"
+          >
+            <span className="text-[12px] font-medium">Deliverables ({preview.deliverables.length})</span>
+            <ChevronRight className={`size-3.5 text-muted-foreground transition-transform shrink-0 ${expanded === "deliverables" ? "rotate-90" : ""}`} />
           </button>
-        </div>
-      )}
-    </li>
-  );
-}
-
-// ── DocQuickPanel ─────────────────────────────────────────────────────────────
-
-function DocQuickPanel({ bidId, onClose }: { bidId: string; onClose: () => void }) {
-  const { data: docs = [] } = useDocuments({ bidId });
-  const [preview, setPreview] = useState<BidDocument | null>(null);
-
-  return (
-    <>
-      <div className="w-60 shrink-0 bg-card hairline border rounded-xl overflow-hidden flex flex-col">
-        <div className="flex items-center justify-between px-3 py-2.5 border-b hairline border-border">
-          <span className="text-[11px] font-semibold">Documents ({docs.length})</span>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
-            <X className="size-3.5" />
-          </button>
-        </div>
-        <div className="overflow-y-auto flex-1">
-          {docs.length === 0 ? (
-            <div className="py-6 text-center text-[11px] text-muted-foreground">No documents.</div>
-          ) : (
-            <ul className="divide-y hairline divide-border">
-              {docs.map((d) => (
-                <li key={d.id}>
-                  <button
-                    onClick={() => setPreview(d)}
-                    className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-muted/30 text-left"
-                  >
-                    <FileText className="size-3.5 text-muted-foreground shrink-0" />
-                    <span className="text-[11px] truncate">{d.name}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
+          {expanded === "deliverables" && (
+            <div className="px-4 pb-4">
+              <ul className="flex flex-col gap-1">
+                {preview.deliverables.map((d, i) => (
+                  <li key={i} className="text-[12px] text-foreground flex gap-2">
+                    <span className="text-muted-foreground shrink-0">·</span>
+                    <span>{d}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </div>
-      </div>
-      {preview && <DocPreviewModal doc={preview} allDocs={docs} onClose={() => setPreview(null)} />}
-    </>
-  );
-}
-
-// ── RFPAddQuestionInline ──────────────────────────────────────────────────────
-
-function RFPAddQuestionInline({ bidId }: { bidId: string }) {
-  const [open, setOpen] = useState(false);
-  const [text, setText] = useState("");
-  const [team, setTeam] = useState<"pre_sales" | "legal" | "finance">("pre_sales");
-  const create = useCreateQuestion();
-
-  if (!open) {
-    return (
-      <button
-        onClick={() => setOpen(true)}
-        className="w-full py-2.5 text-[11px] text-primary font-medium hover:bg-muted/30 transition-colors flex items-center gap-1.5 justify-center border-t hairline border-border"
-      >
-        <Plus className="size-3.5" /> Add question
-      </button>
-    );
-  }
-
-  return (
-    <div className="px-4 py-3 border-t hairline border-border bg-muted/20">
-      <textarea
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        placeholder="Enter clarification question…"
-        className="w-full text-[12px] bg-card hairline border rounded-md p-2 resize-none h-16 focus:outline-none focus:ring-2 focus:ring-ring"
-      />
-      <div className="flex items-center gap-2 mt-2">
-        <select
-          value={team}
-          onChange={(e) => setTeam(e.target.value as "pre_sales" | "legal" | "finance")}
-          className="h-7 px-2 text-[11px] bg-card hairline border rounded-md"
-        >
-          <option value="pre_sales">Pre-Sales</option>
-          <option value="legal">Legal</option>
-          <option value="finance">Finance</option>
-        </select>
-        <button
-          onClick={async () => {
-            if (!text.trim()) return;
-            await create.mutateAsync({ bidId, stage: "rfp", questionText: text.trim(), assignedTeam: team });
-            setText(""); setOpen(false);
-          }}
-          disabled={!text.trim() || create.isPending}
-          className="h-7 px-3 rounded-md bg-primary text-primary-foreground text-[11px] font-medium disabled:opacity-50"
-        >
-          {create.isPending ? "…" : "Add"}
-        </button>
-        <button onClick={() => { setText(""); setOpen(false); }} className="h-7 px-3 rounded-md hairline border text-[11px]">
-          Cancel
-        </button>
       </div>
     </div>
   );
@@ -736,17 +450,6 @@ function KV({ label, value, urgent }: { label: string; value: string; urgent?: b
   );
 }
 
-function HealthCheck({ label, ok }: { label: string; ok: boolean }) {
-  return (
-    <div className="flex items-center gap-1.5 text-[11px]">
-      {ok
-        ? <CheckCircle2 className="size-3.5 text-success-foreground shrink-0" />
-        : <AlertTriangle className="size-3.5 text-warning-foreground shrink-0" />}
-      <span className={ok ? "text-foreground" : "text-warning-foreground"}>{label}</span>
-    </div>
-  );
-}
-
 function LegendDot({ color, label }: { color: string; label: string }) {
   return (
     <div className="flex items-center gap-1.5">
@@ -756,20 +459,3 @@ function LegendDot({ color, label }: { color: string; label: string }) {
   );
 }
 
-function MetricCard({ title, items }: { title: string; items: { label: string; value: string; color?: string }[] }) {
-  return (
-    <div className="bg-card hairline border rounded-xl p-4">
-      <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-3">{title}</div>
-      <div className="flex flex-col gap-2">
-        {items.map((item) => (
-          <div key={item.label} className="flex items-center justify-between">
-            <span className="text-[11px] text-muted-foreground">{item.label}</span>
-            <span className="text-[13px] font-bold" style={{ color: item.color ?? "var(--color-foreground)" }}>
-              {item.value}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}

@@ -10,9 +10,10 @@ type Props = {
   bidId: string;
   sessionId: string;
   clientName: string;
+  onGenerated?: (preview: ProposalPreview) => void;
 };
 
-export function ProposalModal({ open, onClose, bidId, sessionId, clientName }: Props) {
+export function ProposalModal({ open, onClose, bidId, sessionId, clientName, onGenerated }: Props) {
   const [phase, setPhase] = useState<1 | 2>(1);
   const [preview, setPreview] = useState<ProposalPreview | null>(null);
   const [coverFields, setCoverFields] = useState({
@@ -89,6 +90,7 @@ export function ProposalModal({ open, onClose, bidId, sessionId, clientName }: P
       document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       toast.success("Proposal saved to Knowledge Hub");
+      if (preview) onGenerated?.(preview);
       onClose();
     } catch (e) {
       console.error("[ProposalModal] generate failed:", e);

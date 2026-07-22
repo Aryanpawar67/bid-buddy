@@ -3,7 +3,6 @@ export const STAGES = [
   { key: "rfi", label: "RFI", short: "RFI" },
   { key: "rfp", label: "RFP", short: "RFP" },
   { key: "orals", label: "Orals", short: "Orals" },
-  { key: "due_diligence", label: "Due Diligence", short: "DD" },
   { key: "bafo", label: "BAFO", short: "BAFO" },
   { key: "contract_closure", label: "Contract", short: "Contract" },
   { key: "post_closure", label: "Closure", short: "Closure" },
