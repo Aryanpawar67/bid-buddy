@@ -376,7 +376,7 @@ export const getDocPreview = createServerFn({ method: "POST" })
     const { data: fileBlob, error: dlErr } = await supabaseAdmin.storage
       .from("bid-documents")
       .download(doc.storage_path);
-    if (dlErr || !fileBlob) throw new Error("Failed to download file from storage");
+    if (dlErr || !fileBlob) return null;
 
     const buffer = Buffer.from(await fileBlob.arrayBuffer());
 

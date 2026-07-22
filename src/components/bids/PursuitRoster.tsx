@@ -1,6 +1,9 @@
-import { Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { useState } from "react";
+import { Search, ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import { STAGES, type StageKey, initials } from "@/lib/bid-constants";
 import type { Bid } from "@/lib/bid-queries";
+import { useDeleteBid } from "@/lib/bid-queries";
 
 type Filter = "all" | "mine" | "legal" | "urgent";
 
@@ -8,6 +11,7 @@ type Props = {
   bids: Bid[];
   selectedId: string | null;
   onSelect: (id: string) => void;
+  onDelete: (bidId: string) => void;
   q: string;
   onQ: (q: string) => void;
   filter: Filter;
@@ -74,7 +78,11 @@ function daysLabel(deadline: string): string {
   return `${d}d`;
 }
 
-export function PursuitRoster({ bids, selectedId, onSelect, q, onQ, filter, onFilter, collapsed = false, onToggleCollapse }: Props) {
+export function PursuitRoster({ bids, selectedId, onSelect, onDelete, q, onQ, filter, onFilter, collapsed = false, onToggleCollapse }: Props) {
+  const deleteBid = useDeleteBid();
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
   const groups: Array<{ bucket: "urgent" | "needs-attention" | "on-track"; items: Bid[] }> = [
     { bucket: "urgent", items: [] },
     { bucket: "needs-attention", items: [] },
@@ -120,7 +128,6 @@ export function PursuitRoster({ bids, selectedId, onSelect, q, onQ, filter, onFi
         >
           <ChevronRight size={14} />
         </button>
-        {/* Urgency dots for selected bids */}
         {groups.map(({ bucket, items }) =>
           items.length === 0 ? null : (
             <div
@@ -260,11 +267,18 @@ export function PursuitRoster({ bids, selectedId, onSelect, q, onQ, filter, onFi
                 const dlColor = d <= 3 ? "#EF4444" : d <= 14 ? "#F59E0B" : "rgba(255,255,255,.4)";
                 const av = initials(bid.client_name);
                 const avBg = avatarColor(bid.client_name);
+                const isHovered = hoveredId === bid.id;
+                const isDeleting = deletingId === bid.id;
 
                 return (
-                  <button
+                  <div
                     key={bid.id}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => onSelect(bid.id)}
+                    onKeyDown={(e) => e.key === "Enter" && onSelect(bid.id)}
+                    onMouseEnter={() => setHoveredId(bid.id)}
+                    onMouseLeave={() => setHoveredId(null)}
                     style={{
                       width: "100%",
                       display: "flex",
@@ -273,16 +287,11 @@ export function PursuitRoster({ bids, selectedId, onSelect, q, onQ, filter, onFi
                       padding: "7px 10px 7px 0",
                       cursor: "pointer",
                       border: "none",
-                      background: active ? "rgba(73,26,235,.25)" : "transparent",
+                      background: active ? "rgba(73,26,235,.25)" : isHovered ? "var(--roster-hover)" : "transparent",
                       borderRight: active ? "2px solid var(--color-primary)" : "2px solid transparent",
                       position: "relative",
                       textAlign: "left",
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!active) (e.currentTarget as HTMLElement).style.background = "var(--roster-hover)";
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!active) (e.currentTarget as HTMLElement).style.background = "transparent";
+                      transition: "background 0.1s",
                     }}
                   >
                     {/* Urgency stripe */}
@@ -316,7 +325,7 @@ export function PursuitRoster({ bids, selectedId, onSelect, q, onQ, filter, onFi
                     </div>
 
                     {/* Info */}
-                    <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ flex: 1, minWidth: 0, paddingRight: isHovered ? 22 : 0 }}>
                       <div
                         style={{
                           fontSize: 12.5,
@@ -368,7 +377,52 @@ export function PursuitRoster({ bids, selectedId, onSelect, q, onQ, filter, onFi
                         />
                       </div>
                     </div>
-                  </button>
+
+                    {/* Delete button — visible on hover */}
+                    {isHovered && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (isDeleting) return;
+                          setDeletingId(bid.id);
+                          deleteBid.mutate(bid.id, {
+                            onSuccess: () => {
+                              toast.success(`"${bid.client_name}" deleted`);
+                              onDelete(bid.id);
+                              setDeletingId(null);
+                            },
+                            onError: (err: any) => {
+                              toast.error("Delete failed", { description: err?.message });
+                              setDeletingId(null);
+                            },
+                          });
+                        }}
+                        disabled={isDeleting}
+                        title="Delete pursuit"
+                        style={{
+                          position: "absolute",
+                          top: "50%",
+                          right: 10,
+                          transform: "translateY(-50%)",
+                          width: 20,
+                          height: 20,
+                          borderRadius: 4,
+                          border: "none",
+                          background: "rgba(239,68,68,0.85)",
+                          color: "#fff",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          cursor: "pointer",
+                          flexShrink: 0,
+                          opacity: isDeleting ? 0.5 : 1,
+                          padding: 0,
+                        }}
+                      >
+                        <Trash2 size={11} />
+                      </button>
+                    )}
+                  </div>
                 );
               })}
             </div>

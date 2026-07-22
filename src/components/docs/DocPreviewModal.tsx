@@ -28,6 +28,7 @@ type Props = {
 
 export function DocPreviewModal({ doc, allDocs, onClose }: Props) {
   const [preview, setPreview] = useState<{ type: "url" | "html"; value: string } | null>(null);
+  const [previewMissing, setPreviewMissing] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [replaceState, setReplaceState] = useState<ReplaceState>({ step: "idle" });
   const [deleteConfirm, setDeleteConfirm] = useState(false);
@@ -36,13 +37,20 @@ export function DocPreviewModal({ doc, allDocs, onClose }: Props) {
   const del = useDeleteDocument();
 
   useEffect(() => {
-    if (!doc) { setPreview(null); return; }
+    if (!doc) { setPreview(null); setPreviewMissing(false); return; }
     setPreviewLoading(true);
+    setPreviewMissing(false);
     getDocPreview({ data: { documentId: doc.id } })
-      .then(setPreview)
+      .then((result) => {
+        if (result === null) {
+          setPreviewMissing(true);
+        } else {
+          setPreview(result);
+        }
+      })
       .catch((err) => {
         console.error("getDocPreview error:", err);
-        toast.error("Failed to load preview");
+        setPreviewMissing(true);
       })
       .finally(() => setPreviewLoading(false));
   }, [doc?.id]);
@@ -124,7 +132,7 @@ export function DocPreviewModal({ doc, allDocs, onClose }: Props) {
     <Dialog.Root open={!!doc} onOpenChange={(o) => !o && onClose()}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/50 z-40" />
-        <Dialog.Content className="fixed inset-4 md:inset-[5%] z-50 bg-card rounded-xl border hairline border-border shadow-2xl flex flex-col overflow-hidden focus:outline-none">
+        <Dialog.Content aria-describedby={undefined} className="fixed inset-4 md:inset-[5%] z-50 bg-card rounded-xl border hairline border-border shadow-2xl flex flex-col overflow-hidden focus:outline-none">
 
           {/* Header */}
           <div className="flex items-center gap-3 px-4 py-3 border-b hairline border-border shrink-0">
@@ -194,6 +202,22 @@ export function DocPreviewModal({ doc, allDocs, onClose }: Props) {
             {previewLoading ? (
               <div className="h-full flex items-center justify-center text-[12px] text-muted-foreground">
                 Loading preview…
+              </div>
+            ) : previewMissing ? (
+              <div className="h-full flex flex-col items-center justify-center gap-3 text-center px-6">
+                <div className="text-3xl opacity-20">🗂️</div>
+                <p className="text-[13px] font-medium">File not found in storage</p>
+                <p className="text-[11px] text-muted-foreground max-w-xs">
+                  This record exists in the database but the file is missing from storage — likely an incomplete upload. You can delete the orphaned record.
+                </p>
+                <button
+                  onClick={handleDelete}
+                  disabled={del.isPending}
+                  className="mt-1 h-7 px-3 rounded-md bg-destructive text-destructive-foreground text-[11px] font-medium hover:opacity-90 disabled:opacity-50 inline-flex items-center gap-1.5"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  {del.isPending ? "Deleting…" : "Delete record"}
+                </button>
               </div>
             ) : preview ? (
               preview.type === "url" ? (

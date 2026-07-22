@@ -229,15 +229,12 @@ async function authUser(req: ReturnType<typeof getRequest>) {
 }
 
 // ── Conflict check helper ─────────────────────────────────────────────────────
-async function checkExisting(bidId: string, folder: string): Promise<{ id: string; name: string; storage_path: string } | null> {
+async function checkExistingAll(bidId: string, folder: string): Promise<Array<{ id: string; name: string; storage_path: string }>> {
   const { data } = await (supabaseAdmin.from("bid_documents") as any)
     .select("id, name, storage_path")
     .eq("bid_id", bidId)
-    .ilike("storage_path", `%/${folder}/%`)
-    .order("size_bytes", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  return data ?? null;
+    .ilike("storage_path", `%/${folder}/%`);
+  return data ?? [];
 }
 
 async function deleteDoc(doc: { id: string; storage_path: string }) {
@@ -283,14 +280,19 @@ async function uploadDoc(opts: {
 
 export const generateQualResultFn = createServerFn({ method: "POST" })
   .handler(async ({ data }: { data: { bidId: string; force?: boolean } }) => {
+    console.log("[generateQualResultFn] START — bidId:", data.bidId, "force:", data.force);
     const user = await authUser(getRequest());
-    if (!user) return new Response("Unauthorized", { status: 401 });
+    if (!user) { console.error("[generateQualResultFn] UNAUTHORIZED"); return new Response("Unauthorized", { status: 401 }); }
+    console.log("[generateQualResultFn] authed as:", user.id);
 
-    const existing = await checkExisting(data.bidId, "deal-brief");
-    if (existing && !data.force) {
-      return { conflict: true as const, existingName: existing.name, existingId: existing.id };
+    const existingAll = await checkExistingAll(data.bidId, "deal-brief");
+    console.log("[generateQualResultFn] existing docs:", existingAll.length, "force:", data.force);
+    if (existingAll.length > 0 && !data.force) {
+      return { conflict: true as const, existingName: existingAll[0].name, existingId: existingAll[0].id };
     }
-    if (existing && data.force) await deleteDoc(existing);
+    if (existingAll.length > 0) {
+      await Promise.all(existingAll.map(deleteDoc));
+    }
 
     const [bidRes, teamRes] = await Promise.all([
       supabaseAdmin.from("bids").select("*").eq("id", data.bidId).maybeSingle(),
@@ -527,14 +529,17 @@ export const generateQualResultFn = createServerFn({ method: "POST" })
       }],
     });
 
+    console.log("[generateQualResultFn] building DOCX buffer...");
     const buffer = Buffer.from(await Packer.toBuffer(doc));
     const slug = bid.client_name.replace(/[^a-zA-Z0-9]/g, "_").slice(0, 30);
     const dateStr = new Date().toISOString().slice(0, 10);
     const filename = `iMocha_${slug}_DealBrief_${dateStr}.docx`;
+    console.log("[generateQualResultFn] buffer size:", buffer.byteLength, "filename:", filename);
 
     await uploadDoc({ buffer, bidId: data.bidId, userId: user.id, folder: "deal-brief", filename });
     const storagePath = `${data.bidId}/deal-brief/${filename}`;
-    const { data: signed } = await supabaseAdmin.storage.from("bid-documents").createSignedUrl(storagePath, 300);
+    const { data: signed, error: signErr } = await supabaseAdmin.storage.from("bid-documents").createSignedUrl(storagePath, 300);
+    console.log("[generateQualResultFn] signed URL:", signed?.signedUrl ?? "NONE", "signErr:", signErr);
     return { url: signed?.signedUrl ?? "", filename };
   });
 
@@ -546,14 +551,19 @@ export const generateQualResultFn = createServerFn({ method: "POST" })
 
 export const generateDealBriefFn = createServerFn({ method: "POST" })
   .handler(async ({ data }: { data: { bidId: string; force?: boolean } }) => {
+    console.log("[generateDealBriefFn] START — bidId:", data.bidId, "force:", data.force);
     const user = await authUser(getRequest());
-    if (!user) return new Response("Unauthorized", { status: 401 });
+    if (!user) { console.error("[generateDealBriefFn] UNAUTHORIZED"); return new Response("Unauthorized", { status: 401 }); }
+    console.log("[generateDealBriefFn] authed as:", user.id);
 
-    const existing = await checkExisting(data.bidId, "qual-result");
-    if (existing && !data.force) {
-      return { conflict: true as const, existingName: existing.name, existingId: existing.id };
+    const existingAll = await checkExistingAll(data.bidId, "qual-result");
+    console.log("[generateDealBriefFn] existing docs:", existingAll.length, "force:", data.force);
+    if (existingAll.length > 0 && !data.force) {
+      return { conflict: true as const, existingName: existingAll[0].name, existingId: existingAll[0].id };
     }
-    if (existing && data.force) await deleteDoc(existing);
+    if (existingAll.length > 0) {
+      await Promise.all(existingAll.map(deleteDoc));
+    }
 
     const [bidRes, teamRes, profileRes] = await Promise.all([
       supabaseAdmin.from("bids").select("*").eq("id", data.bidId).maybeSingle(),
@@ -837,13 +847,16 @@ export const generateDealBriefFn = createServerFn({ method: "POST" })
       }],
     });
 
+    console.log("[generateDealBriefFn] building DOCX buffer...");
     const buffer = Buffer.from(await Packer.toBuffer(doc));
     const slug = bid.client_name.replace(/[^a-zA-Z0-9]/g, "_").slice(0, 30);
     const dateStr = new Date().toISOString().slice(0, 10);
     const filename = `iMocha_${slug}_BidQualResult_${dateStr}.docx`;
+    console.log("[generateDealBriefFn] buffer size:", buffer.byteLength, "filename:", filename);
 
     await uploadDoc({ buffer, bidId: data.bidId, userId: user.id, folder: "qual-result", filename });
     const storagePath = `${data.bidId}/qual-result/${filename}`;
-    const { data: signed } = await supabaseAdmin.storage.from("bid-documents").createSignedUrl(storagePath, 300);
+    const { data: signed, error: signErr } = await supabaseAdmin.storage.from("bid-documents").createSignedUrl(storagePath, 300);
+    console.log("[generateDealBriefFn] signed URL:", signed?.signedUrl ?? "NONE", "signErr:", signErr);
     return { url: signed?.signedUrl ?? "", filename };
   });

@@ -1,4 +1,8 @@
+import { useState } from "react";
+import { Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import type { BidDocument, DocType } from "@/lib/doc-queries";
+import { useDeleteDocument } from "@/lib/doc-queries";
 
 const EXT_COLORS: Record<string, { bg: string; color: string; label: string }> = {
   pdf:  { bg: "#fff1f1", color: "#e53e3e", label: "PDF" },
@@ -33,12 +37,43 @@ export function DocCard({ doc, bidName, onPreview }: Props) {
   const ext = doc.name.split(".").pop()?.toLowerCase() ?? "pdf";
   const extStyle = EXT_COLORS[ext] ?? EXT_COLORS.pdf;
   const isIndexed = doc.embedding !== null;
+  const [deleting, setDeleting] = useState(false);
+  const deleteDoc = useDeleteDocument();
+
+  function handleDelete(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (deleting) return;
+    setDeleting(true);
+    deleteDoc.mutate(
+      { documentId: doc.id, storagePath: doc.storage_path },
+      {
+        onSuccess: () => toast.success(`"${doc.name}" deleted`),
+        onError: (err: any) => {
+          toast.error("Delete failed", { description: err?.message });
+          setDeleting(false);
+        },
+      },
+    );
+  }
 
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={() => onPreview(doc)}
-      className="relative bg-card hairline border border-border rounded-lg p-3 text-left hover:border-primary/40 transition-colors w-full flex flex-col gap-2"
+      onKeyDown={(e) => e.key === "Enter" && onPreview(doc)}
+      className="group relative bg-card hairline border border-border rounded-lg p-3 text-left hover:border-primary/40 transition-colors w-full flex flex-col gap-2 cursor-pointer"
     >
+      {/* Delete button — top-left, visible on group hover */}
+      <button
+        onClick={handleDelete}
+        disabled={deleting}
+        title="Delete document"
+        className="absolute top-1.5 left-1.5 z-10 w-5 h-5 rounded items-center justify-center bg-destructive/90 hover:bg-destructive text-white transition-colors disabled:opacity-50 hidden group-hover:flex"
+      >
+        <Trash2 className="w-2.5 h-2.5" />
+      </button>
+
       {/* AI badge */}
       {isIndexed && (
         <span className="absolute top-2 right-2 text-[9px] bg-[#ede9fd] text-primary px-1.5 py-0.5 rounded font-semibold">
@@ -84,6 +119,6 @@ export function DocCard({ doc, bidName, onPreview }: Props) {
           <div className="text-[9px] text-muted-foreground">Global template</div>
         )}
       </div>
-    </button>
+    </div>
   );
 }

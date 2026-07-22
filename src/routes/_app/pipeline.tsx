@@ -68,6 +68,18 @@ function PipelinePage() {
   const effectiveStage = (urlStage ?? selected?.stage ?? "deal_qualification") as StageKey;
   const tabs = getTabsForStage(effectiveStage);
 
+  function handleBidDeleted(bidId: string) {
+    if (urlBidId === bidId) {
+      const remaining = filtered.filter((b) => b.id !== bidId);
+      const next = remaining[0];
+      if (next) {
+        navigate({ search: { bidId: next.id, stage: next.stage as StageKey } });
+      } else {
+        navigate({ search: {} });
+      }
+    }
+  }
+
   return (
     <div className="h-full flex overflow-hidden">
       <PursuitRoster
@@ -79,6 +91,7 @@ function PipelinePage() {
           setActiveTab(bid ? defaultTabForStage(bid.stage as StageKey) : "overview");
           setRosterCollapsed(true);
         }}
+        onDelete={handleBidDeleted}
         collapsed={rosterCollapsed}
         onToggleCollapse={() => setRosterCollapsed((c) => !c)}
         q={q}

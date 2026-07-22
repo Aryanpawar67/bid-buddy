@@ -308,9 +308,7 @@ export function useGenerateQualificationInsights() {
       qc.invalidateQueries({ queryKey: ["assessment-data", bidId] });
       qc.invalidateQueries({ queryKey: ["bid", bidId] });
     },
-    onError: (e) => {
-      console.error("[useGenerateQualificationInsights] error:", e);
-    },
+    onError: () => {},
   });
 }
 
@@ -330,9 +328,7 @@ export function useGenerateQualAssessment() {
       qc.invalidateQueries({ queryKey: ["assessment-data", bidId] });
       qc.invalidateQueries({ queryKey: ["bid", bidId] });
     },
-    onError: (e) => {
-      console.error("[useGenerateQualAssessment] error:", e);
-    },
+    onError: () => {},
   });
 }
 
@@ -350,10 +346,15 @@ export function useGenerateQualResult() {
       const { generateQualResultFn } = await import("@/lib/api/generate-qual-docs");
       const { data: { session } } = await supabase.auth.getSession();
 
-      const result = await generateQualResultFn({
-        data: { bidId, force },
-        headers: { authorization: `Bearer ${session?.access_token ?? ""}` },
-      }) as { conflict: true; existingName: string; existingId: string } | { url: string; filename: string };
+      let result: { conflict: true; existingName: string; existingId: string } | { url: string; filename: string };
+      try {
+        result = await generateQualResultFn({
+          data: { bidId, force },
+          headers: { authorization: `Bearer ${session?.access_token ?? ""}` },
+        }) as typeof result;
+      } catch (err) {
+        throw err;
+      }
 
       if ("conflict" in result && result.conflict) return result;
 
@@ -505,10 +506,16 @@ export function useGenerateDealBrief() {
     mutationFn: async ({ bidId, force }: { bidId: string; force?: boolean }) => {
       const { generateDealBriefFn } = await import("@/lib/api/generate-qual-docs");
       const { data: { session } } = await supabase.auth.getSession();
-      const result = await generateDealBriefFn({
-        data: { bidId, force },
-        headers: { authorization: `Bearer ${session?.access_token ?? ""}` },
-      }) as { conflict: true; existingName: string; existingId: string } | { url: string; filename: string };
+
+      let result: { conflict: true; existingName: string; existingId: string } | { url: string; filename: string };
+      try {
+        result = await generateDealBriefFn({
+          data: { bidId, force },
+          headers: { authorization: `Bearer ${session?.access_token ?? ""}` },
+        }) as typeof result;
+      } catch (err) {
+        throw err;
+      }
 
       if ("conflict" in result && result.conflict) return result;
 
@@ -520,8 +527,45 @@ export function useGenerateDealBrief() {
       if ("conflict" in result && result.conflict) return;
       qc.invalidateQueries({ queryKey: ["documents", { bidId }] });
     },
-    onError: (e) => {
-      console.error("[useGenerateDealBrief] error:", e);
+  });
+}
+
+// ── useDeleteBid ──────────────────────────────────────────────────────────────
+export function useDeleteBid() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (bidId: string) => {
+      // Collect all doc storage paths first
+      const { data: docs } = await (supabase as any)
+        .from("bid_documents")
+        .select("id, storage_path")
+        .eq("bid_id", bidId);
+
+      const paths = ((docs ?? []) as any[]).map((d: any) => d.storage_path).filter(Boolean);
+      if (paths.length) {
+        await supabase.storage.from("bid-documents").remove(paths);
+      }
+
+      // Cascade-delete all related rows then the bid itself
+      await Promise.all([
+        (supabase as any).from("bid_document_chunks").delete().in(
+          "document_id",
+          ((docs ?? []) as any[]).map((d: any) => d.id),
+        ),
+        (supabase as any).from("bid_documents").delete().eq("bid_id", bidId),
+        (supabase as any).from("ai_sessions").delete().eq("bid_id", bidId),
+        (supabase as any).from("bid_questions").delete().eq("bid_id", bidId),
+        (supabase as any).from("bid_deliverables").delete().eq("bid_id", bidId),
+        (supabase as any).from("bid_assignments").delete().eq("bid_id", bidId),
+        (supabase as any).from("bid_activity_log").delete().eq("bid_id", bidId),
+      ]);
+
+      const { error } = await supabase.from("bids").delete().eq("id", bidId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["bids"] });
+      qc.invalidateQueries({ queryKey: ["documents"] });
     },
   });
 }
@@ -649,6 +693,62 @@ export function useBulkCreateQuestions() {
     onSuccess: (_, { bidId }) => {
       qc.invalidateQueries({ queryKey: ["stage-items", bidId, "rfi"] });
       qc.invalidateQueries({ queryKey: ["bid-activity", bidId] });
+    },
+  });
+}
+
+// ── useDeleteQuestion ─────────────────────────────────────────────────────────
+
+export function useDeleteQuestion() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, bidId }: { id: string; bidId: string }) => {
+      const { error } = await (supabase as any).from("bid_questions").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: (_, { bidId }) => {
+      qc.invalidateQueries({ queryKey: ["stage-items", bidId, "rfi"] });
+    },
+  });
+}
+
+// ── useRegenerateRfiCategory ──────────────────────────────────────────────────
+
+export function useRegenerateRfiCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      bidId,
+      category,
+      existingIds,
+    }: {
+      bidId: string;
+      category: string;
+      existingIds: string[];
+    }) => {
+      const { data: { session } } = await supabase.auth.getSession();
+      const { regenerateRfiCategoryFn } = await import("@/lib/api/generate-rfi-questions");
+      const result = await regenerateRfiCategoryFn({
+        data: { bidId, category },
+        headers: { authorization: `Bearer ${session?.access_token ?? ""}` },
+      });
+      if (existingIds.length > 0) {
+        await (supabase as any).from("bid_questions").delete().in("id", existingIds);
+      }
+      const inserts = result.questions.map((q: { category: string; question: string }, i: number) => ({
+        bid_id: bidId,
+        stage: "rfi" as const,
+        assigned_team: "pre_sales" as const,
+        question_text: `[${q.category}] ${q.question}`,
+        status: "pending",
+        order_index: i,
+      }));
+      const { error } = await (supabase as any).from("bid_questions").insert(inserts);
+      if (error) throw error;
+      return result;
+    },
+    onSuccess: (_, { bidId }) => {
+      qc.invalidateQueries({ queryKey: ["stage-items", bidId, "rfi"] });
     },
   });
 }

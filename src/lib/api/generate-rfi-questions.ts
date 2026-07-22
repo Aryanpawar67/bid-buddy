@@ -163,3 +163,70 @@ export const generateRfiQuestionsFn = createServerFn({ method: "POST" })
 
     return { questions: parsed.questions };
   });
+
+// ── regenerateRfiCategoryFn — regenerate questions for a single category ───────
+
+const CATEGORY_QUERIES: Record<string, string> = {
+  "Integration & Technical": "HRMS LMS SSO SAML API integration connector requirements",
+  "Security & Compliance": "security compliance data residency GDPR certifications privacy",
+  "Scope & Delivery": "project scope timeline user volume assessment deliverables milestones",
+  "Commercial & Legal": "evaluation criteria budget pricing commercial contract terms",
+  "Stakeholder & Governance": "governance stakeholders decision makers approval process",
+  "Product Fit": "product requirements features evaluation criteria skills assessment",
+};
+
+export const regenerateRfiCategoryFn = createServerFn({ method: "POST" })
+  .handler(async ({ data }: { data: { bidId: string; category: string } }) => {
+    const token = getRequest().headers.get("authorization")?.replace("Bearer ", "") ?? "";
+    const { data: { user }, error: authErr } = await supabaseAdmin.auth.getUser(token);
+    if (authErr || !user) throw new Error("Unauthorized");
+
+    const { bidId, category } = data;
+    const { data: bid } = await (supabaseAdmin as any)
+      .from("bids")
+      .select("client_name, type, value")
+      .eq("id", bidId)
+      .single();
+    if (!bid) throw new Error("Bid not found");
+
+    const query = CATEGORY_QUERIES[category] ?? category;
+    const chunks = await searchChunks(query, bidId, 6);
+    const contextText = formatContext(chunks);
+
+    const SingleSchema = z.object({
+      questions: z.array(z.object({
+        category: z.string(),
+        question: z.string().min(10),
+      })).min(2).max(6),
+    });
+
+    const prompt = `You are an experienced iMocha pre-sales professional writing a formal clarification letter to ${bid.client_name}.
+
+iMocha platform: Skills Assessments (TA), Skills Intelligence (TM), integrations (Workday, SAP, SSO/SAML/SCIM), SOC2 Type II / ISO 27001.
+
+CONTEXT:
+${contextText || "No documents uploaded — use typical enterprise procurement knowledge."}
+
+Generate 3–5 targeted clarification questions for the "${category}" category only.
+
+RULES:
+1. NEVER reference documents: no "The RFP states…", "As mentioned…", "Based on the document…"
+2. Write as a knowledgeable professional asking directly in a meeting or letter
+3. Use "we understand", "we'd like to confirm", or simply ask directly
+
+Return ONLY valid JSON — no markdown fences:
+{ "questions": [{ "category": "${category}", "question": "..." }] }`;
+
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const resp = await anthropic.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 1000,
+      messages: [{ role: "user", content: prompt }],
+    });
+
+    const raw = resp.content.filter((b) => b.type === "text").map((b) => (b as any).text).join("");
+    const cleaned = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+    const parsed = SingleSchema.parse(JSON.parse(cleaned));
+
+    return { questions: parsed.questions };
+  });

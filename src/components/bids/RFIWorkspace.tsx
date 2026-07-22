@@ -1,14 +1,16 @@
 import { useState, useEffect } from "react";
 import {
   Check, Circle, AlertTriangle, MessageSquare, Users, FileText, Activity, LayoutList,
-  Clock, CheckCircle2, Plus, X, UserPlus, Sparkles, RefreshCw, Download, ChevronDown, ChevronRight,
+  CheckCircle2, Plus, X, UserPlus, Sparkles, RefreshCw, Download, ChevronDown, ChevronRight,
+  Trash2,
 } from "lucide-react";
+import { toast } from "sonner";
 import { Link } from "@tanstack/react-router";
 import type { Bid } from "@/lib/bid-queries";
 import {
   useStageItems, useToggleQuestion, useToggleDeliverable, useBidTeam, useBidActivity,
   useCreateQuestion, useUpdateQuestionResponse, useTeamMembers,
-  useGenerateRfiQuestions, useBulkCreateQuestions,
+  useGenerateRfiQuestions, useBulkCreateQuestions, useDeleteQuestion, useRegenerateRfiCategory,
 } from "@/lib/bid-queries";
 import { supabase } from "@/integrations/supabase/client";
 import { initials } from "@/lib/bid-constants";
@@ -170,25 +172,32 @@ export function RFIWorkspace({ bid, activeTab, onTabChange }: {
 
   const allQuestions  = items.data?.questions ?? [];
   const deliverables  = items.data?.deliverables ?? [];
-  const toggleQ       = useToggleQuestion();
-  const toggleD       = useToggleDeliverable();
-  const generateRfi   = useGenerateRfiQuestions();
-  const bulkCreate    = useBulkCreateQuestions();
+  const toggleQ             = useToggleQuestion();
+  const toggleD             = useToggleDeliverable();
+  const generateRfi         = useGenerateRfiQuestions();
+  const bulkCreate          = useBulkCreateQuestions();
+  const deleteQuestion      = useDeleteQuestion();
+  const regenerateCategory  = useRegenerateRfiCategory();
 
-  // Review panel state — persisted in sessionStorage so refresh doesn't lose it
+  // Review panel draft — persisted in sessionStorage so refresh doesn't lose it
   const SESSION_KEY = `rfi_draft_${bid.id}`;
   const [generated, setGeneratedRaw] = useState<RfiQuestion[] | null>(null);
-  const [selected,  setSelected]     = useState<Set<number>>(new Set());
   const [showAllQs, setShowAllQs]    = useState(false);
+
+  // Download-mode selection (by question id)
+  const [downloadMode,     setDownloadMode]     = useState(false);
+  const [downloadSelected, setDownloadSelected] = useState<Set<string>>(new Set());
+
+  // Per-category regeneration tracking
+  const [regeneratingCat, setRegeneratingCat] = useState<string | null>(null);
 
   // Restore draft from sessionStorage on mount
   useEffect(() => {
     try {
       const saved = sessionStorage.getItem(SESSION_KEY);
       if (saved) {
-        const { questions: qs, selectedIndices } = JSON.parse(saved);
-        setGeneratedRaw(qs);
-        setSelected(new Set(selectedIndices as number[]));
+        const { questions: qs } = JSON.parse(saved);
+        if (Array.isArray(qs)) setGeneratedRaw(qs);
       }
     } catch {}
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -198,18 +207,15 @@ export function RFIWorkspace({ bid, activeTab, onTabChange }: {
     setGeneratedRaw(qs);
   }
 
-  // Sync review state to sessionStorage whenever it changes
+  // Sync draft to sessionStorage
   useEffect(() => {
     if (generated) {
-      sessionStorage.setItem(SESSION_KEY, JSON.stringify({
-        questions: generated,
-        selectedIndices: Array.from(selected),
-      }));
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify({ questions: generated }));
     } else {
       sessionStorage.removeItem(SESSION_KEY);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [generated, selected]);
+  }, [generated]);
 
   const hasIndexedDocs = docs.some((d: any) => d.embedding !== null);
 
@@ -234,42 +240,77 @@ export function RFIWorkspace({ bid, activeTab, onTabChange }: {
 
   function handleGenerate() {
     generateRfi.mutate({ bidId: bid.id }, {
-      onSuccess: ({ questions: qs }) => {
-        setGenerated(qs);
-        setSelected(new Set(qs.map((_, i) => i))); // all pre-selected
-      },
+      onSuccess: ({ questions: qs }) => setGenerated(qs),
     });
   }
 
   async function handleConfirm() {
     if (!generated) return;
-    const selectedQs = generated.filter((_, i) => selected.has(i));
-    const archivedQs = generated.filter((_, i) => !selected.has(i));
-
-    const rows = [
-      ...selectedQs.map((q, i) => ({
-        question_text: `[${q.category}] ${q.question}`,
-        status: "pending",
-        order_index: questions.length + i,
-      })),
-      ...archivedQs.map((q, i) => ({
-        question_text: q.question,
-        status: "blocked",
-        order_index: questions.length + selectedQs.length + i,
-      })),
-    ];
+    const rows = generated.map((q, i) => ({
+      question_text: `[${q.category}] ${q.question}`,
+      status: "pending",
+      order_index: questions.length + i,
+    }));
 
     await bulkCreate.mutateAsync({ bidId: bid.id, rows });
 
     await (supabase as any).from("bid_activity_log").insert({
       bid_id: bid.id,
       user_id: user?.id ?? null,
-      action: `AI generated ${selectedQs.length} RFI clarification questions (${archivedQs.length} archived)`,
+      action: `AI generated ${generated.length} RFI clarification questions`,
     });
 
-    await downloadQuestionnaire(selectedQs, bid.client_name);
     setGenerated(null);
-    setSelected(new Set());
+    toast.success(`${generated.length} questions added to the list`);
+  }
+
+  function handleDownloadModeToggle() {
+    if (downloadMode) {
+      setDownloadMode(false);
+      setDownloadSelected(new Set());
+    } else {
+      setDownloadMode(true);
+      setDownloadSelected(new Set(questions.map((q: any) => q.id)));
+    }
+  }
+
+  async function handleDownloadSelected() {
+    const selectedQs = questions
+      .filter((q: any) => downloadSelected.has(q.id))
+      .map((q: any) => parseDbQuestion(q.question_text));
+    await downloadQuestionnaire(selectedQs, bid.client_name);
+    setDownloadMode(false);
+    setDownloadSelected(new Set());
+  }
+
+  function handleRegenerateCategory(category: string) {
+    const existingIds = questions
+      .filter((q: any) => parseDbQuestion(q.question_text).category === category)
+      .map((q: any) => q.id);
+    setRegeneratingCat(category);
+    regenerateCategory.mutate(
+      { bidId: bid.id, category, existingIds },
+      {
+        onSuccess: () => {
+          toast.success(`${category} questions regenerated`);
+          setRegeneratingCat(null);
+        },
+        onError: () => {
+          toast.error("Failed to regenerate questions");
+          setRegeneratingCat(null);
+        },
+      }
+    );
+  }
+
+  function handleDeleteQuestion(id: string) {
+    deleteQuestion.mutate(
+      { id, bidId: bid.id },
+      {
+        onSuccess: () => toast.success("Question deleted"),
+        onError: () => toast.error("Failed to delete question"),
+      }
+    );
   }
 
   if (activeTab === "team") {
@@ -449,16 +490,43 @@ export function RFIWorkspace({ bid, activeTab, onTabChange }: {
               <span className="text-[11px] text-muted-foreground">{answered}/{total} answered</span>
             )}
             {!generated && questions.length > 0 && (
-              <button
-                onClick={() => downloadQuestionnaire(questions.map((q: any) => parseDbQuestion(q.question_text)), bid.client_name)}
-                title="Download current questions as XLSX to send to client"
-                className="h-7 px-2.5 rounded-md hairline border bg-card text-[11px] font-medium inline-flex items-center gap-1.5 hover:bg-muted transition-colors"
-              >
-                <Download className="size-3" />
-                Download XLSX
-              </button>
+              downloadMode ? (
+                <>
+                  <span className="text-[11px] text-muted-foreground">
+                    <button onClick={() => setDownloadSelected(new Set(questions.map((q: any) => q.id)))} className="text-primary hover:underline">All</button>
+                    {" / "}
+                    <button onClick={() => setDownloadSelected(new Set())} className="hover:underline">None</button>
+                    {" · "}
+                    <span className="font-semibold text-foreground">{downloadSelected.size}</span> selected
+                  </span>
+                  <button
+                    onClick={handleDownloadSelected}
+                    disabled={downloadSelected.size === 0}
+                    className="h-7 px-2.5 rounded-md bg-primary text-primary-foreground text-[11px] font-medium inline-flex items-center gap-1.5 disabled:opacity-40 hover:opacity-90 transition-opacity"
+                  >
+                    <Download className="size-3" />
+                    Download {downloadSelected.size > 0 ? `${downloadSelected.size}` : "Selected"}
+                  </button>
+                  <button
+                    onClick={handleDownloadModeToggle}
+                    className="h-7 w-7 rounded-md hairline border text-muted-foreground hover:bg-muted inline-flex items-center justify-center transition-colors"
+                    title="Cancel selection"
+                  >
+                    <X className="size-3" />
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={handleDownloadModeToggle}
+                  title="Download selected questions as XLSX"
+                  className="h-7 px-2.5 rounded-md hairline border bg-card text-[11px] font-medium inline-flex items-center gap-1.5 hover:bg-muted transition-colors"
+                >
+                  <Download className="size-3" />
+                  Download XLSX
+                </button>
+              )
             )}
-            {!generated && (
+            {!generated && !downloadMode && (
               <button
                 onClick={handleGenerate}
                 disabled={generateRfi.isPending || !hasIndexedDocs}
@@ -492,18 +560,8 @@ export function RFIWorkspace({ bid, activeTab, onTabChange }: {
         {generated ? (
           <ReviewPanel
             questions={generated}
-            selected={selected}
-            onToggle={(i) =>
-              setSelected((prev) => {
-                const next = new Set(prev);
-                if (next.has(i)) next.delete(i); else next.add(i);
-                return next;
-              })
-            }
-            onSelectAll={() => setSelected(new Set(generated.map((_, i) => i)))}
-            onDeselectAll={() => setSelected(new Set())}
             onConfirm={handleConfirm}
-            onDiscard={() => { setGenerated(null); setSelected(new Set()); }}
+            onDiscard={() => setGenerated(null)}
             isConfirming={bulkCreate.isPending}
           />
         ) : (
@@ -528,6 +586,18 @@ export function RFIWorkspace({ bid, activeTab, onTabChange }: {
                       const next = q.status === "pending" ? "in_progress" : q.status === "in_progress" ? "done" : "pending";
                       toggleQ.mutate({ id: q.id, status: next });
                     }}
+                    downloadMode={downloadMode}
+                    downloadSelected={downloadSelected.has(q.id)}
+                    onToggleDownload={() =>
+                      setDownloadSelected((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(q.id)) next.delete(q.id); else next.add(q.id);
+                        return next;
+                      })
+                    }
+                    onRegenerate={() => handleRegenerateCategory(parseDbQuestion(q.question_text).category)}
+                    onDelete={() => handleDeleteQuestion(q.id)}
+                    isRegenerating={regeneratingCat === parseDbQuestion(q.question_text).category}
                   />
                 ))}
               </ul>
@@ -540,8 +610,8 @@ export function RFIWorkspace({ bid, activeTab, onTabChange }: {
                 {showAllQs ? `▲ Show less` : `▼ Show all ${questions.length} questions`}
               </button>
             )}
-            {(showAllQs || questions.length <= 8) && <AddQuestionInline bidId={bid.id} stage="rfi" />}
-            <ArchivedSection questions={archived} />
+            {!downloadMode && (showAllQs || questions.length <= 8) && <AddQuestionInline bidId={bid.id} stage="rfi" />}
+            {!downloadMode && <ArchivedSection questions={archived} />}
           </>
         )}
       </div>
@@ -590,80 +660,47 @@ export function RFIWorkspace({ bid, activeTab, onTabChange }: {
 
 function ReviewPanel({
   questions,
-  selected,
-  onToggle,
-  onSelectAll,
-  onDeselectAll,
   onConfirm,
   onDiscard,
   isConfirming,
 }: {
   questions: RfiQuestion[];
-  selected: Set<number>;
-  onToggle: (i: number) => void;
-  onSelectAll: () => void;
-  onDeselectAll: () => void;
   onConfirm: () => void;
   onDiscard: () => void;
   isConfirming: boolean;
 }) {
-  const selectedCount = selected.size;
-  const total         = questions.length;
-
-  // Group by category, preserving declaration order
   const groups = RFI_CATEGORIES
     .map((cat) => ({
       cat,
-      items: questions
-        .map((q, idx) => ({ ...q, idx }))
-        .filter((q) => q.category === cat),
+      items: questions.filter((q) => q.category === cat),
     }))
     .filter((g) => g.items.length > 0);
 
   return (
     <div className="flex flex-col">
-      {/* Category + checkbox list */}
       <div className="max-h-[440px] overflow-y-auto divide-y hairline divide-border">
         {groups.map(({ cat, items }) => (
           <div key={cat}>
             <div className="px-4 py-1.5 bg-muted/40 sticky top-0 z-10">
               <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
-                {cat}
+                {cat} · {items.length}
               </span>
             </div>
-            {items.map(({ question, idx }) => {
-              const isSelected = selected.has(idx);
-              return (
-                <label
-                  key={idx}
-                  className={`flex items-start gap-3 px-4 py-2.5 cursor-pointer transition-colors ${
-                    isSelected ? "hover:bg-muted/20" : "hover:bg-muted/10 opacity-50"
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={isSelected}
-                    onChange={() => onToggle(idx)}
-                    className="mt-0.5 size-3.5 shrink-0 accent-primary cursor-pointer"
-                  />
-                  <span className="text-[12px] leading-relaxed select-none">{question}</span>
-                </label>
-              );
-            })}
+            {items.map((q, i) => (
+              <div key={i} className="flex items-start gap-3 px-4 py-2.5 hover:bg-muted/20">
+                <span className="text-[10px] text-muted-foreground shrink-0 mt-0.5 w-4">{i + 1}.</span>
+                <span className="text-[12px] leading-relaxed">{q.question}</span>
+              </div>
+            ))}
           </div>
         ))}
       </div>
 
-      {/* Footer */}
       <div className="px-4 py-3 bg-muted/20 border-t hairline border-border flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <span className="text-[11px] text-muted-foreground">
-            <span className="font-semibold text-foreground">{selectedCount}</span> of {total} selected
-          </span>
-          <span className="text-muted-foreground/40">·</span>
-          <button onClick={onSelectAll} className="text-[11px] text-primary hover:underline">All</button>
-          <button onClick={onDeselectAll} className="text-[11px] text-muted-foreground hover:underline">None</button>
-        </div>
+        <span className="text-[11px] text-muted-foreground">
+          <span className="font-semibold text-foreground">{questions.length}</span> questions generated
+          <span className="ml-1.5 text-muted-foreground/60">— use Download XLSX after adding to select which to send</span>
+        </span>
         <div className="flex items-center gap-2">
           <button
             onClick={onDiscard}
@@ -674,12 +711,12 @@ function ReviewPanel({
           </button>
           <button
             onClick={onConfirm}
-            disabled={isConfirming || selectedCount === 0}
+            disabled={isConfirming}
             className="h-8 px-3.5 rounded-md bg-primary text-primary-foreground text-[11px] font-medium inline-flex items-center gap-1.5 disabled:opacity-40 hover:opacity-90 transition-opacity"
           >
             {isConfirming
               ? <><RefreshCw className="size-3 animate-spin" /> Adding…</>
-              : <><Download className="size-3.5" /> Add to List & Download</>}
+              : <><Check className="size-3.5" /> Add All to List</>}
           </button>
         </div>
       </div>
@@ -722,10 +759,19 @@ function ArchivedSection({ questions }: { questions: any[] }) {
 
 // ── QuestionRow ───────────────────────────────────────────────────────────────
 
-function QuestionRow({ num, question, onCycle }: {
+function QuestionRow({
+  num, question, onCycle, downloadMode, downloadSelected, onToggleDownload,
+  onRegenerate, onDelete, isRegenerating,
+}: {
   num: number;
   question: any;
   onCycle: () => void;
+  downloadMode: boolean;
+  downloadSelected: boolean;
+  onToggleDownload: () => void;
+  onRegenerate: () => void;
+  onDelete: () => void;
+  isRegenerating: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [draft, setDraft]       = useState(question.response_text ?? "");
@@ -735,8 +781,16 @@ function QuestionRow({ num, question, onCycle }: {
   const inProg = question.status === "in_progress";
 
   return (
-    <li className="px-4 py-3 hover:bg-muted/20 transition-colors">
+    <li className="group px-4 py-3 hover:bg-muted/20 transition-colors">
       <div className="flex items-start gap-3">
+        {downloadMode && (
+          <input
+            type="checkbox"
+            checked={downloadSelected}
+            onChange={onToggleDownload}
+            className="mt-1 size-3.5 shrink-0 accent-primary cursor-pointer"
+          />
+        )}
         <span className="text-[10px] text-muted-foreground w-5 shrink-0 mt-0.5">{num}</span>
         <button
           onClick={(e) => { e.stopPropagation(); onCycle(); }}
@@ -766,6 +820,28 @@ function QuestionRow({ num, question, onCycle }: {
               <span className="text-[10px] text-muted-foreground">{question.assigned_team.replace(/_/g, " ")}</span>
             )}
             {question.response_text && <FileText className="size-3 text-muted-foreground" />}
+            {/* Action buttons — right-aligned, appear on hover */}
+            {!downloadMode && (
+              <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                  title="Delete question"
+                  className="h-5 px-1.5 rounded text-[9px] text-destructive hover:bg-destructive/10 inline-flex items-center gap-1 transition-colors"
+                >
+                  <Trash2 className="size-2.5" />
+                  Delete
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); onRegenerate(); }}
+                  disabled={isRegenerating}
+                  title="Regenerate questions for this category"
+                  className="h-5 px-1.5 rounded text-[9px] text-primary hover:bg-primary/10 inline-flex items-center gap-1 transition-colors disabled:opacity-40"
+                >
+                  <RefreshCw className={`size-2.5 ${isRegenerating ? "animate-spin" : ""}`} />
+                  {isRegenerating ? "Regenerating…" : "Regenerate"}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
