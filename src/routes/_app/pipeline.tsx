@@ -82,7 +82,10 @@ function PipelinePage() {
         }}
         onDelete={handleBidDeleted}
         collapsed={rosterCollapsed}
-        onToggleCollapse={() => setRosterCollapsed((c) => !c)}
+        onToggleCollapse={() => {
+          if (!rosterCollapsed) navigate({ to: "/dashboard" });
+          else setRosterCollapsed(false);
+        }}
         q={q}
         onQ={setQ}
         filter={filter}
