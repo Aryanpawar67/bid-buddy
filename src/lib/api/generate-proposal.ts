@@ -511,6 +511,7 @@ export type ReadinessCheck = {
     count: number;
   };
   likelyFlags: Array<{ field: string; reason: string }>;
+  existingProposal: { id: string; name: string; downloadUrl: string } | null;
 };
 
 export const checkProposalReadinessFn = createServerFn({ method: "POST" })
@@ -522,7 +523,7 @@ export const checkProposalReadinessFn = createServerFn({ method: "POST" })
     const { data: { user }, error: authErr } = await supabaseAdmin.auth.getUser(token);
     if (authErr || !user) return new Response("Unauthorized", { status: 401 });
 
-    const [bidRes, docRes, chunkRes, questionRes] = await Promise.all([
+    const [bidRes, docRes, chunkRes, questionRes, existingProposalRes] = await Promise.all([
       supabaseAdmin
         .from("bids")
         .select("product_type, type, contact_name, value")
@@ -538,6 +539,13 @@ export const checkProposalReadinessFn = createServerFn({ method: "POST" })
         .from("bid_questions")
         .select("id", { count: "exact", head: true })
         .eq("bid_id", data.bidId),
+      (supabaseAdmin.from("bid_documents") as any)
+        .select("id, name, storage_path")
+        .eq("bid_id", data.bidId)
+        .eq("type", "proposal")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
     ]);
 
     const bid = bidRes.data as any;
@@ -584,6 +592,18 @@ export const checkProposalReadinessFn = createServerFn({ method: "POST" })
       });
     }
 
+    let existingProposal: ReadinessCheck["existingProposal"] = null;
+    if (existingProposalRes.data) {
+      const { data: signed } = await supabaseAdmin.storage
+        .from("bid-documents")
+        .createSignedUrl(existingProposalRes.data.storage_path, 300);
+      existingProposal = {
+        id: existingProposalRes.data.id,
+        name: existingProposalRes.data.name,
+        downloadUrl: signed?.signedUrl ?? "",
+      };
+    }
+
     const result: ReadinessCheck = {
       metadata: {
         hasProductType: !!bid?.product_type,
@@ -596,6 +616,7 @@ export const checkProposalReadinessFn = createServerFn({ method: "POST" })
       documents: { uploadedCount, indexedChunkCount },
       questions: { count: questionCount },
       likelyFlags,
+      existingProposal,
     };
 
     return new Response(JSON.stringify(result), { headers: { "Content-Type": "application/json" } });
@@ -827,11 +848,12 @@ export const generateProposalFn = createServerFn({ method: "POST" })
       );
     }
 
-    return new Response(outputBuffer, {
-      headers: {
-        "Content-Type": contentType,
-        "Content-Disposition": `attachment; filename="${filename}"`,
-        "X-Proposal-Template": templateFilename,
-      },
-    });
+    const { data: signedData } = await supabaseAdmin.storage
+      .from("bid-documents")
+      .createSignedUrl(storagePath, 120);
+
+    return new Response(
+      JSON.stringify({ downloadUrl: signedData?.signedUrl ?? null, filename }),
+      { headers: { "Content-Type": "application/json" } }
+    );
   });

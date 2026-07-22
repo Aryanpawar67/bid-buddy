@@ -105,22 +105,15 @@ export function ProposalModal({ open, onClose, bidId, sessionId, clientName, onG
         return;
       }
 
-      const res = result._res;
-      if (!res || typeof res.blob !== "function") {
-        throw new Error(`Response is not a fetch Response — got: ${JSON.stringify(res)}`);
+      if (!result.downloadUrl) {
+        throw new Error("No download URL returned from server");
       }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const contentDisposition = res.headers.get("Content-Disposition") ?? "";
-      const filenameMatch = contentDisposition.match(/filename="([^"]+)"/);
-      const filename = filenameMatch?.[1] ?? "proposal.docx";
       const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
+      a.href = result.downloadUrl;
+      a.download = result.filename;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
       toast.success("Proposal saved to Knowledge Hub");
       if (preview) onGenerated?.(preview);
       onClose();
@@ -351,13 +344,29 @@ export function ProposalModal({ open, onClose, bidId, sessionId, clientName, onG
           <div className="flex items-center justify-between px-4 py-3 border-t hairline border-border shrink-0 bg-card">
             {phase === 0 ? (
               <>
-                <div />
+                {readiness?.existingProposal ? (
+                  <button
+                    onClick={() => {
+                      const a = document.createElement("a");
+                      a.href = readiness.existingProposal!.downloadUrl;
+                      a.download = readiness.existingProposal!.name;
+                      document.body.appendChild(a);
+                      a.click();
+                      document.body.removeChild(a);
+                    }}
+                    className="text-[11px] px-3 py-1.5 rounded-full border hairline border-border text-foreground hover:bg-background transition-colors"
+                  >
+                    ↓ Open Existing
+                  </button>
+                ) : (
+                  <div />
+                )}
                 <button
                   onClick={handleProceedToPreview}
                   disabled={readinessMutation.isPending || readinessMutation.isError}
                   className="text-[11px] px-4 py-1.5 rounded-full bg-primary text-white hover:opacity-90 disabled:opacity-40 transition-opacity"
                 >
-                  Continue — Generate Preview →
+                  {readiness?.existingProposal ? "Regenerate — New Preview →" : "Continue — Generate Preview →"}
                 </button>
               </>
             ) : phase === 1 ? (
@@ -547,7 +556,10 @@ function ReadinessPanel({
   }
   if (!readiness) return null;
 
+  const existing = readiness.existingProposal;
+
   const { metadata, documents, questions, likelyFlags } = readiness;
+
   const hasAnyContext = documents.indexedChunkCount > 0 || questions.count > 0;
 
   const checks: Array<{ label: string; ok: boolean; detail: string }> = [
@@ -598,6 +610,18 @@ function ReadinessPanel({
 
   return (
     <div className="flex flex-col gap-4">
+      {existing && (
+        <div className="flex items-start gap-3 px-3 py-2.5 bg-primary/8 border hairline border-primary/25 rounded-lg">
+          <span className="text-primary text-[13px] shrink-0 mt-px">✦</span>
+          <div className="flex flex-col min-w-0 gap-0.5">
+            <span className="text-[11px] font-semibold text-foreground">Proposal already generated</span>
+            <span className="text-[10px] text-muted-foreground truncate">{existing.name}</span>
+            <span className="text-[10px] text-muted-foreground">
+              Use <strong className="text-foreground">Open Existing</strong> to download it, or <strong className="text-foreground">Regenerate</strong> to replace it with a new AI-authored version.
+            </span>
+          </div>
+        </div>
+      )}
       <div className="flex flex-col gap-1.5">
         <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
           Bid context check
