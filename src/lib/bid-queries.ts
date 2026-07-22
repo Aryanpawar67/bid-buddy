@@ -720,11 +720,11 @@ export function useRegenerateRfiCategory() {
     mutationFn: async ({
       bidId,
       category,
-      existingIds,
+      nextOrderIndex,
     }: {
       bidId: string;
       category: string;
-      existingIds: string[];
+      nextOrderIndex: number;
     }) => {
       const { data: { session } } = await supabase.auth.getSession();
       const { regenerateRfiCategoryFn } = await import("@/lib/api/generate-rfi-questions");
@@ -732,18 +732,16 @@ export function useRegenerateRfiCategory() {
         data: { bidId, category },
         headers: { authorization: `Bearer ${session?.access_token ?? ""}` },
       });
-      if (existingIds.length > 0) {
-        await (supabase as any).from("bid_questions").delete().in("id", existingIds);
-      }
-      const inserts = result.questions.map((q: { category: string; question: string }, i: number) => ({
+      // Append the single new question — never delete existing ones
+      const q = result.questions[0];
+      const { error } = await (supabase as any).from("bid_questions").insert({
         bid_id: bidId,
         stage: "rfi" as const,
         assigned_team: "pre_sales" as const,
         question_text: `[${q.category}] ${q.question}`,
         status: "pending",
-        order_index: i,
-      }));
-      const { error } = await (supabase as any).from("bid_questions").insert(inserts);
+        order_index: nextOrderIndex,
+      });
       if (error) throw error;
       return result;
     },

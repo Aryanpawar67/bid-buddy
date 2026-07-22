@@ -198,7 +198,7 @@ export const regenerateRfiCategoryFn = createServerFn({ method: "POST" })
       questions: z.array(z.object({
         category: z.string(),
         question: z.string().min(10),
-      })).min(1).max(4),
+      })).min(1).max(1),
     });
 
     const prompt = `You are an experienced iMocha pre-sales professional writing a formal clarification letter to ${bid.client_name}.
@@ -208,8 +208,8 @@ iMocha platform: Skills Assessments (TA), Skills Intelligence (TM), integrations
 CONTEXT:
 ${contextText || "No documents uploaded — use typical enterprise procurement knowledge."}
 
-Generate up to 4 targeted clarification questions for the "${category}" category only.
-Only include questions genuinely warranted by the context — do not pad to reach 4. Rank by priority.
+Generate exactly 1 targeted clarification question for the "${category}" category.
+It must be the single most important unanswered question in this category given the context above — specific, actionable, and directly relevant to iMocha's proposal.
 
 RULES:
 1. NEVER reference documents: no "The RFP states…", "As mentioned…", "Based on the document…"

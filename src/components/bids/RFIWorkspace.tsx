@@ -292,19 +292,16 @@ export function RFIWorkspace({ bid, activeTab, onTabChange }: {
   }
 
   function handleRegenerateCategory(category: string) {
-    const existingIds = questions
-      .filter((q: any) => parseDbQuestion(q.question_text).category === category)
-      .map((q: any) => q.id);
     setRegeneratingCat(category);
     regenerateCategory.mutate(
-      { bidId: bid.id, category, existingIds },
+      { bidId: bid.id, category, nextOrderIndex: allQuestions.length },
       {
         onSuccess: () => {
-          toast.success(`${category} questions regenerated`);
+          toast.success(`New ${category} question added`);
           setRegeneratingCat(null);
         },
         onError: () => {
-          toast.error("Failed to regenerate questions");
+          toast.error("Failed to generate question");
           setRegeneratingCat(null);
         },
       }
