@@ -291,17 +291,17 @@ export function RFIWorkspace({ bid, activeTab, onTabChange }: {
     setDownloadSelected(new Set());
   }
 
-  function handleRegenerateCategory(category: string) {
-    setRegeneratingCat(category);
+  function handleRegenerateQuestion(questionId: string, category: string) {
+    setRegeneratingCat(questionId);
     regenerateCategory.mutate(
-      { bidId: bid.id, category, nextOrderIndex: allQuestions.length },
+      { bidId: bid.id, category, deleteId: questionId, nextOrderIndex: allQuestions.length },
       {
         onSuccess: () => {
-          toast.success(`New ${category} question added`);
+          toast.success(`Question replaced with a new ${category} question`);
           setRegeneratingCat(null);
         },
         onError: () => {
-          toast.error("Failed to generate question");
+          toast.error("Failed to regenerate question");
           setRegeneratingCat(null);
         },
       }
@@ -600,9 +600,9 @@ export function RFIWorkspace({ bid, activeTab, onTabChange }: {
                         return next;
                       })
                     }
-                    onRegenerate={() => handleRegenerateCategory(parseDbQuestion(q.question_text).category)}
+                    onRegenerate={() => handleRegenerateQuestion(q.id, parseDbQuestion(q.question_text).category)}
                     onDelete={() => handleDeleteQuestion(q.id)}
-                    isRegenerating={regeneratingCat === parseDbQuestion(q.question_text).category}
+                    isRegenerating={regeneratingCat === q.id}
                   />
                 ))}
               </ul>

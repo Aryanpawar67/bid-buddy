@@ -720,19 +720,23 @@ export function useRegenerateRfiCategory() {
     mutationFn: async ({
       bidId,
       category,
+      deleteId,
       nextOrderIndex,
     }: {
       bidId: string;
       category: string;
+      deleteId: string;
       nextOrderIndex: number;
     }) => {
       const { data: { session } } = await supabase.auth.getSession();
       const { regenerateRfiCategoryFn } = await import("@/lib/api/generate-rfi-questions");
+      // Generate the replacement first, then swap — keeps the list stable if generation fails
       const result = await regenerateRfiCategoryFn({
         data: { bidId, category },
         headers: { authorization: `Bearer ${session?.access_token ?? ""}` },
       });
-      // Append the single new question — never delete existing ones
+      // Delete only the specific question being replaced
+      await (supabase as any).from("bid_questions").delete().eq("id", deleteId);
       const q = result.questions[0];
       const { error } = await (supabase as any).from("bid_questions").insert({
         bid_id: bidId,
