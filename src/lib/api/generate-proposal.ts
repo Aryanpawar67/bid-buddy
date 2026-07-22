@@ -350,20 +350,24 @@ function buildAuthorPrompt(chatText: string, includeSpoc: boolean): string {
     : "";
 
   return `Author the variable content for an iMocha proposal based on all context in your system blocks.${chatSection}
+
+## Flagging rule — read this before writing any field
+Whenever a field requires client-specific information that is NOT explicitly present in the system context (bid metadata, uploaded documents, bid questions, or chat history), you MUST insert a [CONFIRM: <short description of what is missing>] marker in place of assumed content. Do NOT invent, infer, or use generic stand-ins. The analyst will edit these markers in Word before sending to the client.
+
 Output a single valid JSON object with this exact schema (no markdown, no code blocks, no extra text):
 {
-  "product": "Use the Product field from Bid Metadata if present (TA or TM). Otherwise infer: TA for hiring/recruitment/assessment/candidates, TM for skills/competency/workforce development",
-  "rfp_name": "bid title + iMocha Proposal",
+  "product": "Use the Product field from Bid Metadata if present (TA or TM). Otherwise infer from context: TA for hiring/recruitment/assessment/candidates, TM for skills/competency/workforce development.",
+  "rfp_name": "bid title verbatim + ' — iMocha Proposal'",
   "customer_display_name": "client name exactly as it should appear throughout the document",${spocFields}
   "exec_summary": {
-    "pleased": "SHORT opening paragraph — 2 to 3 sentences only. Warmly introduce iMocha [TA or TM] as the recommended platform for [client name]. State the specific headline value it delivers to them. Be direct and confident — no generic filler.",
-    "aligned": "MEDIUM paragraph — 3 to 5 sentences. Open by naming the client and their specific challenge or stated requirement (draw from uploaded documents or chat context — be specific). Explain how iMocha directly addresses each requirement. Close with any explicit exclusions or scope boundaries.",
-    "confident": "MEDIUM paragraph — 3 to 5 sentences. Lead with concrete proof points: Azure SaaS infrastructure, ISO 27001, SOC 2 Type II, 99.9% uptime SLA. Name the specific integration platforms relevant to this client. Describe the commercial and delivery model. Close with a forward-looking partnership statement."
+    "pleased": "SHORT paragraph — 2 to 3 sentences. Warmly introduce iMocha [TA or TM] as the recommended platform for [client name]. State the headline value iMocha delivers. Be direct and confident.",
+    "aligned": "MEDIUM paragraph — 3 to 5 sentences. Open by naming the client's specific challenge or stated requirement drawn from the uploaded documents or bid questions. If no specific challenge is found in the context, start the paragraph with [CONFIRM: client pain point not found in uploaded documents — describe the actual business challenge here]. Then explain how iMocha addresses each named requirement. Close with any explicit scope exclusions or boundaries stated in the RFP.",
+    "confident": "MEDIUM paragraph — 3 to 5 sentences. Lead with iMocha's proof points: Azure SaaS infrastructure, ISO 27001, SOC 2 Type II, 99.9% uptime SLA. Then name the specific integration platforms relevant to this client — these MUST match the 'integrations' field you are about to write; if that field has a [CONFIRM: ...] token, write [CONFIRM: integration platform unconfirmed — update to match client's actual tech stack] here instead of guessing. Close with a forward-looking partnership statement."
   },
-  "scope_intro": "One concise paragraph: describe the in-scope work aligned to this client's specific requirements (cite requirements from the context — no generic statements). Close with a sentence listing explicit out-of-scope exclusions.",
-  "integrations": "Comma-separated list of HRMS, ATS, LMS, or LXP platform names found in the uploaded documents or chat history. If none found: Workday, SAP SuccessFactors, Cornerstone OnDemand, Degreed, and other LTI-compliant platforms.",
-  "integrations_content": "2 to 3 sentences describing how iMocha integrates with the platforms listed above. Reference specific mechanisms: REST API, SAML 2.0 SSO, LTI 1.3, pre-built connectors. Describe the data that flows between systems: candidate invites, assessment results, skill scores, competency data. Tailor to the actual platforms identified.",
-  "deliverables": ["8 to 12 concise bullets. Each must map a SPECIFIC client requirement (from the documents or bid context) to a NAMED iMocha capability. Start each with an action verb. No generic statements — every bullet must be traceable to provided context."]
+  "scope_intro": "One concise paragraph. Describe the in-scope work by citing specific requirements found in the uploaded documents or bid questions. If no specific requirements are traceable to the context, start the paragraph with [CONFIRM: scope requirements not found in uploaded documents — replace with actual in-scope items from the RFP]. Close with a sentence listing explicit out-of-scope exclusions; if none stated, write [CONFIRM: out-of-scope items not specified — confirm with client].",
+  "integrations": "Comma-separated list of HRMS, ATS, LMS, or LXP platform names that are explicitly named in the uploaded documents, bid questions, or chat history. ONLY list platforms you can directly trace to the provided context. If no specific platforms are mentioned anywhere, output exactly: [CONFIRM: ATS/HRMS/LMS platform not specified — verify with client before sending]. Do NOT assume or invent platform names.",
+  "integrations_content": "2 to 3 sentences on how iMocha integrates with the platforms in 'integrations' — REST API, SAML 2.0 SSO, LTI 1.3, or pre-built connectors as applicable. If 'integrations' contains a [CONFIRM: ...] token, output: [CONFIRM: integration details unknown — update once ATS/HRMS/LMS platform is confirmed with client].",
+  "deliverables": ["8 to 12 concise bullets. Each bullet MUST map a specific client requirement (traceable to the uploaded documents, bid questions, or chat history) to a named iMocha capability. Start each with an action verb. If a bullet cannot be grounded in the provided context, write it as: [CONFIRM: requirement not found in documents — replace with actual client requirement] → iMocha capability. Never write generic bullets that apply to any client."]
 }`;
 }
 
@@ -488,6 +492,114 @@ function applyHeaderFooterSubstitutions(xml: string, intake: Intake, config: Tem
   }
   return result;
 }
+
+// ── Pre-generate readiness check (zero AI tokens) ─────────────────────────────
+export type ReadinessCheck = {
+  metadata: {
+    hasProductType: boolean;
+    hasBidType: boolean;
+    hasContactName: boolean;
+    hasValue: boolean;
+    productType: string | null;
+    bidType: string | null;
+  };
+  documents: {
+    uploadedCount: number;
+    indexedChunkCount: number;
+  };
+  questions: {
+    count: number;
+  };
+  likelyFlags: Array<{ field: string; reason: string }>;
+};
+
+export const checkProposalReadinessFn = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ bidId: z.string().uuid() }))
+  .handler(async ({ data }) => {
+    const authHeader = getRequest().headers.get("authorization");
+    const token = authHeader?.replace("Bearer ", "");
+    if (!token) return new Response("Unauthorized", { status: 401 });
+    const { data: { user }, error: authErr } = await supabaseAdmin.auth.getUser(token);
+    if (authErr || !user) return new Response("Unauthorized", { status: 401 });
+
+    const [bidRes, docRes, chunkRes, questionRes] = await Promise.all([
+      supabaseAdmin
+        .from("bids")
+        .select("product_type, type, contact_name, value")
+        .eq("id", data.bidId)
+        .single(),
+      (supabaseAdmin.from("bid_documents") as any)
+        .select("id", { count: "exact", head: true })
+        .eq("bid_id", data.bidId),
+      (supabaseAdmin.from("bid_document_chunks") as any)
+        .select("id", { count: "exact", head: true })
+        .eq("bid_id", data.bidId),
+      supabaseAdmin
+        .from("bid_questions")
+        .select("id", { count: "exact", head: true })
+        .eq("bid_id", data.bidId),
+    ]);
+
+    const bid = bidRes.data as any;
+    const uploadedCount: number = docRes.count ?? 0;
+    const indexedChunkCount: number = chunkRes.count ?? 0;
+    const questionCount: number = questionRes.count ?? 0;
+    const hasContext = indexedChunkCount > 0 || questionCount > 0;
+
+    const likelyFlags: Array<{ field: string; reason: string }> = [];
+
+    if (!hasContext) {
+      likelyFlags.push({
+        field: "Executive Summary — Alignment",
+        reason: "No RFP documents indexed and no bid questions — client pain points will be flagged",
+      });
+      likelyFlags.push({
+        field: "Scope Introduction",
+        reason: "No requirements traceable to context — scope will be flagged",
+      });
+      likelyFlags.push({
+        field: "Deliverables",
+        reason: "All bullets require traceable requirements — most will be flagged",
+      });
+    }
+
+    if (!hasContext || indexedChunkCount === 0) {
+      likelyFlags.push({
+        field: "Integrations (ATS / HRMS / LMS)",
+        reason: "Platform names not found in uploaded documents — will be flagged",
+      });
+    }
+
+    if (!bid?.product_type) {
+      likelyFlags.push({
+        field: "Product Type (TA vs TM)",
+        reason: "Not set on the bid — AI will infer from context, may be wrong",
+      });
+    }
+
+    if (!bid?.contact_name) {
+      likelyFlags.push({
+        field: "Prepared For (cover page)",
+        reason: "Procurement contact name not set on the bid",
+      });
+    }
+
+    const result: ReadinessCheck = {
+      metadata: {
+        hasProductType: !!bid?.product_type,
+        hasBidType: !!bid?.type,
+        hasContactName: !!bid?.contact_name,
+        hasValue: !!(bid?.value && bid.value > 0),
+        productType: bid?.product_type ?? null,
+        bidType: bid?.type ?? null,
+      },
+      documents: { uploadedCount, indexedChunkCount },
+      questions: { count: questionCount },
+      likelyFlags,
+    };
+
+    return new Response(JSON.stringify(result), { headers: { "Content-Type": "application/json" } });
+  });
 
 // ── Preview server function (Sonnet + RAG + chat history → ProposalPreview) ────
 export const previewProposalFn = createServerFn({ method: "POST" })

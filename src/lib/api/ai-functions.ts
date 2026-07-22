@@ -1,6 +1,6 @@
 import { streamChatFn } from "@/lib/api/stream-chat";
 import { exportMessageFn } from "./export-message";
-import { generateProposalFn, previewProposalFn } from "./generate-proposal";
+import { generateProposalFn, previewProposalFn, checkProposalReadinessFn } from "./generate-proposal";
 import type { Intake } from "./generate-proposal";
 
 export type StreamChatInput = {
@@ -61,6 +61,16 @@ export async function previewProposal(input: {
     (m) => m.supabase.auth.getSession()
   );
   return previewProposalFn({
+    data: input,
+    headers: { authorization: `Bearer ${session?.access_token ?? ""}` },
+  }) as unknown as Response;
+}
+
+export async function checkProposalReadiness(input: { bidId: string }): Promise<Response> {
+  const { data: { session } } = await import("@/integrations/supabase/client").then(
+    (m) => m.supabase.auth.getSession()
+  );
+  return checkProposalReadinessFn({
     data: input,
     headers: { authorization: `Bearer ${session?.access_token ?? ""}` },
   }) as unknown as Response;

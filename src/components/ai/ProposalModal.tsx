@@ -1,8 +1,28 @@
-import { useState, useEffect } from "react";
-import { Loader2, X, RotateCcw } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { Loader2, X, RotateCcw, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import type { ProposalPreview, Intake } from "@/lib/api/generate-proposal";
-import { usePreviewProposal, useGenerateProposal } from "@/lib/ai-queries";
+import { usePreviewProposal, useGenerateProposal, useCheckProposalReadiness } from "@/lib/ai-queries";
+import type { ReadinessCheck } from "@/lib/api/generate-proposal";
+
+const FLAG_RE = /\[(CONFIRM|TO PROVIDE):[^\]]+\]/g;
+
+function collectFlags(preview: ProposalPreview): { field: string; token: string }[] {
+  const hits: { field: string; token: string }[] = [];
+  function scan(field: string, text: string | undefined) {
+    if (!text) return;
+    for (const m of text.matchAll(FLAG_RE)) hits.push({ field, token: m[0] });
+  }
+  scan("Executive Summary — Pleased",    preview.exec_summary?.pleased);
+  scan("Executive Summary — Aligned",    preview.exec_summary?.aligned);
+  scan("Executive Summary — Confident",  preview.exec_summary?.confident);
+  scan("Scope Introduction",             preview.scope_intro);
+  scan("Integrations",                   preview.integrations);
+  scan("Integrations Content",           preview.integrations_content);
+  for (const [i, d] of (preview.deliverables ?? []).entries())
+    scan(`Deliverable ${i + 1}`,         d);
+  return hits;
+}
 
 type Props = {
   open: boolean;
@@ -14,7 +34,8 @@ type Props = {
 };
 
 export function ProposalModal({ open, onClose, bidId, sessionId, clientName, onGenerated }: Props) {
-  const [phase, setPhase] = useState<1 | 2>(1);
+  const [phase, setPhase] = useState<0 | 1 | 2>(0);
+  const [readiness, setReadiness] = useState<ReadinessCheck | null>(null);
   const [preview, setPreview] = useState<ProposalPreview | null>(null);
   const [coverFields, setCoverFields] = useState({
     prepared_for: "",
@@ -24,21 +45,31 @@ export function ProposalModal({ open, onClose, bidId, sessionId, clientName, onG
   const [format, setFormat] = useState<"docx" | "pdf">("docx");
   const [error, setError] = useState<string | null>(null);
 
+  const readinessMutation = useCheckProposalReadiness();
   const previewMutation = usePreviewProposal();
   const generateMutation = useGenerateProposal();
 
   useEffect(() => {
     if (open) {
+      setReadiness(null);
       setPreview(null);
-      setPhase(1);
+      setPhase(0);
       setError(null);
       setCoverFields({ prepared_for: "", spoc_name: "", spoc_email: "" });
-      previewMutation.mutate(
-        { bidId, sessionId },
-        { onSuccess: (data) => setPreview(data) }
+      readinessMutation.mutate(
+        { bidId },
+        { onSuccess: (data) => setReadiness(data) }
       );
     }
-  }, [open, bidId, sessionId]);
+  }, [open, bidId]);
+
+  function handleProceedToPreview() {
+    setPhase(1);
+    previewMutation.mutate(
+      { bidId, sessionId },
+      { onSuccess: (data) => setPreview(data) }
+    );
+  }
 
   if (!open) return null;
 
@@ -49,6 +80,7 @@ export function ProposalModal({ open, onClose, bidId, sessionId, clientName, onG
       { onSuccess: (data) => setPreview(data) }
     );
   }
+
 
   async function handleGenerateDocx(force = false) {
     if (!preview) return;
@@ -117,12 +149,16 @@ export function ProposalModal({ open, onClose, bidId, sessionId, clientName, onG
               ✦ Generate Proposal — {clientName}
             </span>
             <div className="flex items-center gap-1.5">
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${phase === 0 ? "bg-primary text-white" : "bg-muted text-muted-foreground"}`}>
+                1 Check
+              </span>
+              <span className="text-[10px] text-muted-foreground">→</span>
               <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${phase === 1 ? "bg-primary text-white" : "bg-muted text-muted-foreground"}`}>
-                1 Preview
+                2 Preview
               </span>
               <span className="text-[10px] text-muted-foreground">→</span>
               <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${phase === 2 ? "bg-primary text-white" : "bg-muted text-muted-foreground"}`}>
-                2 Cover
+                3 Cover
               </span>
             </div>
             <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors ml-1">
@@ -132,6 +168,15 @@ export function ProposalModal({ open, onClose, bidId, sessionId, clientName, onG
 
           {/* Body */}
           <div className="flex-1 overflow-y-auto p-4 min-h-0">
+            {phase === 0 && (
+              <ReadinessPanel
+                readiness={readiness}
+                isLoading={readinessMutation.isPending}
+                isFailed={readinessMutation.isError && !readiness}
+                onRetry={() => readinessMutation.mutate({ bidId }, { onSuccess: (d) => setReadiness(d) })}
+              />
+            )}
+
             {phase === 1 && (
               <>
                 {isPending && !preview && (
@@ -157,6 +202,9 @@ export function ProposalModal({ open, onClose, bidId, sessionId, clientName, onG
 
                 {preview && (
                   <div className="flex flex-col gap-3">
+                    {collectFlags(preview).length > 0 && (
+                      <FlagsWarning flags={collectFlags(preview)} />
+                    )}
                     <PreviewSection
                       title="Executive Summary — How We're Pleased"
                       content={preview.exec_summary.pleased}
@@ -181,55 +229,46 @@ export function ProposalModal({ open, onClose, bidId, sessionId, clientName, onG
                       onRegen={handleRegen}
                       isPending={isPending}
                     />
-                    <div className="bg-background border hairline border-border rounded-lg p-3">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
-                          Deliverables
-                        </span>
-                        <button
-                          onClick={handleRegen}
-                          disabled={isPending}
-                          className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-1 disabled:opacity-40 transition-colors"
-                        >
-                          <RotateCcw className="size-3" /> Regen
-                        </button>
-                      </div>
+                    <FlaggedCard
+                      title="Deliverables"
+                      flagged={preview.deliverables.some(d => FLAG_RE.test(d))}
+                      onRegen={handleRegen}
+                      isPending={isPending}
+                    >
                       <ul className="flex flex-col gap-1">
-                        {preview.deliverables.map((d, i) => (
-                          <li key={i} className="text-[12px] text-foreground flex gap-2">
-                            <span className="text-muted-foreground shrink-0">·</span>
-                            <span>{d}</span>
-                          </li>
-                        ))}
+                        {preview.deliverables.map((d, i) => {
+                          FLAG_RE.lastIndex = 0;
+                          const hasFlag = FLAG_RE.test(d);
+                          FLAG_RE.lastIndex = 0;
+                          return (
+                            <li key={i} className={["text-[12px] flex gap-2", hasFlag ? "text-amber-700 dark:text-amber-300" : "text-foreground"].join(" ")}>
+                              <span className="text-muted-foreground shrink-0">·</span>
+                              <span>{highlightFlags(d)}</span>
+                            </li>
+                          );
+                        })}
                       </ul>
-                    </div>
+                    </FlaggedCard>
 
                     {(preview.integrations || preview.integrations_content) && (
-                      <div className="bg-background border hairline border-border rounded-lg p-3">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
-                            Integrations
-                          </span>
-                          <button
-                            onClick={handleRegen}
-                            disabled={isPending}
-                            className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-1 disabled:opacity-40 transition-colors"
-                          >
-                            <RotateCcw className="size-3" /> Regen
-                          </button>
-                        </div>
+                      <FlaggedCard
+                        title="Integrations"
+                        flagged={FLAG_RE.test(preview.integrations ?? "") || FLAG_RE.test(preview.integrations_content ?? "")}
+                        onRegen={handleRegen}
+                        isPending={isPending}
+                      >
                         {preview.integrations && (
                           <p className="text-[11px] text-muted-foreground mb-1.5">
                             <span className="font-medium text-foreground">Platforms: </span>
-                            {preview.integrations}
+                            {(() => { FLAG_RE.lastIndex = 0; return highlightFlags(preview.integrations); })()}
                           </p>
                         )}
                         {preview.integrations_content && (
                           <p className="text-[12px] text-foreground leading-relaxed">
-                            {preview.integrations_content}
+                            {(() => { FLAG_RE.lastIndex = 0; return highlightFlags(preview.integrations_content); })()}
                           </p>
                         )}
-                      </div>
+                      </FlaggedCard>
                     )}
                   </div>
                 )}
@@ -238,6 +277,15 @@ export function ProposalModal({ open, onClose, bidId, sessionId, clientName, onG
 
             {phase === 2 && preview && (
               <div className="flex flex-col gap-4">
+                {collectFlags(preview).length > 0 && (
+                  <div className="flex items-start gap-2 px-3 py-2 bg-amber-500/10 border hairline border-amber-500/30 rounded-lg">
+                    <AlertTriangle className="size-3.5 text-amber-500 shrink-0 mt-0.5" />
+                    <span className="text-[11px] text-amber-600 dark:text-amber-400">
+                      {collectFlags(preview).length} item{collectFlags(preview).length !== 1 ? "s" : ""} need review — the DOCX will contain{" "}
+                      <code className="text-[10px] font-mono">[CONFIRM: ...]</code> markers. Edit them in Word before sending to the client.
+                    </span>
+                  </div>
+                )}
                 <div className="bg-muted/40 border hairline border-border rounded-lg p-3">
                   <div className="text-[9px] uppercase tracking-wider text-muted-foreground font-semibold mb-2">
                     Auto-filled
@@ -301,9 +349,25 @@ export function ProposalModal({ open, onClose, bidId, sessionId, clientName, onG
 
           {/* Footer */}
           <div className="flex items-center justify-between px-4 py-3 border-t hairline border-border shrink-0 bg-card">
-            {phase === 1 ? (
+            {phase === 0 ? (
               <>
                 <div />
+                <button
+                  onClick={handleProceedToPreview}
+                  disabled={readinessMutation.isPending || readinessMutation.isError}
+                  className="text-[11px] px-4 py-1.5 rounded-full bg-primary text-white hover:opacity-90 disabled:opacity-40 transition-opacity"
+                >
+                  Continue — Generate Preview →
+                </button>
+              </>
+            ) : phase === 1 ? (
+              <>
+                <button
+                  onClick={() => setPhase(0)}
+                  className="text-[11px] px-3 py-1.5 rounded-full border hairline border-border text-foreground hover:bg-background transition-colors"
+                >
+                  ← Back
+                </button>
                 <button
                   onClick={() => setPhase(2)}
                   disabled={isPending || !preview}
@@ -343,6 +407,78 @@ export function ProposalModal({ open, onClose, bidId, sessionId, clientName, onG
   );
 }
 
+function FlaggedCard({
+  title,
+  flagged,
+  onRegen,
+  isPending,
+  children,
+}: {
+  title: string;
+  flagged: boolean;
+  onRegen: () => void;
+  isPending: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={[
+      "border hairline rounded-lg p-3",
+      flagged ? "bg-amber-500/5 border-amber-500/30" : "bg-background border-border",
+    ].join(" ")}>
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">{title}</span>
+        <button
+          onClick={onRegen}
+          disabled={isPending}
+          className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-1 disabled:opacity-40 transition-colors"
+        >
+          <RotateCcw className="size-3" /> Regen
+        </button>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function FlagsWarning({ flags }: { flags: { field: string; token: string }[] }) {
+  return (
+    <div className="border hairline border-amber-500/40 bg-amber-500/8 rounded-lg p-3 flex flex-col gap-2">
+      <div className="flex items-center gap-1.5">
+        <AlertTriangle className="size-3.5 text-amber-500 shrink-0" />
+        <span className="text-[10px] uppercase tracking-wider text-amber-600 dark:text-amber-400 font-semibold">
+          Review required before generating
+        </span>
+      </div>
+      <ul className="flex flex-col gap-1">
+        {flags.map((f, i) => (
+          <li key={i} className="flex items-start gap-2 text-[11px]">
+            <span className="text-muted-foreground shrink-0 w-28 truncate">{f.field}</span>
+            <code className="text-amber-600 dark:text-amber-400 font-mono text-[10px] leading-relaxed break-all">{f.token}</code>
+          </li>
+        ))}
+      </ul>
+      <p className="text-[10px] text-muted-foreground">
+        These markers will appear in the DOCX — edit them in Word before sending to the client.
+      </p>
+    </div>
+  );
+}
+
+function highlightFlags(content: string): React.ReactNode {
+  const parts = content.split(FLAG_RE);
+  const matches = [...content.matchAll(FLAG_RE)];
+  return parts.map((part, i) => (
+    <span key={i}>
+      {part}
+      {matches[i] && (
+        <mark className="bg-amber-400/25 text-amber-700 dark:text-amber-300 rounded px-0.5 font-mono text-[11px] not-italic">
+          {matches[i][0]}
+        </mark>
+      )}
+    </span>
+  ));
+}
+
 function PreviewSection({
   title,
   content,
@@ -354,8 +490,15 @@ function PreviewSection({
   onRegen: () => void;
   isPending: boolean;
 }) {
+  const hasFlagInContent = FLAG_RE.test(content);
+  FLAG_RE.lastIndex = 0; // reset stateful regex
   return (
-    <div className="bg-background border hairline border-border rounded-lg p-3">
+    <div className={[
+      "border hairline rounded-lg p-3",
+      hasFlagInContent
+        ? "bg-amber-500/5 border-amber-500/30"
+        : "bg-background border-border",
+    ].join(" ")}>
       <div className="flex items-center justify-between mb-2">
         <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
           {title}
@@ -368,7 +511,142 @@ function PreviewSection({
           <RotateCcw className="size-3" /> Regen
         </button>
       </div>
-      <p className="text-[12px] text-foreground leading-relaxed">{content}</p>
+      <p className="text-[12px] text-foreground leading-relaxed">{highlightFlags(content)}</p>
+    </div>
+  );
+}
+
+function ReadinessPanel({
+  readiness,
+  isLoading,
+  isFailed,
+  onRetry,
+}: {
+  readiness: ReadinessCheck | null;
+  isLoading: boolean;
+  isFailed: boolean;
+  onRetry: () => void;
+}) {
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-14 gap-3">
+        <Loader2 className="size-5 animate-spin text-primary" />
+        <span className="text-[12px] text-muted-foreground">Checking bid context…</span>
+      </div>
+    );
+  }
+  if (isFailed) {
+    return (
+      <div className="flex flex-col items-center gap-3 py-10">
+        <span className="text-[12px] text-destructive">Context check failed. Please try again.</span>
+        <button onClick={onRetry} className="text-[11px] text-primary hover:underline flex items-center gap-1">
+          <RotateCcw className="size-3" /> Retry
+        </button>
+      </div>
+    );
+  }
+  if (!readiness) return null;
+
+  const { metadata, documents, questions, likelyFlags } = readiness;
+  const hasAnyContext = documents.indexedChunkCount > 0 || questions.count > 0;
+
+  const checks: Array<{ label: string; ok: boolean; detail: string }> = [
+    {
+      label: "Product type",
+      ok: metadata.hasProductType,
+      detail: metadata.hasProductType
+        ? metadata.productType === "BOTH" ? "TA + TM" : (metadata.productType ?? "")
+        : "Not set — AI will infer from context",
+    },
+    {
+      label: "Bid type",
+      ok: metadata.hasBidType,
+      detail: metadata.hasBidType ? (metadata.bidType ?? "").toUpperCase() : "Not set",
+    },
+    {
+      label: "Deal value",
+      ok: metadata.hasValue,
+      detail: metadata.hasValue ? "Set" : "Not set — will show TBD in proposal",
+    },
+    {
+      label: "Procurement contact",
+      ok: metadata.hasContactName,
+      detail: metadata.hasContactName ? "Set on bid" : "Not set — will need manual entry",
+    },
+    {
+      label: "RFP / RFI documents",
+      ok: documents.uploadedCount > 0,
+      detail: documents.uploadedCount > 0
+        ? `${documents.uploadedCount} uploaded, ${documents.indexedChunkCount} chunks indexed`
+        : "None uploaded — context-dependent fields will be flagged",
+    },
+    {
+      label: "Indexed content (RAG)",
+      ok: documents.indexedChunkCount > 0,
+      detail: documents.indexedChunkCount > 0
+        ? `${documents.indexedChunkCount} chunks ready for search`
+        : "Nothing indexed — AI cannot ground content in documents",
+    },
+    {
+      label: "Bid questions",
+      ok: questions.count > 0,
+      detail: questions.count > 0
+        ? `${questions.count} question${questions.count !== 1 ? "s" : ""} — used as requirements context`
+        : "None — less context for deliverables and scope",
+    },
+  ];
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-1.5">
+        <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+          Bid context check
+        </span>
+        <div className="flex flex-col divide-y divide-border border hairline border-border rounded-lg overflow-hidden">
+          {checks.map((c) => (
+            <div key={c.label} className="flex items-start gap-3 px-3 py-2">
+              <span className={["mt-px text-[13px] shrink-0", c.ok ? "text-green-500" : "text-amber-500"].join(" ")}>
+                {c.ok ? "✓" : "⚠"}
+              </span>
+              <div className="flex flex-col min-w-0">
+                <span className="text-[11px] font-medium text-foreground">{c.label}</span>
+                <span className="text-[10px] text-muted-foreground leading-relaxed">{c.detail}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {likelyFlags.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[10px] uppercase tracking-wider text-amber-600 dark:text-amber-400 font-semibold">
+            Fields likely to require review ({likelyFlags.length})
+          </span>
+          <div className="flex flex-col gap-1 border hairline border-amber-500/30 bg-amber-500/5 rounded-lg p-3">
+            {likelyFlags.map((f, i) => (
+              <div key={i} className="flex items-start gap-2">
+                <span className="text-amber-500 text-[11px] shrink-0 mt-px">·</span>
+                <div className="flex flex-col">
+                  <span className="text-[11px] font-medium text-foreground">{f.field}</span>
+                  <span className="text-[10px] text-muted-foreground">{f.reason}</span>
+                </div>
+              </div>
+            ))}
+            <p className="text-[10px] text-muted-foreground mt-1 pt-1 border-t hairline border-amber-500/20">
+              These will appear as <code className="font-mono">[CONFIRM: ...]</code> markers in the generated DOCX.
+              You can still generate — edit the markers in Word before sending.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {!hasAnyContext && (
+        <div className="flex items-start gap-2 px-3 py-2.5 bg-muted/40 border hairline border-border rounded-lg">
+          <span className="text-[11px] text-muted-foreground leading-relaxed">
+            <strong className="text-foreground">Tip:</strong> Upload the RFP or RFI document to the Knowledge Hub first — the AI will extract requirements, scope, and platform names automatically, reducing the number of flags.
+          </span>
+        </div>
+      )}
     </div>
   );
 }

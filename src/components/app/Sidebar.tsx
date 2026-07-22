@@ -1,4 +1,4 @@
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useState } from "react";
 import {
   LayoutDashboard,
@@ -30,6 +30,7 @@ export function Sidebar() {
   const currentBidId = urlSearchParams.get("bidId") ?? undefined;
   const currentStage = urlSearchParams.get("stage") ?? undefined;
   const [pursuitsOpen, setPursuitsOpen] = useState(true);
+  const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(() => {
     try { return localStorage.getItem("sidebar-collapsed") === "true"; } catch { return false; }
   });
@@ -152,7 +153,10 @@ export function Sidebar() {
         {canSeePipeline && (
           <>
             <button
-              onClick={() => setPursuitsOpen((o) => !o)}
+              onClick={() => {
+                if (pursuitsOpen) navigate({ to: "/dashboard" });
+                setPursuitsOpen((o) => !o);
+              }}
               className="w-[calc(100%-12px)] mx-1.5 flex items-center gap-[9px] px-[14px] py-[7px] rounded-[6px] text-[12px] text-white/50 hover:bg-white/10 hover:text-white/85 transition-colors"
             >
               <Target className="size-4 shrink-0 opacity-75" strokeWidth={1.5} />

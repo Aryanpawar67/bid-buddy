@@ -273,9 +273,318 @@ async function uploadDoc(opts: {
   }
 }
 
+// ── Deal Brief content helpers ────────────────────────────────────────────────
+
+function productShortLabel(pt: string | null): string {
+  if (pt === "TM") return "Talent Management";
+  if (pt === "TA") return "Talent Acquisition";
+  if (pt === "BOTH") return "TA + TM";
+  return "Skills Platform";
+}
+
+function procurementTypeLabel(bidType: string | null): string {
+  const t = (bidType ?? "rfp").toLowerCase();
+  if (t === "rfp") return "Competitive RFP";
+  if (t === "rfi") return "RFI";
+  if (t === "rfq") return "Competitive RFQ";
+  if (t === "direct") return "Direct Engagement";
+  return t.toUpperCase();
+}
+
+function briefObjective(pt: string | null, bidType: string | null): string {
+  if (pt === "TM") return "Select an enterprise-wide Skills Management solution to improve skills visibility, competency management, employee development, and workforce decision-making.";
+  if (pt === "TA") return "Select an AI-powered Skills Assessment platform to standardize pre-hire screening, improve quality of hire, and integrate with the existing ATS and HR technology stack.";
+  if (pt === "BOTH") return "Evaluate and select an end-to-end Skills Platform spanning talent acquisition and talent management to support a unified, skills-first workforce strategy.";
+  return `Evaluate and select a best-in-class enterprise platform for this ${(bidType ?? "RFP").toUpperCase()}.`;
+}
+
+const BRIEF_STATIC: Record<string, {
+  customerObjectives: string[];
+  businessDrivers: string[];
+  keyFunctionalRequirements: string[];
+  integrationLandscape: string[];
+  imochaStrengths: string[];
+  defaultRisks: string[];
+}> = {
+  TM: {
+    customerObjectives: [
+      "Establish a centralized enterprise skills repository.",
+      "Enable employees to maintain and validate their skills profiles.",
+      "Support managers with competency assessments and team skills visibility.",
+      "Identify skill gaps and development opportunities.",
+      "Improve internal mobility and career development.",
+      "Deliver enterprise analytics and reporting.",
+      "Integrate with the existing HR ecosystem.",
+      "Minimize customization through configurable standard functionality.",
+      "Provide a secure, scalable, enterprise-ready SaaS platform.",
+    ],
+    businessDrivers: [
+      "Improve workforce skills visibility.",
+      "Standardize competency management.",
+      "Support employee growth and career development.",
+      "Strengthen workforce planning and succession readiness.",
+      "Increase manager visibility into team capabilities.",
+      "Establish consistent skills governance.",
+      "Reduce manual processes and fragmented skills data.",
+    ],
+    keyFunctionalRequirements: [
+      "Skills Management: Skills inventory, competency framework, job architecture, skills taxonomy, proficiency levels, self-assessments, manager validation, skills gap analysis, assessment campaigns.",
+      "Talent Development: Career pathing, learning recommendations, internal mobility, development planning.",
+      "Analytics: Executive dashboards, HR reporting, manager reporting, skills analytics, export capabilities.",
+      "Administration: Skills governance, user administration, role-based access, workflow configuration.",
+    ],
+    integrationLandscape: [
+      "HRIS and HCM integrations (e.g. Workday, SuccessFactors, SAP, Oracle) for employee data sync.",
+      "LMS integrations for learning recommendation delivery.",
+      "REST APIs and SCIM for user provisioning and custom integrations.",
+      "Power BI / analytics tool integrations for enterprise reporting.",
+      "Future HR technology integrations may be required based on roadmap.",
+    ],
+    imochaStrengths: [
+      "Enterprise Skills Inventory",
+      "AI-powered Skills Intelligence",
+      "Skills Taxonomy",
+      "Role-to-skill mapping",
+      "Self-assessments",
+      "Manager validation",
+      "Skills Gap Analysis",
+      "Internal Mobility",
+      "Learning recommendations",
+      "REST APIs",
+      "SSO",
+      "Power BI integration",
+      "Cornerstone integration",
+      "Enterprise analytics",
+      "Configurable competency framework",
+      "ISO 27001:2022",
+      "SOC 2 Type II",
+      "GDPR support",
+    ],
+    defaultRisks: [
+      "Existing skills framework and governance model.",
+      "Employee population and rollout phases.",
+      "Integration scope beyond stated HRIS systems.",
+      "Future HR technology roadmap and planned migrations.",
+      "Configuration versus customization expectations.",
+      "Assessment strategy (campaign-based vs. continuous).",
+      "Reporting and analytics expectations by stakeholder.",
+      "AI-assisted capability expectations.",
+      "Success criteria and implementation timeline.",
+      "Organization-specific metadata, business rules, analytics, or reporting requirements.",
+    ],
+  },
+  TA: {
+    customerObjectives: [
+      "Standardize the pre-hire assessment process across all business units.",
+      "Improve quality of hire through structured, skills-based screening.",
+      "Reduce time-to-hire and screening overhead for recruiting teams.",
+      "Ensure candidate experience is consistent, professional, and unbiased.",
+      "Enable hiring managers with actionable data and structured sifting.",
+      "Integrate seamlessly with the existing ATS and HR technology stack.",
+      "Support multi-language and global assessment requirements.",
+      "Maintain compliance with data privacy and security standards.",
+      "Provide analytics and reporting for TA leadership and stakeholders.",
+    ],
+    businessDrivers: [
+      "Improve quality of hire through objective skills measurement.",
+      "Reduce recruiter screening time and manual effort.",
+      "Eliminate bias through structured, validated assessments.",
+      "Scale hiring capacity without proportionally scaling headcount.",
+      "Gain visibility into candidate skills pipeline and sourcing quality.",
+      "Standardize evaluation criteria across roles and geographies.",
+      "Strengthen employer brand through a modern candidate experience.",
+    ],
+    keyFunctionalRequirements: [
+      "Skills Assessment: Pre-hire assessment library (3,000+ skills), role-based campaign management, multi-language support, customizable assessments, proficiency-level testing.",
+      "Screening & AI: Conversational AI interviews, async video interviews, AI Skills Match, structured scoring and sifting methodology.",
+      "Proctoring & Integrity: Anti-cheating controls, live proctoring, screen recording, candidate trust score.",
+      "Analytics & ATS: Recruiter and hiring manager dashboards, compliance reporting, ATS integration (Workday, SuccessFactors, iCIMS, SmartRecruiters).",
+    ],
+    integrationLandscape: [
+      "ATS integrations (e.g. Workday Recruiting, SuccessFactors, iCIMS, SmartRecruiters) for assessment campaign management.",
+      "Video interview and async interview platform integrations.",
+      "HRMS integrations for candidate data and onboarding workflows.",
+      "REST APIs and SSO for custom ATS and career portal integrations.",
+      "Future recruiting technology integrations may be required based on roadmap.",
+    ],
+    imochaStrengths: [
+      "3,000+ Skills Assessment Library",
+      "AI-powered Conversational AI Interviews",
+      "Async Video Interview capability",
+      "Role-based Assessment Campaigns",
+      "AI Skills Match for candidate ranking",
+      "Structured Sifting and Scoring",
+      "Anti-cheating and Proctoring suite",
+      "Multi-language support",
+      "ATS Integrations (Workday, SuccessFactors, iCIMS)",
+      "Coding Assessments",
+      "Candidate Experience tools",
+      "Recruiter Analytics dashboards",
+      "REST APIs and SSO",
+      "ISO 27001:2022",
+      "SOC 2 Type II",
+      "GDPR support",
+    ],
+    defaultRisks: [
+      "ATS integration scope and data flow requirements.",
+      "Assessment volume and peak hiring periods.",
+      "Multi-language and geolocation support requirements.",
+      "Proctoring and security requirements for sensitive roles.",
+      "Candidate experience and accessibility standards.",
+      "Configuration versus customization expectations.",
+      "Compliance reporting requirements by region.",
+      "AI interview and async video capability expectations.",
+      "Success criteria and time-to-hire improvement targets.",
+      "Organization-specific assessment design, scoring, or integration requirements.",
+    ],
+  },
+  BOTH: {
+    customerObjectives: [
+      "Implement a unified, end-to-end Skills Platform spanning hiring and workforce development.",
+      "Standardize pre-hire assessment and in-role skills validation across the organization.",
+      "Enable a skills-first approach to talent acquisition, internal mobility, and career development.",
+      "Deliver a single skills ontology connecting talent acquisition and talent management.",
+      "Improve quality of hire and reduce time-to-hire through AI-powered candidate screening.",
+      "Support manager-led competency assessments, skills gap analysis, and development planning.",
+      "Integrate with existing ATS, HRIS, and LMS systems across the enterprise.",
+      "Provide consolidated analytics spanning recruitment, onboarding, and L&D impact.",
+      "Ensure enterprise-grade security, compliance, and scalability.",
+    ],
+    businessDrivers: [
+      "Implement a skills-first strategy across the full talent lifecycle.",
+      "Improve hiring quality through data-driven candidate assessment.",
+      "Enable workforce skills visibility and gap identification at scale.",
+      "Connect talent acquisition decisions with workforce development planning.",
+      "Reduce fragmentation across recruiting and HR technology systems.",
+      "Support career development, internal mobility, and succession planning.",
+      "Deliver consistent skills governance from hire to retire.",
+    ],
+    keyFunctionalRequirements: [
+      "Skills Assessment: Pre-hire and in-role skills assessment across 3,000+ skills, role-based campaigns, multi-language support.",
+      "Skills Intelligence: Skills taxonomy, competency framework, skills gap analysis, self-assessments, manager validation, AI skills inference.",
+      "Talent Development & Mobility: Career pathing, learning recommendations, internal mobility, development planning.",
+      "Screening & AI: Conversational AI interviews, async video, AI Skills Match, structured sifting and scoring.",
+      "Analytics: Unified dashboards spanning TA and TM, HR/TA leadership reporting, export capabilities.",
+      "Integrations: ATS + HRIS integration, SSO, SCIM, REST APIs.",
+    ],
+    integrationLandscape: [
+      "ATS + HRIS integrations covering both recruiting and talent management workflows.",
+      "LMS integration for learning recommendations linked to skills gap data.",
+      "REST APIs, SSO (SAML/OIDC), and SCIM for provisioning and custom integrations.",
+      "Power BI / analytics tool integrations for enterprise reporting.",
+      "Future technology integrations may be required based on organizational roadmap.",
+    ],
+    imochaStrengths: [
+      "3,000+ Skills Assessment Library (TA)",
+      "Enterprise Skills Inventory (TM)",
+      "AI-powered Skills Intelligence and Skills Inference",
+      "AI Conversational Interviews",
+      "AI Skills Match for candidate ranking",
+      "Skills Taxonomy and Competency Framework",
+      "Role-to-skill mapping and career pathing",
+      "Internal Mobility and Learning Recommendations",
+      "Skills Gap Analysis",
+      "ATS + HRIS Integrations",
+      "REST APIs, SSO, SCIM",
+      "Enterprise analytics and dashboards",
+      "ISO 27001:2022",
+      "SOC 2 Type II",
+      "GDPR support",
+    ],
+    defaultRisks: [
+      "Scoping and prioritization across TA and TM use cases.",
+      "ATS and HRIS integration complexity and data ownership.",
+      "Employee vs. candidate data governance and privacy.",
+      "Configuration versus customization expectations across product lines.",
+      "Assessment strategy and campaign management approach.",
+      "Implementation phasing and rollout sequencing.",
+      "Analytics and reporting requirements by stakeholder group.",
+      "AI capability expectations across TA and TM features.",
+      "Success criteria, timelines, and change management approach.",
+      "Organization-specific rules, metadata, and integration requirements.",
+    ],
+  },
+};
+
+const BRIEF_GENERIC = {
+  customerObjectives: [
+    "Define and evaluate solution capabilities aligned to organizational requirements.",
+    "Ensure seamless integration with the existing HR and talent technology stack.",
+    "Deliver measurable business outcomes with a clear implementation roadmap.",
+    "Provide enterprise-grade security, compliance, and SaaS scalability.",
+    "Enable data-driven talent decisions through robust analytics and reporting.",
+  ],
+  businessDrivers: [
+    "Improve talent decision-making through objective data.",
+    "Standardize processes and reduce manual effort.",
+    "Enable scalable, enterprise-ready talent operations.",
+    "Strengthen workforce capability and organizational resilience.",
+    "Drive measurable ROI from talent technology investments.",
+  ],
+  keyFunctionalRequirements: [
+    "Platform Capabilities: Core feature set aligned to the stated use case and bid requirements.",
+    "Integrations: HRIS, ATS, LMS integration scope, SSO, REST APIs, and SCIM provisioning.",
+    "Analytics & Reporting: Role-based dashboards, export capabilities, compliance reporting.",
+    "Administration: User management, role-based access, workflow configuration, skills governance.",
+  ],
+  integrationLandscape: [
+    "HRIS / ATS integrations required for core data sync and workflow continuity.",
+    "SSO, SCIM, and REST APIs for enterprise-grade provisioning and custom integration.",
+    "Analytics tool integrations (e.g. Power BI) for reporting and dashboards.",
+    "Future technology integrations may be required based on organizational roadmap.",
+  ],
+  imochaStrengths: [
+    "AI-powered Skills Intelligence platform",
+    "3,000+ Skills Assessment Library",
+    "Configurable competency framework and skills taxonomy",
+    "Enterprise-grade integrations (HRIS, ATS, SSO, APIs)",
+    "ISO 27001:2022 and SOC 2 Type II certified",
+    "GDPR-ready data privacy controls",
+    "Executive and operational analytics dashboards",
+  ],
+  defaultRisks: [
+    "Scope ambiguity or missing requirements in the submission.",
+    "Integration complexity with existing technology ecosystem.",
+    "Unrealistic implementation timeline or resource constraints.",
+    "Compliance, data residency, and security requirements.",
+    "Configuration versus customization expectations.",
+    "Stakeholder alignment and decision-making timeline.",
+    "Success criteria and measurable business outcomes.",
+    "Organization-specific rules, processes, or integration requirements.",
+  ],
+};
+
+const TECHNICAL_REQUIREMENTS = [
+  "SaaS deployment and enterprise scalability.",
+  "HRIS integration, SSO, REST APIs and secure authentication.",
+  "Data migration and enterprise reporting.",
+];
+const SECURITY_COMPLIANCE = [
+  "Enterprise security",
+  "Identity management",
+  "Encryption",
+  "Auditability",
+  "Compliance readiness",
+  "Data privacy",
+  "Secure integrations",
+];
+const IMPLEMENTATION_EXPECTATIONS = [
+  "Implementation methodology",
+  "Data migration",
+  "Integration approach",
+  "Testing strategy",
+  "Security readiness",
+  "Rollout approach",
+  "Governance model",
+];
+const PROPOSAL_THEMES = [
+  "Clearly distinguish standard capabilities, configurable functionality, custom development, third-party components and out-of-scope items.",
+  "Transparency is a key evaluation criterion.",
+];
+
 // ═══════════════════════════════════════════════════════════════════════════════
-// DOC 1 — Deal Brief (Leadership Review format)
-// Concise: KPI boxes · Opportunity Overview · iMocha Fit Assessment table · Risks · Recommendation
+// DOC 1 — Deal Brief (Structured Opportunity Analysis)
+// 11-section format: Overview · Objectives · Drivers · Requirements · Strengths · Risks
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const generateQualResultFn = createServerFn({ method: "POST" })
@@ -294,237 +603,234 @@ export const generateQualResultFn = createServerFn({ method: "POST" })
       await Promise.all(existingAll.map(deleteDoc));
     }
 
-    const [bidRes, teamRes] = await Promise.all([
-      supabaseAdmin.from("bids").select("*").eq("id", data.bidId).maybeSingle(),
-      supabaseAdmin.from("bid_assignments").select("profiles(full_name, email), user_roles(role)").eq("bid_id", data.bidId),
-    ]);
+    const bidRes = await supabaseAdmin.from("bids").select("*").eq("id", data.bidId).maybeSingle();
     if (!bidRes.data) return new Response("Bid not found", { status: 404 });
 
     const bid = bidRes.data as any;
-    const team: Array<{ name: string; email: string; role: string }> =
-      ((teamRes.data ?? []) as any[]).map((r: any) => ({
-        name: r.profiles?.full_name ?? "—",
-        email: r.profiles?.email ?? "—",
-        role: r.user_roles?.role ?? "—",
-      }));
-    const teamLead = team[0]?.name ?? "Bid Team";
-
     const ad: any = bid.assessment_data ?? {};
-    const scores: Record<string, number> = ad.scores ?? {};
     const insights = ad.insights ?? null;
-    const rationales: Record<string, string> =
-      Object.keys(ad.rationales ?? {}).length > 0
-        ? (ad.rationales as Record<string, string>)
-        : await ensureRationales(scores, bid);
 
-    const totalScore = Math.round(CRITERIA.reduce((s, c) => s + ((scores[c.id] ?? 0) / 5) * c.weight * 100, 0));
-    const dec: string = bid.gonogo_decision ?? (totalScore >= 65 ? "go" : totalScore >= 45 ? "conditional_go" : "no_go");
     const logo = await getLogo();
     const today = fmtDate(new Date().toISOString());
-    const deadline = bid.deadline ? fmtDate(bid.deadline) : "TBD";
     const productLine = productLineLabel(bid.product_type);
-    const keyReqs = keyRequirements(bid.product_type, bid.type);
+    const productShort = productShortLabel(bid.product_type);
+    const procType = procurementTypeLabel(bid.type);
+    const objective = briefObjective(bid.product_type, bid.type);
     const dealValue = bid.value && bid.value > 0 ? fmtMoney(bid.value) : "TBD";
+    const deadline = bid.deadline ? fmtDate(bid.deadline) : "TBD";
+    const pt = (bid.product_type ?? "").toUpperCase();
+    const content = BRIEF_STATIC[pt] ?? BRIEF_GENERIC;
+    const keyRisksList = (insights?.risks && (insights.risks as string[]).length > 0)
+      ? (insights.risks as string[])
+      : content.defaultRisks;
 
-    // ── Cell helpers ────────────────────────────────────────────────────────
-    function kpiCell(label: string, value: string, valueColour: string, shade: string): TableCell {
-      return new TableCell({
-        shading: { type: ShadingType.SOLID, color: shade },
-        verticalAlign: VerticalAlign.CENTER,
-        borders: { top: noBorder, bottom: noBorder, left: noBorder, right: { style: BorderStyle.SINGLE, size: 4, color: C.border } },
-        margins: { top: 120, bottom: 120, left: 160, right: 160 },
+    // ── Per-document helpers ────────────────────────────────────────────────
+    function bSectionHeading(num: number, title: string): Paragraph {
+      return new Paragraph({
+        heading: HeadingLevel.HEADING_1,
+        spacing: { before: 280, after: 100 },
         children: [
-          new Paragraph({ children: [new TextRun({ text: label.toUpperCase(), color: C.muted, size: 14, font: "Calibri", bold: true })] }),
-          new Paragraph({ spacing: { before: 40 }, children: [new TextRun({ text: value, color: valueColour, size: 40, bold: true, font: "Calibri" })] }),
+          new TextRun({ text: `${num}. ${title}`, color: C.navy, bold: true, size: 26, font: "Calibri" }),
         ],
       });
     }
 
-    function ovCell(text: string, shade: string, bold = false): TableCell {
-      return new TableCell({
-        shading: { type: ShadingType.SOLID, color: shade },
-        borders: { top: hairline, bottom: hairline, left: noBorder, right: hairline },
-        margins: { top: 80, bottom: 80, left: 120, right: 120 },
-        children: [new Paragraph({ children: [new TextRun({ text, bold, size: 19, font: "Calibri", color: C.ink })] })],
+    function bBullet(text: string): Paragraph {
+      return new Paragraph({
+        bullet: { level: 0 },
+        spacing: { before: 60, after: 60 },
+        children: [new TextRun({ text, size: 19, font: "Calibri", color: C.ink })],
       });
     }
 
-    function fitCell(text: string, shade?: string, colour?: string, bold = false, align: "left" | "center" = "left"): TableCell {
+    function ovLabelCell(text: string): TableCell {
+      return new TableCell({
+        shading: { type: ShadingType.SOLID, color: C.mutedBg },
+        borders: { top: hairline, bottom: hairline, left: hairline, right: hairline },
+        width: { size: 28, type: WidthType.PERCENTAGE },
+        margins: { top: 80, bottom: 80, left: 140, right: 80 },
+        children: [new Paragraph({ children: [new TextRun({ text, bold: true, size: 19, font: "Calibri", color: C.muted })] })],
+      });
+    }
+
+    function ovValueCell(text: string, shade?: string): TableCell {
       return new TableCell({
         shading: shade ? { type: ShadingType.SOLID, color: shade } : undefined,
-        borders: { top: hairline, bottom: hairline, left: noBorder, right: hairline },
-        margins: { top: 80, bottom: 80, left: 120, right: 80 },
-        children: [new Paragraph({
-          alignment: align === "center" ? AlignmentType.CENTER : AlignmentType.LEFT,
-          children: [new TextRun({ text, bold, size: 18, font: "Calibri", color: colour ?? C.ink })],
-        })],
-      });
-    }
-
-    function decisionBadge(): Table {
-      return new Table({
-        width: { size: 22, type: WidthType.PERCENTAGE },
-        rows: [new TableRow({
-          children: [new TableCell({
-            shading: { type: ShadingType.SOLID, color: decisionColour(dec) },
-            borders: { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder },
-            margins: { top: 100, bottom: 100, left: 200, right: 200 },
-            children: [new Paragraph({
-              alignment: AlignmentType.CENTER,
-              children: [new TextRun({ text: decisionLabel(dec), color: C.white, bold: true, size: 32, font: "Calibri" })],
-            })],
-          })],
-        })],
+        borders: { top: hairline, bottom: hairline, left: hairline, right: hairline },
+        width: { size: 72, type: WidthType.PERCENTAGE },
+        margins: { top: 80, bottom: 80, left: 140, right: 80 },
+        children: [new Paragraph({ children: [new TextRun({ text, size: 19, font: "Calibri", color: C.ink })] })],
       });
     }
 
     // ── Assemble document ───────────────────────────────────────────────────
     const doc = new Document({
       sections: [{
-        properties: { page: { margin: { top: 720, bottom: 720, left: 900, right: 900 } } },
+        properties: { page: { margin: { top: 720, bottom: 900, left: 900, right: 900 } } },
+        headers: {
+          default: new Header({
+            children: [new Paragraph({
+              children: [
+                new ImageRun({ data: logo, transformation: { width: 90, height: 19 }, type: "png" }),
+                new TextRun({ text: "        Deal Brief  |  Confidential", color: C.muted, size: 16, font: "Calibri", italics: true }),
+              ],
+            })],
+          }),
+        },
         footers: {
           default: new Footer({
             children: [new Paragraph({
               alignment: AlignmentType.CENTER,
               children: [
-                new TextRun({ text: `Prepared by ${teamLead} · iMocha Bid Compass · ${today} · LEADERSHIP USE ONLY  `, color: C.muted, size: 16, font: "Calibri" }),
+                new TextRun({ text: `Prepared by iMocha Bid Compass · ${today} · CONFIDENTIAL  `, color: C.muted, size: 16, font: "Calibri" }),
                 new TextRun({ children: [PageNumber.CURRENT] }),
               ],
             })],
           }),
         },
         children: [
-          // Cover strip
+          // ── Title block ────────────────────────────────────────────────────
           new Paragraph({
-            shading: { type: ShadingType.SOLID, color: C.navy },
-            spacing: { before: 0, after: 0 },
-            children: [
-              new ImageRun({ data: logo, transformation: { width: 93, height: 20 }, type: "png" }),
-              new TextRun({ text: "  DEAL BRIEF — LEADERSHIP REVIEW", color: C.white, bold: true, size: 20, font: "Calibri" }),
-              new TextRun({ text: `        ${today}`, color: "AAAACC", size: 16, font: "Calibri" }),
-            ],
+            spacing: { before: 200, after: 40 },
+            children: [new TextRun({ text: `Deal Brief – ${bid.client_name} (${productShort})`, color: C.navy, bold: true, size: 44, font: "Calibri" })],
           }),
           new Paragraph({
-            shading: { type: ShadingType.SOLID, color: C.navy },
-            spacing: { before: 60, after: 40 },
-            children: [new TextRun({ text: bid.client_name, color: C.white, bold: true, size: 48, font: "Calibri" })],
+            spacing: { before: 0, after: 30 },
+            children: [new TextRun({ text: `${bid.client_name} – ${bid.title}`, color: C.muted, size: 24, font: "Calibri" })],
           }),
           new Paragraph({
-            shading: { type: ShadingType.SOLID, color: C.navy },
             spacing: { before: 0, after: 200 },
-            children: [
-              new TextRun({ text: bid.title, color: "AAAACC", size: 22, font: "Calibri" }),
-              new TextRun({ text: `   ·   ${productLine}`, color: "7766BB", size: 18, font: "Calibri" }),
-            ],
+            children: [new TextRun({ text: "Executive Opportunity Analysis", color: C.muted, size: 20, font: "Calibri", italics: true })],
           }),
 
-          // 4-box KPI grid
-          new Paragraph({ spacing: { before: 160, after: 80 }, children: [new TextRun({ text: "Deal at a Glance", color: C.navy, bold: true, size: 26, font: "Calibri" })] }),
-          new Table({
-            width: { size: 100, type: WidthType.PERCENTAGE },
-            rows: [new TableRow({ children: [
-              kpiCell("Deal Value",   dealValue,                 C.orange,            "FFF8F4"),
-              kpiCell("Qual. Score",  `${totalScore}/100`,       decisionColour(dec), decisionTint(dec)),
-              kpiCell("Decision",     decisionLabel(dec),         decisionColour(dec), decisionTint(dec)),
-              kpiCell("Bid Strength", bidStrength(totalScore),   C.navy,              C.purpleTint),
-            ]})],
-          }),
-
-          // Executive Summary
-          new Paragraph({ spacing: { before: 280, after: 80 }, children: [new TextRun({ text: "Executive Summary", color: C.navy, bold: true, size: 26, font: "Calibri" })] }),
-          new Paragraph({
-            shading: { type: ShadingType.SOLID, color: C.purpleTint },
-            spacing: { before: 60, after: 80 },
-            indent: { left: 160, right: 160 },
-            children: [new TextRun({
-              text: insights?.recommendation
-                ?? `${bid.client_name} has submitted a ${(bid.type ?? "bid").toUpperCase()} aligned to iMocha's ${productLine} offering. Run the AI Assessment in the Assessment & Result tab to generate the executive summary.`,
-              size: 20, font: "Calibri", color: C.ink,
-            })],
-          }),
-
-          // Key Win Themes
-          new Paragraph({ spacing: { before: 220, after: 80 }, children: [new TextRun({ text: "Key Win Themes", color: C.navy, bold: true, size: 26, font: "Calibri" })] }),
-          ...(insights?.strengths?.length
-            ? (insights.strengths as string[]).map((s: string) =>
-                new Paragraph({ bullet: { level: 0 }, spacing: { before: 60, after: 60 }, children: [new TextRun({ text: s, size: 19, font: "Calibri", color: C.ink })] })
-              )
-            : [new Paragraph({ spacing: { before: 0, after: 80 }, children: [new TextRun({ text: "Run the AI Assessment to generate key win themes.", size: 19, font: "Calibri", color: C.muted, italics: true })] })]
-          ),
-
-          // Opportunity Overview
-          new Paragraph({ spacing: { before: 280, after: 80 }, children: [new TextRun({ text: "Opportunity Overview", color: C.navy, bold: true, size: 26, font: "Calibri" })] }),
-          new Table({
-            width: { size: 100, type: WidthType.PERCENTAGE },
-            rows: [
-              new TableRow({ children: [ovCell("Client", C.mutedBg, true), ovCell(bid.client_name, "FFFFFF"), ovCell("Product Line", C.mutedBg, true), ovCell(productLine, "FFFFFF")] }),
-              new TableRow({ children: [ovCell("Bid Type", C.mutedBg, true), ovCell((bid.type ?? "—").toUpperCase(), "FFFFFF"), ovCell("Priority", C.mutedBg, true), ovCell(bid.priority ? bid.priority.charAt(0).toUpperCase() + bid.priority.slice(1) : "—", "FFFFFF")] }),
-              new TableRow({ children: [ovCell("Deal Value", C.mutedBg, true), ovCell(dealValue, "FFFFFF"), ovCell("Deadline", C.mutedBg, true), ovCell(deadline, "FFFFFF")] }),
-              new TableRow({ children: [ovCell("Current Stage", C.mutedBg, true), ovCell("Deal Qualification", "FFFFFF"), ovCell("Bid Team Lead", C.mutedBg, true), ovCell(teamLead, "FFFFFF")] }),
-            ],
-          }),
-
-          // Key Requirements
-          new Paragraph({ spacing: { before: 280, after: 80 }, children: [new TextRun({ text: "Key Requirements", color: C.navy, bold: true, size: 26, font: "Calibri" })] }),
-          new Paragraph({ spacing: { before: 0, after: 80 }, children: [new TextRun({ text: `What ${bid.client_name} is looking for in this ${(bid.type ?? "bid").toUpperCase()}:`, color: C.muted, size: 18, font: "Calibri" })] }),
-          ...keyReqs.map(req => new Paragraph({
-            bullet: { level: 0 },
-            spacing: { before: 60, after: 60 },
-            children: [new TextRun({ text: req, size: 19, font: "Calibri", color: C.ink })],
-          })),
-
-          // iMocha Fit Assessment table (with rationales as Leadership Notes)
-          new Paragraph({ spacing: { before: 280, after: 80 }, children: [new TextRun({ text: "iMocha Fit Assessment", color: C.navy, bold: true, size: 26, font: "Calibri" })] }),
+          // ── 1. Opportunity Overview ────────────────────────────────────────
+          bSectionHeading(1, "Opportunity Overview"),
           new Table({
             width: { size: 100, type: WidthType.PERCENTAGE },
             rows: [
               new TableRow({
                 tableHeader: true,
                 children: [
-                  new TableCell({ shading: { type: ShadingType.SOLID, color: C.navy }, borders: { top: noBorder, bottom: noBorder, left: noBorder, right: hairline }, width: { size: 30, type: WidthType.PERCENTAGE }, margins: { top: 80, bottom: 80, left: 120, right: 80 }, children: [new Paragraph({ children: [new TextRun({ text: "Criterion", color: C.white, bold: true, size: 18, font: "Calibri" })] })] }),
-                  new TableCell({ shading: { type: ShadingType.SOLID, color: C.navy }, borders: { top: noBorder, bottom: noBorder, left: noBorder, right: hairline }, width: { size: 9, type: WidthType.PERCENTAGE }, margins: { top: 80, bottom: 80, left: 80, right: 80 }, children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: "Score", color: C.white, bold: true, size: 18, font: "Calibri" })] })] }),
-                  new TableCell({ shading: { type: ShadingType.SOLID, color: C.navy }, borders: { top: noBorder, bottom: noBorder, left: noBorder, right: hairline }, width: { size: 11, type: WidthType.PERCENTAGE }, margins: { top: 80, bottom: 80, left: 80, right: 80 }, children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: "Status", color: C.white, bold: true, size: 18, font: "Calibri" })] })] }),
-                  new TableCell({ shading: { type: ShadingType.SOLID, color: C.navy }, borders: { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder }, width: { size: 50, type: WidthType.PERCENTAGE }, margins: { top: 80, bottom: 80, left: 80, right: 80 }, children: [new Paragraph({ children: [new TextRun({ text: "Leadership Notes", color: C.white, bold: true, size: 18, font: "Calibri" })] })] }),
+                  new TableCell({
+                    shading: { type: ShadingType.SOLID, color: C.navy },
+                    borders: { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder },
+                    width: { size: 28, type: WidthType.PERCENTAGE },
+                    margins: { top: 80, bottom: 80, left: 140, right: 80 },
+                    children: [new Paragraph({ children: [new TextRun({ text: "Item", color: C.white, bold: true, size: 19, font: "Calibri" })] })],
+                  }),
+                  new TableCell({
+                    shading: { type: ShadingType.SOLID, color: C.navy },
+                    borders: { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder },
+                    width: { size: 72, type: WidthType.PERCENTAGE },
+                    margins: { top: 80, bottom: 80, left: 140, right: 80 },
+                    children: [new Paragraph({ children: [new TextRun({ text: "Details", color: C.white, bold: true, size: 19, font: "Calibri" })] })],
+                  }),
                 ],
               }),
-              ...CRITERIA.map((c, i) => {
-                const s = scores[c.id] ?? 0;
-                const st = paramStatus(s);
-                const stCol = paramStatusColour(s);
-                const stShade = s === 0 ? C.mutedBg : s >= 4 ? C.goTint : s === 3 ? C.warnTint : C.nogoTint;
-                const shade = i % 2 === 0 ? undefined : C.mutedBg;
-                const note = rationales[c.id] ?? "—";
-                return new TableRow({ children: [
-                  fitCell(c.parameter, shade, undefined, true),
-                  fitCell(s > 0 ? `${s} / 5` : "—", shade, undefined, false, "center"),
-                  new TableCell({
-                    shading: { type: ShadingType.SOLID, color: stShade },
-                    borders: { top: hairline, bottom: hairline, left: noBorder, right: hairline },
-                    margins: { top: 80, bottom: 80, left: 80, right: 80 },
-                    children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: st, color: stCol, bold: true, size: 18, font: "Calibri" })] })],
-                  }),
-                  fitCell(note, shade),
-                ]});
-              }),
+              new TableRow({ children: [ovLabelCell("Customer"), ovValueCell(bid.client_name)] }),
+              new TableRow({ children: [ovLabelCell("Opportunity"), ovValueCell(bid.title, C.purpleTint)] }),
+              new TableRow({ children: [ovLabelCell("Solution Area"), ovValueCell(productLine)] }),
+              new TableRow({ children: [ovLabelCell("Procurement Type"), ovValueCell(procType, C.purpleTint)] }),
+              new TableRow({ children: [ovLabelCell("Deal Value"), ovValueCell(dealValue)] }),
+              new TableRow({ children: [ovLabelCell("Deadline"), ovValueCell(deadline, C.purpleTint)] }),
+              new TableRow({ children: [ovLabelCell("Objective"), ovValueCell(objective)] }),
             ],
           }),
 
-          // Potential Risks
-          new Paragraph({ spacing: { before: 280, after: 80 }, children: [new TextRun({ text: "Potential Risks / Watchouts", color: C.warn, bold: true, size: 26, font: "Calibri" })] }),
-          ...(insights?.risks ?? ["Run AI Assessment to generate risk analysis."]).map((r: string) =>
-            new Paragraph({ bullet: { level: 0 }, spacing: { before: 60, after: 60 }, children: [new TextRun({ text: r, size: 20, font: "Calibri", color: C.ink })] })
-          ),
+          // ── 2. Customer Objectives ─────────────────────────────────────────
+          bSectionHeading(2, "Customer Objectives"),
+          ...content.customerObjectives.map(bBullet),
 
-          // Recommended Bid Position
-          new Paragraph({ spacing: { before: 280, after: 80 }, children: [new TextRun({ text: "Recommended Bid Position", color: C.navy, bold: true, size: 26, font: "Calibri" })] }),
-          new Paragraph({
-            shading: { type: ShadingType.SOLID, color: C.purpleTint },
-            spacing: { before: 100, after: 100 },
-            indent: { left: 160, right: 160 },
-            children: [new TextRun({ text: insights?.recommendation ?? "Run AI Assessment to generate the recommendation.", size: 20, font: "Calibri", color: C.ink })],
+          // ── 3. Business Drivers ────────────────────────────────────────────
+          bSectionHeading(3, "Business Drivers"),
+          ...content.businessDrivers.map(bBullet),
+
+          // ── 4. Key Functional Requirements ────────────────────────────────
+          bSectionHeading(4, "Key Functional Requirements"),
+          ...content.keyFunctionalRequirements.map(bBullet),
+
+          // ── 5. Technical Requirements ──────────────────────────────────────
+          bSectionHeading(5, "Technical Requirements"),
+          ...TECHNICAL_REQUIREMENTS.map(bBullet),
+
+          // ── 6. Security & Compliance Expectations ─────────────────────────
+          bSectionHeading(6, "Security & Compliance Expectations"),
+          ...SECURITY_COMPLIANCE.map(bBullet),
+
+          // ── 7. Integration Landscape ───────────────────────────────────────
+          bSectionHeading(7, "Integration Landscape"),
+          ...content.integrationLandscape.map(bBullet),
+
+          // ── 8. Implementation Expectations ────────────────────────────────
+          bSectionHeading(8, "Implementation Expectations"),
+          ...IMPLEMENTATION_EXPECTATIONS.map(bBullet),
+
+          // ── 9. Key Proposal Themes ─────────────────────────────────────────
+          bSectionHeading(9, "Key Proposal Themes"),
+          ...PROPOSAL_THEMES.map(bBullet),
+
+          // ── 10. Potential iMocha Strengths ─────────────────────────────────
+          bSectionHeading(10, "Potential iMocha Strengths"),
+          ...content.imochaStrengths.map(bBullet),
+
+          // ── 11. Key Risks / Clarifications Required ────────────────────────
+          bSectionHeading(11, "Key Risks / Clarifications Required"),
+          ...keyRisksList.map(bBullet),
+
+          // ── iMocha branding footer table ───────────────────────────────────
+          // Paragraph-level shading inside cells is more reliable than cell-level shading in Word renderers
+          new Paragraph({ spacing: { before: 400, after: 0 }, children: [] }),
+          new Table({
+            width: { size: 100, type: WidthType.PERCENTAGE },
+            rows: [new TableRow({
+              children: [
+                new TableCell({
+                  borders: { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder },
+                  width: { size: 50, type: WidthType.PERCENTAGE },
+                  margins: { top: 0, bottom: 0, left: 0, right: 0 },
+                  children: [
+                    new Paragraph({
+                      shading: { type: ShadingType.SOLID, color: C.purple },
+                      spacing: { before: 140, after: 60 },
+                      indent: { left: 200, right: 120 },
+                      children: [new TextRun({ text: "Brewing A Skills-First Planet", color: C.white, bold: true, size: 22, font: "Calibri" })],
+                    }),
+                    new Paragraph({
+                      shading: { type: ShadingType.SOLID, color: C.purple },
+                      spacing: { before: 0, after: 60 },
+                      indent: { left: 200, right: 120 },
+                      children: [new TextRun({ text: "Call us +1-408-915-5158 or write to us at support@imocha.io", color: "CCBBFF", size: 16, font: "Calibri" })],
+                    }),
+                    new Paragraph({
+                      shading: { type: ShadingType.SOLID, color: C.purple },
+                      spacing: { before: 0, after: 140 },
+                      indent: { left: 200, right: 120 },
+                      children: [new TextRun({ text: "www.imocha.io", color: "CCBBFF", size: 16, font: "Calibri" })],
+                    }),
+                  ],
+                }),
+                new TableCell({
+                  borders: { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder },
+                  width: { size: 50, type: WidthType.PERCENTAGE },
+                  margins: { top: 0, bottom: 0, left: 0, right: 0 },
+                  children: [
+                    new Paragraph({
+                      shading: { type: ShadingType.SOLID, color: C.navy },
+                      spacing: { before: 140, after: 60 },
+                      indent: { left: 200, right: 120 },
+                      children: [new TextRun({ text: "About iMocha", color: C.white, bold: true, size: 18, font: "Calibri" })],
+                    }),
+                    new Paragraph({
+                      shading: { type: ShadingType.SOLID, color: C.navy },
+                      spacing: { before: 0, after: 140 },
+                      indent: { left: 200, right: 120 },
+                      children: [new TextRun({ text: "iMocha is a global provider of AI-powered Skills Intelligence, enabling organizations to implement a skills-first strategy across hiring, upskilling, reskilling, workforce planning, and internal mobility. Leveraging an AI-driven taxonomy and ontology, its platform supports structured skills management and governance while delivering data-driven insights into workforce capabilities.", color: "AAAACC", size: 15, font: "Calibri" })],
+                    }),
+                  ],
+                }),
+              ],
+            })],
           }),
-          new Paragraph({ spacing: { before: 120, after: 0 }, children: [] }),
-          decisionBadge(),
         ],
       }],
     });

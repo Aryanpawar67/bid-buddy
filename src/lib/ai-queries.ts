@@ -380,6 +380,18 @@ export function useAiChat(
   return { messages, isStreaming, inputValue, setInputValue, send, streamingStatus };
 }
 
+// ── useCheckProposalReadiness ─────────────────────────────────────────────────
+export function useCheckProposalReadiness() {
+  return useMutation({
+    mutationFn: async (input: { bidId: string }) => {
+      const { checkProposalReadiness } = await import("@/lib/api/ai-functions");
+      const res = await checkProposalReadiness(input);
+      if (!res.ok) throw new Error(await res.text());
+      return res.json() as Promise<import("@/lib/api/generate-proposal").ReadinessCheck>;
+    },
+  });
+}
+
 // ── usePreviewProposal ────────────────────────────────────────────────────────
 export function usePreviewProposal() {
   return useMutation({
