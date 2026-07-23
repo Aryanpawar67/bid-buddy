@@ -23,13 +23,15 @@ import type { TabDef } from "./BidHeaderBar";
 import { useCurrentUser } from "@/lib/auth";
 import type { RfiQuestion, RfiCategory } from "@/lib/api/generate-rfi-questions";
 import { RFI_CATEGORIES } from "@/lib/api/generate-rfi-questions";
+import { QuestionnaireResponder } from "@/components/ai/QuestionnaireResponder";
 
-export type RFITab = "overview" | "team" | "activity_log";
+export type RFITab = "overview" | "autopilot" | "team" | "activity_log";
 
 export const RFI_TABS: TabDef[] = [
-  { key: "overview", label: "Overview", icon: LayoutList },
-  { key: "team", label: "Team", icon: Users },
-  { key: "activity_log", label: "Activity Log", icon: Activity },
+  { key: "overview",   label: "Overview",                icon: LayoutList },
+  { key: "autopilot",  label: "Questionnaire Autopilot", icon: Sparkles   },
+  { key: "team",       label: "Team",                    icon: Users      },
+  { key: "activity_log", label: "Activity Log",          icon: Activity   },
 ];
 
 function daysLeft(deadline: string) {
@@ -73,19 +75,19 @@ async function downloadQuestionnaire(questions: RfiQuestion[], clientName: strin
   ];
 
   // ── Fetch + embed the iMocha logo ──────────────────────────────────────────
+  // Logo is 937×201px. Banner rows 1-3 total height ~56pt. Scale to fit height
+  // with aspect ratio preserved: target ~47px tall → width ≈ 220px.
+  // Use ext-based placement so size is absolute (not stretched to cell boundaries).
   try {
     const imgResp = await fetch("/imocha-logo.png");
+    if (!imgResp.ok) throw new Error(`Logo fetch ${imgResp.status}`);
     const imgBuf  = await imgResp.arrayBuffer();
     const imageId = wb.addImage({ buffer: imgBuf, extension: "png" });
-
-    // Rows 1–3 are the banner (height ~60px total). Place logo in those rows.
-    // Columns A–D span ~890px. Logo is 937×201px; scale to fit banner height.
     ws.addImage(imageId, {
-      tl: { col: 0.15, row: 0.1 },
-      br: { col: 1.6,  row: 2.9 },
-      editAs: "oneCell",
+      tl: { col: 0.15, row: 0.25 },
+      ext: { width: 220, height: 47 },
     });
-  } catch { /* logo fetch failed gracefully — banner still has navy bg */ }
+  } catch (e) { console.warn("[downloadQuestionnaire] logo embed failed:", e); }
 
   // Rows 1–3: navy banner background (logo floats above these)
   for (let r = 1; r <= 3; r++) {
@@ -315,6 +317,14 @@ export function RFIWorkspace({ bid, activeTab, onTabChange }: {
         onSuccess: () => toast.success("Question deleted"),
         onError: () => toast.error("Failed to delete question"),
       }
+    );
+  }
+
+  if (activeTab === "autopilot") {
+    return (
+      <div className="flex-1 min-h-0 overflow-auto">
+        <QuestionnaireResponder />
+      </div>
     );
   }
 

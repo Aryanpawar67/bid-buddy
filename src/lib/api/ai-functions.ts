@@ -48,7 +48,13 @@ export async function generateProposal(input: {
     (m) => m.supabase.auth.getSession()
   );
   return generateProposalFn({
-    data: { ...input, format: input.format ?? "docx" },
+    data: {
+      bidId: input.bidId,
+      sessionId: input.sessionId,
+      intakeJson: input.intake ? JSON.stringify(input.intake) : undefined,
+      format: input.format ?? "docx",
+      force: input.force,
+    },
     headers: { authorization: `Bearer ${session?.access_token ?? ""}` },
   }) as unknown as Response;
 }

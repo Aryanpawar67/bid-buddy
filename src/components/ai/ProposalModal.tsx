@@ -108,12 +108,19 @@ export function ProposalModal({ open, onClose, bidId, sessionId, clientName, onG
       if (!result.downloadUrl) {
         throw new Error("No download URL returned from server");
       }
+      console.log("[ProposalModal] downloading from:", result.downloadUrl);
+      // Fetch as blob first — cross-origin anchor `download` attr is ignored by browsers
+      const dlRes = await fetch(result.downloadUrl);
+      if (!dlRes.ok) throw new Error(`Download fetch failed: ${dlRes.status}`);
+      const blob = await dlRes.blob();
+      const objectUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = result.downloadUrl;
+      a.href = objectUrl;
       a.download = result.filename;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
+      URL.revokeObjectURL(objectUrl);
       toast.success("Proposal saved to Knowledge Hub");
       if (preview) onGenerated?.(preview);
       onClose();
@@ -346,13 +353,23 @@ export function ProposalModal({ open, onClose, bidId, sessionId, clientName, onG
               <>
                 {readiness?.existingProposal ? (
                   <button
-                    onClick={() => {
-                      const a = document.createElement("a");
-                      a.href = readiness.existingProposal!.downloadUrl;
-                      a.download = readiness.existingProposal!.name;
-                      document.body.appendChild(a);
-                      a.click();
-                      document.body.removeChild(a);
+                    onClick={async () => {
+                      try {
+                        const dlRes = await fetch(readiness.existingProposal!.downloadUrl);
+                        if (!dlRes.ok) throw new Error(`Fetch failed: ${dlRes.status}`);
+                        const blob = await dlRes.blob();
+                        const objectUrl = URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = objectUrl;
+                        a.download = readiness.existingProposal!.name;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(objectUrl);
+                      } catch (e) {
+                        console.error("[ProposalModal] open-existing download failed:", e);
+                        toast.error("Download failed — try regenerating");
+                      }
                     }}
                     className="text-[11px] px-3 py-1.5 rounded-full border hairline border-border text-foreground hover:bg-background transition-colors"
                   >
@@ -394,7 +411,7 @@ export function ProposalModal({ open, onClose, bidId, sessionId, clientName, onG
                   ← Back
                 </button>
                 <button
-                  onClick={handleGenerateDocx}
+                  onClick={() => handleGenerateDocx()}
                   disabled={generateMutation.isPending}
                   className="text-[11px] px-4 py-1.5 rounded-full bg-orange-500 text-white hover:bg-orange-600 disabled:opacity-40 transition-colors flex items-center gap-1.5"
                 >

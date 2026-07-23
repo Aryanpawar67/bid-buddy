@@ -98,7 +98,7 @@ const TA_CONFIG: TemplateConfig = {
 const TM_CONFIG: TemplateConfig = {
   filename: TM_TEMPLATE,
   anchors: {
-    deliverablesHeading:   "2.1 In scope Key Deliverables",
+    deliverablesHeading:   "Key Deliverables: ",
     integrationsBookmark:  "_Integration_with_SAP",
   },
   headerFooter: [
@@ -172,7 +172,7 @@ export type ProposalPreview = Omit<Intake, "prepared_for" | "spoc_name" | "spoc_
 const InputSchema = z.object({
   bidId: z.string().uuid(),
   sessionId: z.string().uuid(),
-  intake: IntakeSchema.optional(),
+  intakeJson: z.string().optional(), // JSON-encoded Intake — avoids Seroval object serialization issues
   format: z.enum(["docx", "pdf"]).default("docx"),
   force: z.boolean().optional(),
 });
@@ -456,17 +456,70 @@ function buildBulletParagraphs(deliverables: string[], numId: string | null): st
     .join("\n");
 }
 
+// ── TOC field injection ────────────────────────────────────────────────────────
+// Both templates have either a blank TOC1 placeholder (TA) or pre-baked static
+// TOC entries with hardcoded page numbers from a prior proposal (TM). Either way
+// the generated document shows the wrong content in the TOC section.
+//
+// Fix: replace all consecutive TOC1/TOC2 styled paragraphs with a single
+// auto-update field instruction. Word marks it dirty=true so it regenerates
+// the correct headings + page numbers on first open.
+function replaceTocWithField(xml: string): string {
+  // The TOC field paragraph Word needs to auto-generate the table of contents.
+  // w:dirty="true" forces Word to rebuild it on open.
+  const tocField =
+    `<w:p><w:pPr><w:pStyle w:val="TOC1"/></w:pPr>` +
+    `<w:r><w:fldChar w:fldCharType="begin" w:dirty="true"/></w:r>` +
+    `<w:r><w:instrText xml:space="preserve"> TOC \\o &quot;1-3&quot; \\h \\z \\u </w:instrText></w:r>` +
+    `<w:r><w:fldChar w:fldCharType="separate"/></w:r>` +
+    `<w:r><w:t>Please open in Word and press Ctrl+A then F9 to update the Table of Contents.</w:t></w:r>` +
+    `<w:r><w:fldChar w:fldCharType="end"/></w:r>` +
+    `</w:p>`;
+
+  // Match one or more consecutive paragraphs styled TOC1 or TOC2
+  const tocBlockRe = /(<w:p[ >](?:(?!<w:p[ >]).)*?<w:pStyle w:val="TOC[12]"[^/]?\/>(?:(?!<\/w:p>).)*?<\/w:p>\s*)+/gs;
+
+  let replaced = false;
+  const result = xml.replace(tocBlockRe, () => {
+    if (replaced) return ""; // swallow extra matches (shouldn't happen)
+    replaced = true;
+    return tocField + "\n";
+  });
+
+  if (!replaced) {
+    console.warn("[replaceTocWithField] no TOC1/TOC2 paragraphs found — TOC field not injected");
+  }
+  return result;
+}
+
+// Word's spell-checker splits heading text across multiple <w:r> runs, so a plain
+// indexOf on the heading string will miss it. We scan paragraph by paragraph,
+// concatenate all <w:t> node values, and match against the anchor text — the same
+// technique used in applyParagraphLevelSubstitutions.
+function findHeadingParaEnd(xml: string, headingText: string): number {
+  const paraRe = /<w:p[ >][\s\S]*?<\/w:p>/g;
+  let m: RegExpExecArray | null;
+  while ((m = paraRe.exec(xml)) !== null) {
+    const tMatches = [...m[0].matchAll(/<w:t(?:[^>]*)>([^<]*)<\/w:t>/g)];
+    const full = tMatches.map(t => t[1].replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")).join("");
+    if (full.trim() === headingText.trim()) {
+      return m.index + m[0].length; // position right after </w:p>
+    }
+  }
+  return -1;
+}
+
 function injectDeliverables(xml: string, deliverables: string[], config: TemplateConfig): string {
   const numId = discoverBulletNumId(xml);
   const bullets = buildBulletParagraphs(deliverables, numId);
 
-  const headingIdx = xml.indexOf(config.anchors.deliverablesHeading);
-  if (headingIdx === -1) {
+  const insertAt = findHeadingParaEnd(xml, config.anchors.deliverablesHeading);
+  if (insertAt === -1) {
+    console.warn("[injectDeliverables] heading not found:", config.anchors.deliverablesHeading, "— appending at body end");
     return xml.replace("</w:body>", `${bullets}</w:body>`);
   }
 
-  const headingParaEnd = xml.indexOf("</w:p>", headingIdx) + "</w:p>".length;
-  return xml.slice(0, headingParaEnd) + "\n" + bullets + xml.slice(headingParaEnd);
+  return xml.slice(0, insertAt) + "\n" + bullets + xml.slice(insertAt);
 }
 
 function injectIntegrationsContent(xml: string, content: string, config: TemplateConfig): string {
@@ -688,12 +741,13 @@ export const previewProposalFn = createServerFn({ method: "POST" })
 export const generateProposalFn = createServerFn({ method: "POST" })
   .inputValidator(InputSchema)
   .handler(async ({ data }) => {
+    console.log("[generateProposalFn] received data keys:", Object.keys(data), "format:", data.format, "force:", data.force, "hasIntakeJson:", !!data.intakeJson);
     const authHeader = getRequest().headers.get("authorization");
     const token = authHeader?.replace("Bearer ", "");
-    if (!token) return new Response("Unauthorized", { status: 401 });
+    if (!token) { console.error("[generateProposalFn] no auth token"); return new Response("Unauthorized", { status: 401 }); }
 
     const { data: { user }, error: authErr } = await supabaseAdmin.auth.getUser(token);
-    if (authErr || !user) return new Response("Unauthorized", { status: 401 });
+    if (authErr || !user) { console.error("[generateProposalFn] auth failed:", authErr); return new Response("Unauthorized", { status: 401 }); }
 
     // ── Conflict check: one proposal per bid ──────────────────────────────────
     const { data: existingProposal } = await (supabaseAdmin.from("bid_documents") as any)
@@ -717,8 +771,10 @@ export const generateProposalFn = createServerFn({ method: "POST" })
 
     // ── Phase 1: Author via Haiku (skipped when pre-authored intake provided) ─
     let intake: Intake;
-    if (data.intake) {
-      intake = data.intake;
+    const parsedIntake = data.intakeJson ? JSON.parse(data.intakeJson) as Intake : null;
+    console.log("[generateProposalFn] phase1 — parsedIntake:", parsedIntake ? `product=${parsedIntake.product}` : "null — will call Haiku");
+    if (parsedIntake) {
+      intake = parsedIntake;
     } else {
       const systemBlocks = await buildProposalSystemBlocks(data.bidId);
       const intakePrompt = buildAuthorPrompt("", true);
@@ -755,6 +811,7 @@ export const generateProposalFn = createServerFn({ method: "POST" })
     }
 
     // ── Phase 2: Assemble DOCX ────────────────────────────────────────────────
+    console.log("[generateProposalFn] phase2 — assembling DOCX, product:", intake.product, "deliverables:", intake.deliverables?.length);
     const templateFilename = intake.product === "TM" ? TM_TEMPLATE : TA_TEMPLATE;
     const config = TEMPLATE_CONFIGS[templateFilename];
     const templateBuffer = await getTemplateBuffer(templateFilename);
@@ -767,6 +824,7 @@ export const generateProposalFn = createServerFn({ method: "POST" })
     if (intake.integrations_content) {
       editedDocXml = injectIntegrationsContent(editedDocXml, intake.integrations_content, config);
     }
+    editedDocXml = replaceTocWithField(editedDocXml);
     zip.file("word/document.xml", editedDocXml);
 
     for (const filename of Object.keys(zip.files)) {
@@ -826,10 +884,11 @@ export const generateProposalFn = createServerFn({ method: "POST" })
     const filename = `iMocha_${safeClient}_${intake.product}_Proposal_DRAFT.${ext}`;
     const storagePath = `${data.bidId}/proposals/${filename}`;
 
+    console.log("[generateProposalFn] phase4 — uploading to storage:", storagePath, "size:", outputBuffer.length);
     const { error: storageErr } = await supabaseAdmin.storage
       .from("bid-documents")
       .upload(storagePath, outputBuffer, { contentType, upsert: true });
-    if (storageErr) console.error("[generate-proposal] storage upload error:", storageErr);
+    if (storageErr) console.error("[generateProposalFn] storage upload error:", storageErr);
 
     const { data: insertedDoc } = await (supabaseAdmin.from("bid_documents") as any).insert({
       bid_id: data.bidId,
@@ -852,6 +911,7 @@ export const generateProposalFn = createServerFn({ method: "POST" })
       .from("bid-documents")
       .createSignedUrl(storagePath, 120);
 
+    console.log("[generateProposalFn] done — signedUrl:", signedData?.signedUrl ? "generated" : "null", "filename:", filename);
     return new Response(
       JSON.stringify({ downloadUrl: signedData?.signedUrl ?? null, filename }),
       { headers: { "Content-Type": "application/json" } }

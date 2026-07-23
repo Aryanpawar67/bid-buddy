@@ -104,13 +104,17 @@ Generate up to 20 targeted clarification questions that iMocha must have answere
 HARD LIMIT: never exceed 20 questions total. Do not pad to reach 20 — only include questions that are genuinely necessary given the client's documents. Fewer is better than generic. Rank by priority: questions that block the proposal scope or commercial terms come first.
 
 CRITICAL LANGUAGE RULES — violations will be rejected:
-1. NEVER start a question with "The RFP/RFI/document references...", "As stated in...", "The document mentions...", "Based on the RFP...", "The evaluation criteria...", or any phrase that cites a document or source.
-2. Write each question as a natural, direct inquiry — as a knowledgeable professional would ask it in a meeting or letter, without referencing where you read the requirement.
-3. Wrong: "The RFP references 'UAE data hosting' as a scored requirement. Could you confirm..."
+1. PERSPECTIVE (most important): Every question must be iMocha asking the customer for information. The subject of every question is the customer's requirement, environment, preference, or expected behaviour — never iMocha's features or capabilities.
+   Wrong: "Does iMocha support SAML 2.0?" / "Can iMocha integrate with our ATS?" / "Is iMocha SOC 2 certified?"
+   Right: "Could you confirm whether SAML 2.0 or OIDC is required for SSO integration?" / "Could you confirm which ATS platform is currently in use?"
+   If a question asks about iMocha, reframe it as: what does the customer require, use, or expect — then ask that.
+2. NEVER start a question with "The RFP/RFI/document references...", "As stated in...", "The document mentions...", "Based on the RFP...", "The evaluation criteria...", or any phrase that cites a document or source.
+3. Write each question as a natural, direct inquiry — as a knowledgeable professional would ask it in a meeting or letter, without referencing where you read the requirement.
+4. Wrong: "The RFP references 'UAE data hosting' as a scored requirement. Could you confirm..."
    Right: "Could you confirm whether UAE-based data residency is a mandatory pass/fail requirement or an evaluation preference?"
-4. Wrong: "The evaluation criteria award four points for competency framework mapping — could DET share..."
+5. Wrong: "The evaluation criteria award four points for competency framework mapping — could DET share..."
    Right: "Would you be able to share the existing behavioural and technical competency frameworks so iMocha can assess mapping coverage?"
-5. Use "we understand", "we'd like to confirm", or simply ask directly — never attribute the question to a document.
+6. Use "we understand", "we'd like to confirm", "could you confirm", "would you be able to share" — never attribute the question to a document, and never imply the customer is asking iMocha anything.
 
 CONTENT RULES:
 - Specific — informed by the context above, not generic boilerplate
@@ -212,9 +216,10 @@ Generate exactly 1 targeted clarification question for the "${category}" categor
 It must be the single most important unanswered question in this category given the context above — specific, actionable, and directly relevant to iMocha's proposal.
 
 RULES:
-1. NEVER reference documents: no "The RFP states…", "As mentioned…", "Based on the document…"
-2. Write as a knowledgeable professional asking directly in a meeting or letter
-3. Use "we understand", "we'd like to confirm", or simply ask directly
+1. PERSPECTIVE (most important): iMocha is asking the customer for information. The question must be about the customer's requirement, environment, or preference — never about iMocha's capabilities. Wrong: "Does iMocha support X?" Right: "Could you confirm whether X is required?"
+2. NEVER reference documents: no "The RFP states…", "As mentioned…", "Based on the document…"
+3. Write as a knowledgeable professional asking directly in a meeting or letter
+4. Use "we understand", "we'd like to confirm", "could you confirm", or "would you be able to share"
 
 Return ONLY valid JSON — no markdown fences:
 { "questions": [{ "category": "${category}", "question": "..." }] }`;

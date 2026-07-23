@@ -415,13 +415,20 @@ export function useGenerateProposal() {
       force?: boolean;
     }) => {
       const { generateProposal } = await import("@/lib/api/ai-functions");
+      console.log("[useGenerateProposal] calling generateProposal, format:", input.format, "force:", input.force);
       const res = await generateProposal(input);
+      console.log("[useGenerateProposal] response status:", res.status, res.statusText);
       if (res.status === 409) {
         const conflict = await res.json() as { conflict: true; existingName: string; existingId: string };
         return { conflict: true as const, existingName: conflict.existingName, existingId: conflict.existingId, downloadUrl: null as null, filename: "" };
       }
-      if (!res.ok) throw new Error("Proposal generation failed");
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "(unreadable body)");
+        console.error("[useGenerateProposal] server error:", res.status, errText);
+        throw new Error(`Proposal generation failed (${res.status}): ${errText}`);
+      }
       const body = await res.json() as { downloadUrl: string | null; filename: string };
+      console.log("[useGenerateProposal] success, downloadUrl:", body.downloadUrl ? "present" : "null", "filename:", body.filename);
       return { conflict: false as const, existingName: "", existingId: "", downloadUrl: body.downloadUrl, filename: body.filename };
     },
   });
