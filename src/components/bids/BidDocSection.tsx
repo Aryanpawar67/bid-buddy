@@ -9,12 +9,13 @@ import type { Bid } from "@/lib/bid-queries";
 type FilterKey = "all" | DocType;
 
 const FILTERS: { key: FilterKey; label: string }[] = [
-  { key: "all",       label: "All" },
-  { key: "rfp",       label: "RFP" },
-  { key: "proposal",  label: "Proposal" },
-  { key: "legal",     label: "Legal" },
-  { key: "reference", label: "Reference" },
-  { key: "template",  label: "Template" },
+  { key: "all",           label: "All" },
+  { key: "rfp",           label: "RFP" },
+  { key: "proposal",      label: "Proposal" },
+  { key: "questionnaire", label: "Questionnaire" },
+  { key: "legal",         label: "Legal" },
+  { key: "reference",     label: "Reference" },
+  { key: "template",      label: "Template" },
 ];
 
 type Props = {

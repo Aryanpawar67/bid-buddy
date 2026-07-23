@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { indexDocument } from "@/lib/api/doc-functions";
 
-export type DocType = "rfp" | "proposal" | "legal" | "template" | "reference";
+export type DocType = "rfp" | "proposal" | "legal" | "template" | "reference" | "questionnaire";
 
 export type BidDocument = {
   id: string;

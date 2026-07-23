@@ -1,11 +1,13 @@
 import { useRef, useState } from "react";
-import { Download, FileSpreadsheet, Loader2, CheckCircle2, AlertCircle, X, ChevronDown, Pencil, Sparkles } from "lucide-react";
+import { Download, FileSpreadsheet, Loader2, CheckCircle2, AlertCircle, X, ChevronDown, Pencil, Sparkles, RotateCcw } from "lucide-react";
 import { useCurrentUser } from "@/lib/auth";
 import { useBids } from "@/lib/bid-queries";
 import { supabase } from "@/integrations/supabase/client";
 import { answerQuestionnaireFn } from "@/lib/api/answer-questionnaire";
 import { detectColumnsFn } from "@/lib/api/detect-questionnaire-columns";
 import ExcelJS from "exceljs";
+import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
 
 type Confidence = "high" | "medium" | "low";
 
@@ -180,10 +182,12 @@ function analyzeWorksheet(ws: ExcelJS.Worksheet): SheetAnalysis {
 export function QuestionnaireResponder() {
   const { user } = useCurrentUser();
   const { data: bids = [] } = useBids();
+  const qc = useQueryClient();
 
   const fileRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [bidId, setBidId] = useState<string>("__global");
+  const [savedDocId, setSavedDocId] = useState<string | null>(null);
 
   // Multi-sheet
   const [sheetNames, setSheetNames] = useState<string[]>([]);
@@ -388,68 +392,148 @@ export function QuestionnaireResponder() {
         }
       }
       setStep("done");
+      // Auto-save to bid documents when a bid is selected
+      if (bidId !== "__global") {
+        void saveToBidDocs();
+      }
     } catch (e: any) {
       setParseError(e.message ?? "Answering failed.");
       setStep("preview");
     }
   }
 
-  // ── Download ────────────────────────────────────────────────────────────────
+  // ── Answer again (go back to preview with same file) ─────────────────────────
 
-  async function downloadResult() {
-    if (!file || !answered.length) return;
+  function answerAgain() {
+    setAnswered([]);
+    setProgress(0);
+    setParseError(null);
+    setSavedDocId(null);
+    setStep("preview");
+  }
 
-    // Use cached workbook — preserves the selected sheet
+  // ── Build result buffer (shared between download + save) ────────────────────
+
+  async function buildResultBuffer(): Promise<{ buf: ArrayBuffer; filename: string } | null> {
+    if (!file || !answered.length) return null;
     const wb = wbRef.current;
-    if (!wb) return;
+    if (!wb) return null;
     const ws = wb.worksheets[selectedSheet];
-    if (!ws) return;
+    if (!ws) return null;
 
     const aCol = colLetterToNum(answerCol);
     const sCol = colLetterToNum(statusCol);
 
-    // Write column labels to the actual header row (not row 1 which may be a merged title)
-    // Only fill if the cell is currently empty — preserve original headers
+    // Write column labels to the actual header row only if the cell is currently empty
     const headerRowIdx = headerRows > 0 ? headerRows : 1;
     const hRow = ws.getRow(headerRowIdx);
     const aHeaderCell = hRow.getCell(aCol);
     const sHeaderCell = hRow.getCell(sCol);
     if (!String(aHeaderCell.value ?? "").trim()) {
       aHeaderCell.value = "iMocha Response";
-      aHeaderCell.font = { bold: true };
     }
     if (!String(sHeaderCell.value ?? "").trim()) {
       sHeaderCell.value = "Coverage";
-      sHeaderCell.font = { bold: true };
     }
 
     for (const a of answered) {
       const wsRow = ws.getRow(a.row);
+      // Answer column — plain text, no color formatting
       wsRow.getCell(aCol).value = a.answer;
-      wsRow.getCell(aCol).alignment = { wrapText: true };
-
-      const label = CONFIDENCE_LABEL[a.confidence];
-      const color = CONFIDENCE_COLOR[a.confidence].replace("#", "").toUpperCase();
-      wsRow.getCell(sCol).value = label;
-      wsRow.getCell(sCol).fill = { type: "pattern", pattern: "solid", fgColor: { argb: `FF${color}` } };
-      wsRow.getCell(sCol).font = { bold: true, color: { argb: "FFFFFFFF" } };
-      wsRow.getCell(sCol).alignment = { horizontal: "center" };
+      wsRow.getCell(aCol).alignment = { wrapText: true, vertical: "top" };
+      // Status column — plain text only, no background fill or font colors
+      wsRow.getCell(sCol).value = CONFIDENCE_LABEL[a.confidence];
+      wsRow.getCell(sCol).alignment = { horizontal: "center", vertical: "top" };
     }
 
     ws.getColumn(aCol).width = 60;
     ws.getColumn(sCol).width = 18;
 
-    // Make Excel open to the answered sheet, not sheet 0
+    // Make Excel open to the answered sheet
     wb.views = [{ activeTab: selectedSheet, type: "normal" } as any];
 
-    const out = await wb.xlsx.writeBuffer();
-    const blob = new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const buf = await wb.xlsx.writeBuffer();
+    const filename = `${file.name.replace(/\.xlsx$/i, "")} iMocha Responses.xlsx`;
+    return { buf, filename };
+  }
+
+  // ── Download ────────────────────────────────────────────────────────────────
+
+  async function downloadResult() {
+    const result = await buildResultBuffer();
+    if (!result) return;
+    const { buf, filename } = result;
+    const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${file.name.replace(/\.xlsx$/i, "")} — iMocha Responses.xlsx`;
+    a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  // ── Save to bid documents ────────────────────────────────────────────────────
+
+  async function saveToBidDocs(force = false): Promise<boolean> {
+    if (bidId === "__global") return false;
+    const result = await buildResultBuffer();
+    if (!result) return false;
+    const { buf, filename } = result;
+
+    // Check if a questionnaire response doc already exists for this bid
+    const { data: existing } = await (supabase as any)
+      .from("bid_documents")
+      .select("id, name, storage_path")
+      .eq("bid_id", bidId)
+      .eq("type", "questionnaire")
+      .eq("source", "generated")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (existing && !force) {
+      toast.warning(`Questionnaire response already exists: ${existing.name}`, {
+        description: "Replace it or keep the existing one.",
+        action: {
+          label: "Replace",
+          onClick: () => void saveToBidDocs(true),
+        },
+      });
+      return false;
+    }
+
+    // Delete old file from storage + DB if replacing
+    if (existing && force) {
+      await supabase.storage.from("bid-documents").remove([existing.storage_path]);
+      await (supabase as any).from("bid_documents").delete().eq("id", existing.id);
+    }
+
+    const storagePath = `${bidId}/questionnaire/${filename}`;
+    const fileBlob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const { error: storageErr } = await supabase.storage
+      .from("bid-documents")
+      .upload(storagePath, fileBlob, { upsert: true });
+
+    if (storageErr) {
+      toast.error("Failed to save questionnaire response.");
+      return false;
+    }
+
+    const { data: session } = await supabase.auth.getSession();
+    const { data: doc } = await (supabase as any).from("bid_documents").insert({
+      bid_id: bidId,
+      name: filename,
+      type: "questionnaire",
+      stage: "rfi",
+      storage_path: storagePath,
+      size_bytes: buf.byteLength,
+      uploaded_by: session?.session?.user?.id ?? user?.id,
+      source: "generated",
+    }).select("id").single();
+
+    if (doc?.id) setSavedDocId(doc.id);
+    qc.invalidateQueries({ queryKey: ["documents"] });
+    return true;
   }
 
   // ── Reset ───────────────────────────────────────────────────────────────────
@@ -468,6 +552,7 @@ export function QuestionnaireResponder() {
     setAnswered([]);
     setParseError(null);
     setProgress(0);
+    setSavedDocId(null);
     setStep("upload");
     if (fileRef.current) fileRef.current.value = "";
   }
@@ -882,25 +967,44 @@ export function QuestionnaireResponder() {
         {/* ── Step 5: Done ────────────────────────────────────────────────── */}
         {step === "done" && (
           <div className="max-w-2xl space-y-4">
-            <div className="flex items-center gap-3 p-4 rounded-xl bg-emerald-500/10 border hairline border-emerald-500/30">
-              <CheckCircle2 className="size-5 text-emerald-600 shrink-0" />
-              <div className="flex-1">
+            {/* Success banner */}
+            <div className="flex items-start gap-3 p-4 rounded-xl bg-emerald-500/10 border hairline border-emerald-500/30">
+              <CheckCircle2 className="size-5 text-emerald-600 shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
                 <p className="text-[13px] font-semibold text-emerald-700 dark:text-emerald-400">
-                  Done — {answered.length} questions answered
+                  {answered.length} questions answered
                 </p>
                 <p className="text-[11px] text-muted-foreground mt-0.5">
                   {answered.filter((a) => a.confidence === "high").length} supported ·{" "}
                   {answered.filter((a) => a.confidence === "medium").length} partial ·{" "}
                   {answered.filter((a) => a.confidence === "low").length} review required
                 </p>
+                {savedDocId && bidId !== "__global" && (
+                  <p className="text-[11px] text-emerald-600 mt-1 font-medium">
+                    ✓ Saved to bid documents — visible in the Questionnaire tab
+                  </p>
+                )}
+                {bidId !== "__global" && !savedDocId && (
+                  <p className="text-[11px] text-muted-foreground mt-1">Saving to bid documents…</p>
+                )}
               </div>
-              <button
-                onClick={downloadResult}
-                className="h-8 px-3.5 rounded-md bg-primary text-white text-[12px] font-semibold inline-flex items-center gap-2 hover:bg-primary/90 transition-colors shrink-0"
-              >
-                <Download className="size-3.5" /> Download XLSX
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={answerAgain}
+                  className="h-8 px-3 rounded-md hairline border border-border bg-card text-[11px] text-foreground font-medium inline-flex items-center gap-1.5 hover:bg-muted transition-colors"
+                >
+                  <RotateCcw className="size-3" /> Answer again
+                </button>
+                <button
+                  onClick={downloadResult}
+                  className="h-8 px-3.5 rounded-md bg-primary text-white text-[12px] font-semibold inline-flex items-center gap-2 hover:bg-primary/90 transition-colors"
+                >
+                  <Download className="size-3.5" /> Download XLSX
+                </button>
+              </div>
             </div>
+
+            {/* All answers */}
             <div className="rounded-lg hairline border border-border overflow-hidden">
               <div className="bg-muted px-3 py-1.5 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold border-b hairline border-border">
                 All answers
