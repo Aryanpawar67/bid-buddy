@@ -77,6 +77,7 @@ async function answerOne(
   row: number,
   question: string,
   bidId: string | null,
+  additionalContext?: string,
 ): Promise<{ row: number; answer: string; confidence: "high" | "medium" | "low"; sources: string[] }> {
   const chunks = await runSearch(question, bidId);
   const context = formatChunks(chunks);
@@ -106,9 +107,13 @@ ACCURACY — critical:
 - PAM (Privileged Access Management): iMocha enforces RBAC and least-privilege on the application layer; OS-level privileged access is managed by Azure's managed services.
 - Session recording: iMocha maintains audit logs and access logs for all user activity and privileged actions within the platform; full session-video recording is not a feature of an assessment SaaS platform and should not be claimed.`;
 
+  const contextBlock = additionalContext?.trim()
+    ? `\n\nADDITIONAL ANALYST CONTEXT (apply to all answers):\n${additionalContext.trim()}`
+    : "";
+
   const userContent = context
-    ? `KNOWLEDGE BASE EXCERPTS:\n${context}\n\nQUESTION:\n${question}`
-    : `QUESTION:\n${question}`;
+    ? `KNOWLEDGE BASE EXCERPTS:\n${context}${contextBlock}\n\nQUESTION:\n${question}`
+    : `${contextBlock ? contextBlock.trim() + "\n\n" : ""}QUESTION:\n${question}`;
 
   const msg = await anthropic.messages.create({
     model: "claude-haiku-4-5-20251001",
@@ -131,6 +136,7 @@ ACCURACY — critical:
 export type AnswerQuestionnaireInput = {
   questions: { row: number; text: string }[];
   bidId: string | null;
+  additionalContext?: string;
 };
 
 export const answerQuestionnaireFn = createServerFn({ method: "POST" }).handler(
@@ -143,7 +149,7 @@ export const answerQuestionnaireFn = createServerFn({ method: "POST" }).handler(
     } = await supabaseAdmin.auth.getUser(token);
     if (authErr || !user) throw new Error("Unauthorized");
 
-    const { questions, bidId } = data;
+    const { questions, bidId, additionalContext } = data;
     const enc = new TextEncoder();
 
     const stream = new ReadableStream({
@@ -152,7 +158,7 @@ export const answerQuestionnaireFn = createServerFn({ method: "POST" }).handler(
         for (let i = 0; i < questions.length; i += BATCH) {
           const batch = questions.slice(i, i + BATCH);
           const results = await Promise.all(
-            batch.map((q) => answerOne(q.row, q.text, bidId)),
+            batch.map((q) => answerOne(q.row, q.text, bidId, additionalContext)),
           );
           for (const r of results) {
             controller.enqueue(enc.encode(JSON.stringify(r) + "\n"));

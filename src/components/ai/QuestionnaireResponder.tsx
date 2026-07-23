@@ -208,6 +208,8 @@ export function QuestionnaireResponder() {
   // Columns that provide per-row context for each question (e.g. Domain, Category)
   const [contextCols, setContextCols] = useState<string[]>([]);
 
+  const [additionalContext, setAdditionalContext] = useState("");
+
   // Flow
   const [step, setStep] = useState<"upload" | "detecting" | "confirm" | "preview" | "answering" | "done">("upload");
   const [questions, setQuestions] = useState<ParsedRow[]>([]);
@@ -363,7 +365,11 @@ export function QuestionnaireResponder() {
 
     try {
       const resp = (await answerQuestionnaireFn({
-        data: { questions, bidId: bidId === "__global" ? null : bidId },
+        data: {
+          questions,
+          bidId: bidId === "__global" ? null : bidId,
+          additionalContext: additionalContext.trim() || undefined,
+        },
         headers: { authorization: `Bearer ${token}` },
       })) as unknown as Response;
 
@@ -414,87 +420,51 @@ export function QuestionnaireResponder() {
 
   // ── Build result buffer (shared between download + save) ────────────────────
   //
-  // Root-cause note: mutating wbRef.current and calling xlsx.writeBuffer() re-serialises
-  // EVERY style from the original file (blue/pink fills, coloured fonts, borders).
-  // Fix: build a BRAND-NEW workbook, copy only cell values + row heights + column widths,
-  // then write our answers. No original styles survive.
+  // Strategy: re-load the original file from disk into a fresh workbook so all
+  // client-side formatting (fills, fonts, borders, merged cells) is preserved
+  // exactly. Then write only into the answer and status columns. Nothing else
+  // is touched — no style overrides, no column width changes, no header rewrites
+  // unless the header cell was already empty.
 
   async function buildResultBuffer(): Promise<{ buf: ArrayBuffer; filename: string } | null> {
     if (!file || !answered.length) return null;
-    const srcWb = wbRef.current;
-    if (!srcWb) return null;
-    const srcWs = srcWb.worksheets[selectedSheet];
-    if (!srcWs) return null;
 
     const aColNum = colLetterToNum(answerCol);
     const sColNum = colLetterToNum(statusCol);
-
-    // Map answered rows for fast lookup
     const answerMap = new Map(answered.map((a) => [a.row, a]));
 
-    // ── New clean workbook ──────────────────────────────────────────────────
-    const newWb = new ExcelJS.Workbook();
-    const newWs = newWb.addWorksheet(srcWs.name || "Responses");
+    // Fresh load of the original file — preserves all client-side formatting
+    const originalBuf = await file.arrayBuffer();
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(originalBuf);
 
-    // Copy column widths (no styles)
-    const lastCol = srcWs.columnCount || 10;
-    for (let c = 1; c <= lastCol; c++) {
-      const srcCol = srcWs.getColumn(c);
-      const newCol = newWs.getColumn(c);
-      newCol.width = typeof srcCol.width === "number" ? srcCol.width : 15;
+    const ws = wb.worksheets[selectedSheet];
+    if (!ws) return null;
+
+    // Write only to answer + status columns; leave all other cells untouched
+    for (const [rowNum, a] of answerMap) {
+      const row = ws.getRow(rowNum);
+
+      const ansCell = row.getCell(aColNum);
+      ansCell.value = a.answer;
+      ansCell.alignment = { wrapText: true, vertical: "top" };
+
+      const stCell = row.getCell(sColNum);
+      stCell.value = CONFIDENCE_LABEL[a.confidence];
+      stCell.alignment = { horizontal: "center", vertical: "top" };
     }
-    // Override answer + status column widths
-    newWs.getColumn(aColNum).width = 60;
-    newWs.getColumn(sColNum).width = 18;
 
-    // Determine the header row index
+    // Add header labels only if those cells are currently empty
     const headerRowIdx = headerRows > 0 ? headerRows : 1;
-
-    // Copy rows — values only, no fills, no font colours
-    srcWs.eachRow({ includeEmpty: false }, (srcRow, rowNum) => {
-      const newRow = newWs.getRow(rowNum);
-      // Preserve row height for readability
-      if (srcRow.height) newRow.height = srcRow.height;
-
-      srcRow.eachCell({ includeEmpty: true }, (srcCell, colNum) => {
-        const newCell = newRow.getCell(colNum);
-        // Value only — skip all styling
-        newCell.value = srcCell.value;
-        newCell.alignment = { wrapText: true, vertical: "top" };
-        // Bold on the header row to keep column labels readable
-        if (rowNum === headerRowIdx) {
-          newCell.font = { bold: true };
-          newCell.alignment = { wrapText: true, vertical: "middle", horizontal: "center" };
-        }
-      });
-
-      // Inject iMocha's answer + coverage status
-      const a = answerMap.get(rowNum);
-      if (a) {
-        // Answer cell
-        const ansCell = newRow.getCell(aColNum);
-        ansCell.value = a.answer;
-        ansCell.alignment = { wrapText: true, vertical: "top" };
-
-        // Status cell — plain text, no fill
-        const stCell = newRow.getCell(sColNum);
-        stCell.value = CONFIDENCE_LABEL[a.confidence];
-        stCell.alignment = { horizontal: "center", vertical: "top" };
-      }
-    });
-
-    // Ensure header labels exist in answer/status columns
-    const hRow = newWs.getRow(headerRowIdx);
+    const hRow = ws.getRow(headerRowIdx);
     if (!String(hRow.getCell(aColNum).value ?? "").trim()) {
       hRow.getCell(aColNum).value = "iMocha Response";
-      hRow.getCell(aColNum).font = { bold: true };
     }
     if (!String(hRow.getCell(sColNum).value ?? "").trim()) {
       hRow.getCell(sColNum).value = "Coverage";
-      hRow.getCell(sColNum).font = { bold: true };
     }
 
-    const buf = await newWb.xlsx.writeBuffer();
+    const buf = await wb.xlsx.writeBuffer();
     const filename = `${file.name.replace(/\.xlsx$/i, "")} iMocha Responses.xlsx`;
     return { buf, filename };
   }
@@ -595,6 +565,7 @@ export function QuestionnaireResponder() {
     setParseError(null);
     setProgress(0);
     setSavedDocId(null);
+    setAdditionalContext("");
     setStep("upload");
     if (fileRef.current) fileRef.current.value = "";
   }
@@ -969,6 +940,24 @@ export function QuestionnaireResponder() {
               {questions.length > 5 && (
                 <div className="px-3 py-2 text-[11px] text-muted-foreground">+ {questions.length - 5} more questions</div>
               )}
+            </div>
+
+            {/* Additional context for the AI */}
+            <div>
+              <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold block mb-1.5">
+                Additional context for the AI
+                <span className="ml-1.5 text-[10px] font-normal normal-case">(optional)</span>
+              </label>
+              <textarea
+                value={additionalContext}
+                onChange={(e) => setAdditionalContext(e.target.value)}
+                placeholder="e.g. Focus on TA product only. We do not support SAP SF. Client is a government entity — avoid mentioning pricing tiers."
+                rows={3}
+                className="w-full rounded-md hairline border border-border bg-card px-3 py-2 text-[12px] text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:ring-2 focus:ring-primary/40"
+              />
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Constraints, product focus, or client-specific notes applied to every answer.
+              </p>
             </div>
 
             {parseError && (
