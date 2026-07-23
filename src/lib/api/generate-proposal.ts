@@ -50,95 +50,141 @@ type TemplateConfig = {
   anchors: {
     deliverablesHeading: string;
     integrationsBookmark: string;
+    deliverablesSubheading?: string;  // optional Heading2 inserted before bullet list
   };
+  injectTocHeading?: boolean;  // true = prepend a "Table of Content" Heading1 before first TOC entry
 };
 
-const DEFAULT_INTEGRATIONS =
-  "Workday, SAP SuccessFactors, Cornerstone OnDemand, Degreed, and other LTI-compliant LMS/LXP platforms";
-
-const COVER_PAGE_NOTE = "Please find our proposal attached for your review.";
-
-// ── TA template ─────────────────────────────────────────────────────────────────
-// Uses XML-tag style placeholders: &lt;Token&gt; for most fields,
-// a standalone <w:t>Name</w:t> run for Prepared For, and proofErr-split
-// <Sales spoc name> for the SPOC name.
+// ── TA template (Jul 2026 version) ──────────────────────────────────────────────
+// Cover tokens: "Customer (CUSTOMER)", "CUSTOMER Team", "Sales person",
+//   "iMocha@imocha.io ", "Subject: Proposal Submission –<...>", "Dear <Customer name>,"
+// Exec placeholders: "<Cover page details>", "<Write strategic objective of customer>",
+//   "<Mention the details for what customer is looking for>",
+//   "<Instuction: Write the details scope of work...>"  (note: typo in template)
+// Body: "CUSTOMER" appears inline throughout; "&lt;RFP Name&gt;" on cover
+// Deliverables inject after "Key Deliverables: " heading in Project Plan section
 const TA_CONFIG: TemplateConfig = {
   filename: TA_TEMPLATE,
   anchors: {
-    deliverablesHeading:   "2.1 In scope Key Deliverables",
-    integrationsBookmark:  "_Integration_with_SAP",
+    deliverablesHeading:  "Key Deliverables: ",
+    integrationsBookmark: "",
+    deliverablesSubheading: "In Scope Deliverables",
   },
-  headerFooter: [
-    { token: "&lt;Customer Name&gt;", value: i => sanitize(i.customer_display_name) },
-    { token: "&lt;RFP Name&gt;",      value: i => sanitize(i.rfp_name) },
-    { token: "CUSTOMER NAME",         value: i => sanitize(i.customer_display_name) },
-  ],
+  injectTocHeading: true,  // TA template has no "Table of Content" heading above TOC entries
+  headerFooter: [],  // headers are static in this template
   substitutions: [
-    { token: "&lt;RFP Name&gt;",                                                       strategy: "direct",    value: i => sanitize(i.rfp_name) },
-    { token: "&lt;Customer Name&gt;",                                                  strategy: "direct",    value: i => sanitize(i.customer_display_name) },
-    // Prepared For: "Name" is a standalone run after the "Prepared For:" label
-    { token: "<w:t>Name</w:t>",                                                        strategy: "raw-xml",   value: i => `<w:t xml:space="preserve">${xmlEscape(sanitize(i.prepared_for))}</w:t>` },
-    // SPOC name — split across runs by spell-checker
-    { token: "<Sales spoc name>",                                                      strategy: "paragraph", value: i => sanitize(i.spoc_name) },
-    { token: "Sales email id",                                                         strategy: "direct",    value: i => sanitize(i.spoc_email) },
-    { token: "&lt;How we are pleased to provide the solution&gt;",                     strategy: "direct",    value: i => sanitize(i.exec_summary.pleased) },
-    { token: "&lt;How we are aligned with customer goals and their requirement&gt;",   strategy: "direct",    value: i => sanitize(i.exec_summary.aligned) },
-    { token: "&lt;How confident we are to deliver value&gt;",                          strategy: "direct",    value: i => sanitize(i.exec_summary.confident) },
-    { token: "<How scope is aligned to what iMocha can deliver>",                      strategy: "paragraph", value: i => sanitize(i.scope_intro) },
-    { token: "&lt;HRMS, LMS, LXP",                                                     strategy: "direct",    value: i => sanitize(i.integrations ?? DEFAULT_INTEGRATIONS) },
+    // ── Paragraph-level (whole-paragraph exact match, decoded text) ──────────
+    { token: "Customer (CUSTOMER)",
+      strategy: "paragraph", value: i => sanitize(i.customer_display_name) },
+    { token: "CUSTOMER Team",
+      strategy: "paragraph", value: i => sanitize(i.prepared_for) },
+    { token: "To:CUSTOMER Team",
+      strategy: "paragraph", value: i => `To: ${sanitize(i.prepared_for || i.customer_display_name)}` },
+    { token: "Sales person",
+      strategy: "paragraph", value: i => sanitize(i.spoc_name) },
+    { token: "iMocha@imocha.io ",  // trailing space is in the template paragraph
+      strategy: "paragraph", value: i => sanitize(i.spoc_email) },
+    { token: "Subject: Proposal Submission –<Mention subject for cover page>",
+      strategy: "paragraph", value: i => `Subject: Proposal Submission — ${sanitize(i.rfp_name)}` },
+    { token: "Dear <Customer name>,",
+      strategy: "paragraph", value: i => `Dear ${sanitize(i.customer_display_name)},` },
+    // Cover letter body placeholder → exec_summary.pleased (warm intro)
+    { token: "<Cover page details>",
+      strategy: "paragraph", value: i => sanitize(i.exec_summary.pleased) },
+    // Understanding of CUSTOMER Objectives section
+    // sanitizeMultiLine preserves \n so the AI-authored content can create multiple paragraphs
+    { token: "<Write strategic objective of customer>",
+      strategy: "paragraph", value: i => sanitizeMultiLine(i.exec_summary.aligned) },
+    // "What customer is looking for?" — expects bullet lines prefixed with "• "
+    { token: "<Mention the details for what customer is looking for>",
+      strategy: "paragraph", value: i => sanitizeMultiLine(i.exec_summary.confident) },
+    // Scope of Work section (note: "Instuction" is a typo in the template)
+    { token: "<Instuction: Write the details scope of work and requirement from customer; do not assume anything>",
+      strategy: "paragraph", value: i => sanitizeMultiLine(i.scope_intro) },
+    // ── Direct (inline substring replacement throughout body text) ────────────
+    { token: "&lt;RFP Name&gt;", strategy: "direct", value: i => sanitize(i.rfp_name) },
+    // "CUSTOMER" appears inline in section headings, body sentences, table cells
+    { token: "CUSTOMER",         strategy: "direct", value: i => sanitize(i.customer_display_name) },
   ],
 };
 
-// ── TM template ─────────────────────────────────────────────────────────────────
-// Uses all-caps CUSTOMER as a token (no XML tags), "Sales person" for SPOC name,
-// "@imocha.io" hyperlink text for SPOC email. Many tokens are split across runs
-// by the spell-checker so require paragraph-level matching.
-// Order matters within each strategy pass — more-specific tokens before solo CUSTOMER
-// so "CUSTOMER Team" is handled as prepared_for before "CUSTOMER" fires.
+// ── TM template (Jul 2026 version) ──────────────────────────────────────────────
+// Paragraph-level highlighted tokens:
+//   "(Change this to reflect the customer’s RFP title)" — cover page subtitle (×2)
+//   "Business Proposal: Skills Intelligence for [Customer Name]" — cover subtitle (×2)
+//   "Prepared For:Name", "Customer Name", "[Customer/Partner Email]" — cover Prepared For block (×2)
+//   "<iMocha Sales Representative>", "iMochaname@imocha.io | +91 xxxxx xxxxx" — cover Prepared By (×2)
+//   "<Sales Representative>Designation, iMochaname@imocha.io | +91 xxxxx xxxxx" — exec letter sign-off
+//   TM_EXEC_* — exec summary highlighted paragraphs → AI-generated content
+//   "(Change this to reflect the customer’s HR Tech Ecosystem...)" — para 133
+// Direct tokens: [Customer Name], [Company Name], [Company Names], [HCM / HRIS],
+//   [LMS/LXP], [LMS /LXP], [Talent Marketplace], [Content Provider], [Project Management System]
+// Deliverables + scope_intro inject after "7. Proposal Summary" with "In Scope Deliverables" subheading
+
+// Exact decoded text of the two highlighted exec-summary paragraphs in the TM template.
+// These are used as paragraph-level tokens — the full text must match exactly.
+const TM_EXEC_PARA1 =
+  "Through this document, we highlight the critical shifts shaping workforce transformation and demonstrate why iMocha is the ideal partner to accelerate [Customer Name]’s journey toward skills intelligence. By combining AI-powered Skills Inference and Validation, enriched skills data, and advanced analytics for mobility, upskilling, and workforce planning, iMocha creates a continuous cycle of visibility and growth powered by real-time, validated skills insights.";
+const TM_EXEC_PARA2 =
+  "We are confident that iMocha’s enterprise-grade Skills Intelligence will help [Customer Name] unlock measurable impact—bridging the gap between talent supply and business demand—while transforming how skills drive performance, mobility, and organizational readiness. We look forward to partnering on this strategic initiative.";
+
 const TM_CONFIG: TemplateConfig = {
   filename: TM_TEMPLATE,
   anchors: {
-    deliverablesHeading:   "Key Deliverables: ",
-    integrationsBookmark:  "_Integration_with_SAP",
+    deliverablesHeading:    "7. Proposal Summary",
+    integrationsBookmark:   "",
+    deliverablesSubheading: "In Scope Deliverables",
   },
-  headerFooter: [
-    { token: "&lt;RFP Name&gt;", value: i => sanitize(i.rfp_name) },
-    { token: "CUSTOMER",         value: i => sanitize(i.customer_display_name) },
-  ],
+  headerFooter: [],
   substitutions: [
-    // ── Paragraph-level (split-run tokens, must run before direct CUSTOMER) ───
-    // Cover page title — runs: "Customer" + " (" + "CUSTOMER" + ")"
-    { token: "Customer (CUSTOMER)",          strategy: "paragraph", value: i => sanitize(i.customer_display_name) },
-    // Prepared For — runs: "CUSTOMER" + " Team"
-    { token: "CUSTOMER Team",                strategy: "paragraph", value: i => sanitize(i.prepared_for) },
-    // Cover letter To: line — runs: "To:" + "CUSTOMER" + " Team"
-    { token: "To:CUSTOMER Team",             strategy: "paragraph", value: i => "To:" + sanitize(i.prepared_for) },
-    // Cover letter Dear line — runs: "Dear " + "&lt;Customer name&gt;" + ","
-    { token: "Dear <Customer name>,",        strategy: "paragraph", value: i => "Dear " + sanitize(i.customer_display_name) + "," },
-    // Cover letter body placeholder
-    { token: "<Cover page details>",         strategy: "paragraph", value: _ => COVER_PAGE_NOTE },
-    // SPOC name — same text appears in Prepared By (×2) and cover letter sign-off
-    { token: "Sales person",                 strategy: "paragraph", value: i => sanitize(i.spoc_name) },
-    // Scope intro
-    { token: "<How scope is aligned to what iMocha can deliver>", strategy: "paragraph", value: i => sanitize(i.scope_intro) },
-
-    // ── Direct (single-run XML tokens) ───────────────────────────────────────
-    { token: "&lt;RFP Name&gt;",                                                       strategy: "direct",    value: i => sanitize(i.rfp_name) },
-    { token: "&lt;Mention subject for cover page&gt;",                                 strategy: "direct",    value: i => sanitize(i.rfp_name) },
-    // Remaining CUSTOMER in body paragraphs (paragraph-level already handled the
-    // whole-paragraph cases above, so only long body-text instances remain)
-    { token: "CUSTOMER",                                                               strategy: "direct",    value: i => sanitize(i.customer_display_name) },
-    // Dear line fallback — single run if spell-checker didn't split it
-    { token: "&lt;Customer name&gt;",                                                  strategy: "direct",    value: i => sanitize(i.customer_display_name) },
-    // Cover page details fallback — single run if it wasn't paragraph-matched
-    { token: "&lt;Cover page details&gt;",                                             strategy: "direct",    value: _ => COVER_PAGE_NOTE },
-    // SPOC email — "@imocha.io" is the hyperlink text in the Prepared By block
-    { token: "@imocha.io",                                                             strategy: "direct",    value: i => sanitize(i.spoc_email) },
-    // Exec summary (may not exist in TM template — harmless if no match)
-    { token: "&lt;How we are pleased to provide the solution&gt;",                     strategy: "direct",    value: i => sanitize(i.exec_summary.pleased) },
-    { token: "&lt;How we are aligned with customer goals and their requirement&gt;",   strategy: "direct",    value: i => sanitize(i.exec_summary.aligned) },
-    { token: "&lt;How confident we are to deliver value&gt;",                          strategy: "direct",    value: i => sanitize(i.exec_summary.confident) },
-    { token: "&lt;HRMS, LMS, LXP",                                                     strategy: "direct",    value: i => sanitize(i.integrations ?? DEFAULT_INTEGRATIONS) },
+    // ── Paragraph-level ───────────────────────────────────────────────────────
+    // Cover page subtitle — short proposal title generated by AI
+    { token: "(Change this to reflect the customer’s RFP title)",
+      strategy: "paragraph", value: i => sanitize(i.rfp_name) },
+    // Cover page subheading (appears twice)
+    { token: "Business Proposal: Skills Intelligence for [Customer Name]",
+      strategy: "paragraph", value: i => `Business Proposal: Skills Intelligence for ${sanitize(i.customer_display_name)}` },
+    // Prepared For block (appears twice — cover + duplicate section)
+    { token: "Prepared For:Name",
+      strategy: "paragraph", value: i => `Prepared For: ${sanitize(i.prepared_for)}` },
+    { token: "Customer Name",
+      strategy: "paragraph", value: i => sanitize(i.customer_display_name) },
+    // Client contact email — separate from iMocha SPOC email
+    { token: "[Customer/Partner Email]",
+      strategy: "paragraph", value: _i => "[CONFIRM: client procurement contact email address]" },
+    { token: "<iMocha Sales Representative>",
+      strategy: "paragraph", value: i => sanitize(i.spoc_name) },
+    { token: "iMochaname@imocha.io | +91 xxxxx xxxxx",
+      strategy: "paragraph", value: i => sanitize(i.spoc_email) },
+    { token: "<Sales Representative>Designation, iMochaname@imocha.io | +91 xxxxx xxxxx",
+      strategy: "paragraph", value: i => `${sanitize(i.spoc_name)}, iMocha | ${sanitize(i.spoc_email)}` },
+    // Exec summary highlighted paragraphs → AI-generated aligned + confident content
+    { token: TM_EXEC_PARA1,
+      strategy: "paragraph", value: i => sanitize(i.exec_summary.aligned) },
+    { token: TM_EXEC_PARA2,
+      strategy: "paragraph", value: i => sanitize(i.exec_summary.confident) },
+    // HR tech ecosystem summary para (highlighted) → derived from TM intake fields
+    { token: "(Change this to reflect the customer’s HR Tech Ecosystem for eg. SAP SF, Workday etc)",
+      strategy: "paragraph", value: i => {
+        const parts: string[] = [];
+        if (i.hcm_hris)           parts.push(`HCM/HRIS: ${sanitize(i.hcm_hris)}`);
+        if (i.lms_lxp)            parts.push(`LMS/LXP: ${sanitize(i.lms_lxp)}`);
+        if (i.talent_marketplace) parts.push(`Talent Marketplace: ${sanitize(i.talent_marketplace)}`);
+        if (i.content_provider)   parts.push(`Content Provider: ${sanitize(i.content_provider)}`);
+        return parts.length
+          ? parts.join(" · ")
+          : "[CONFIRM: HR tech ecosystem — specify HCM/HRIS, LMS/LXP, talent marketplace, content provider]";
+      } },
+    // ── Direct (inline replacement within body paragraphs) ─────────────────────
+    { token: "[Customer Name]",         strategy: "direct", value: i => sanitize(i.customer_display_name) },
+    { token: "[Company Name]",          strategy: "direct", value: i => sanitize(i.customer_display_name) },
+    { token: "[Company Names]",         strategy: "direct", value: i => sanitize(i.customer_display_name) },
+    { token: "[HCM / HRIS]",           strategy: "direct", value: i => sanitize(i.hcm_hris         ?? "[CONFIRM: HCM/HRIS system — e.g. Workday, SuccessFactors, SAP]") },
+    { token: "[LMS/LXP]",              strategy: "direct", value: i => sanitize(i.lms_lxp          ?? "[CONFIRM: LMS/LXP platform — e.g. Cornerstone, Degreed, Udemy Business]") },
+    { token: "[LMS /LXP]",             strategy: "direct", value: i => sanitize(i.lms_lxp          ?? "[CONFIRM: LMS/LXP platform — e.g. Cornerstone, Degreed, Udemy Business]") },
+    { token: "[Talent Marketplace]",    strategy: "direct", value: i => sanitize(i.talent_marketplace ?? "[CONFIRM: Talent marketplace — e.g. Gloat, Eightfold, Phenom]") },
+    { token: "[Content Provider]",      strategy: "direct", value: i => sanitize(i.content_provider  ?? "[CONFIRM: Content provider — e.g. LinkedIn Learning, Coursera, Pluralsight]") },
+    { token: "[Project Management System]", strategy: "direct", value: _i => "[CONFIRM: project management system]" },
   ],
 };
 
@@ -162,8 +208,13 @@ export const IntakeSchema = z.object({
   }),
   scope_intro: z.string(),
   deliverables: z.array(z.string()),
-  integrations: z.string().optional(),         // comma-separated platform names for heading
-  integrations_content: z.string().optional(), // full paragraph injected into section body
+  integrations: z.string().optional(),         // comma-separated platform names (TA heading)
+  integrations_content: z.string().optional(), // full paragraph injected into section body (TA)
+  // TM-specific: HR ecosystem platform names — map to [HCM / HRIS], [LMS/LXP], etc.
+  hcm_hris: z.string().optional(),
+  lms_lxp: z.string().optional(),
+  talent_marketplace: z.string().optional(),
+  content_provider: z.string().optional(),
 });
 
 export type Intake = z.infer<typeof IntakeSchema>;
@@ -357,17 +408,21 @@ Whenever a field requires client-specific information that is NOT explicitly pre
 Output a single valid JSON object with this exact schema (no markdown, no code blocks, no extra text):
 {
   "product": "Use the Product field from Bid Metadata if present (TA or TM). Otherwise infer from context: TA for hiring/recruitment/assessment/candidates, TM for skills/competency/workforce development.",
-  "rfp_name": "bid title verbatim + ' — iMocha Proposal'",
+  "rfp_name": "TA proposals: bid title verbatim + ' — iMocha Skills Assessment Proposal'. TM proposals: a SHORT (4–7 words) proposal title capturing the strategic initiative (e.g. 'Skills Intelligence for Digital Workforce Transformation'). Derive from bid title + uploaded documents. Do NOT use the full bid title verbatim for TM.",
   "customer_display_name": "client name exactly as it should appear throughout the document",${spocFields}
   "exec_summary": {
-    "pleased": "SHORT paragraph — 2 to 3 sentences. Warmly introduce iMocha [TA or TM] as the recommended platform for [client name]. State the headline value iMocha delivers. Be direct and confident.",
-    "aligned": "MEDIUM paragraph — 3 to 5 sentences. Open by naming the client's specific challenge or stated requirement drawn from the uploaded documents or bid questions. If no specific challenge is found in the context, start the paragraph with [CONFIRM: client pain point not found in uploaded documents — describe the actual business challenge here]. Then explain how iMocha addresses each named requirement. Close with any explicit scope exclusions or boundaries stated in the RFP.",
-    "confident": "MEDIUM paragraph — 3 to 5 sentences. Lead with iMocha's proof points: Azure SaaS infrastructure, ISO 27001, SOC 2 Type II, 99.9% uptime SLA. Then name the specific integration platforms relevant to this client — these MUST match the 'integrations' field you are about to write; if that field has a [CONFIRM: ...] token, write [CONFIRM: integration platform unconfirmed — update to match client's actual tech stack] here instead of guessing. Close with a forward-looking partnership statement."
+    "pleased": "TA proposals — SHORT paragraph (2–3 sentences, no newlines): warmly introduce iMocha Skills Assessment as the recommended platform for [client name], state the headline value delivered, be direct and confident. TM proposals — this field populates the cover letter body (Prepared For section). Write 2–3 sentences (no newlines): warmly introduce iMocha Skills Intelligence, reference the client by name, state the headline value. Be warm and direct.",
+    "aligned": "TA: TWO paragraphs separated by a single \\n character (newline in the JSON string). First paragraph (2–3 sentences): name the client's specific strategic challenge or stated objective drawn from context. Second paragraph (2–3 sentences): explain why iMocha addresses it — reference specific capabilities. Do NOT use bullet points. Do NOT write a single merged paragraph — the \\n line break is required. TM: single paragraph (no newlines) about why iMocha is the ideal partner, referencing specific client requirements. If no specific challenge found: start first paragraph with [CONFIRM: client pain point not found in uploaded documents — describe the actual business challenge here].",
+    "confident": "TA: Bullet-point list — each requirement on its own line starting with '• ' (the bullet character U+2022 followed by a space). 3–5 bullets max. Each bullet: 'iMocha [capability] addresses [client requirement]'. Separate bullets with \\n (newline). Do NOT write a paragraph. TM: single paragraph (no newlines) — a confidence statement grounded in iMocha proof points (ISO 27001, SOC 2 Type II, 99.9% SLA) and client-specific context. Always close with a forward-looking partnership statement."
   },
-  "scope_intro": "One concise paragraph. Describe the in-scope work by citing specific requirements found in the uploaded documents or bid questions. If no specific requirements are traceable to the context, start the paragraph with [CONFIRM: scope requirements not found in uploaded documents — replace with actual in-scope items from the RFP]. Close with a sentence listing explicit out-of-scope exclusions; if none stated, write [CONFIRM: out-of-scope items not specified — confirm with client].",
-  "integrations": "Comma-separated list of HRMS, ATS, LMS, or LXP platform names that are explicitly named in the uploaded documents, bid questions, or chat history. ONLY list platforms you can directly trace to the provided context. If no specific platforms are mentioned anywhere, output exactly: [CONFIRM: ATS/HRMS/LMS platform not specified — verify with client before sending]. Do NOT assume or invent platform names.",
-  "integrations_content": "2 to 3 sentences on how iMocha integrates with the platforms in 'integrations' — REST API, SAML 2.0 SSO, LTI 1.3, or pre-built connectors as applicable. If 'integrations' contains a [CONFIRM: ...] token, output: [CONFIRM: integration details unknown — update once ATS/HRMS/LMS platform is confirmed with client].",
-  "deliverables": ["8 to 12 concise bullets. Each bullet MUST map a specific client requirement (traceable to the uploaded documents, bid questions, or chat history) to a named iMocha capability. Start each with an action verb. If a bullet cannot be grounded in the provided context, write it as: [CONFIRM: requirement not found in documents — replace with actual client requirement] → iMocha capability. Never write generic bullets that apply to any client."]
+  "scope_intro": "TA: One short framing sentence, then bullet points. Format: 'In-scope work covers: \\n• [area 1]\\n• [area 2]\\n• [area 3]\\nOut of scope: [items]'. Each bullet on its own line starting with '• '. TM: single paragraph (no newlines) describing in-scope work before the deliverables list. If no traceable requirements exist: start with [CONFIRM: scope requirements not found in uploaded documents — replace with actual in-scope items from the RFP]. Out-of-scope items must always be stated; if unknown: [CONFIRM: out-of-scope items not specified — confirm with client].",
+  "integrations": "TA proposals: comma-separated ATS/HRMS/LMS platform names explicitly named in context. If none found: [CONFIRM: ATS/HRMS/LMS platform not specified — verify with client]. TM proposals: leave empty string ''.",
+  "integrations_content": "TA proposals only: 2–3 sentences on how iMocha integrates with the platforms in 'integrations'. TM proposals: leave empty string ''.",
+  "deliverables": ["8–12 concise bullets summarising iMocha's value for THIS client. TA: injected under 'In Scope Deliverables' in the Key Deliverables section. TM: appear under 'In Scope Deliverables' in the Proposal Summary section. Each bullet MUST map a specific client requirement (traceable to documents, bid questions, or chat history) to a named iMocha capability. Start each with an action verb. If a bullet cannot be grounded in context: [CONFIRM: requirement not found — replace with actual client requirement] → iMocha capability. Never write generic bullets."],
+  "hcm_hris": "TM proposals only: the client's HCM or HRIS system name (e.g. Workday, SuccessFactors, SAP HCM). Trace ONLY to documents or bid questions. If not found: [CONFIRM: HCM/HRIS system not specified]. TA proposals: omit or leave null.",
+  "lms_lxp": "TM proposals only: the client's LMS or LXP platform (e.g. Cornerstone, Degreed, Udemy Business, Saba). Trace ONLY to context. If not found: [CONFIRM: LMS/LXP platform not specified]. TA proposals: omit or leave null.",
+  "talent_marketplace": "TM proposals only: the client's talent marketplace or internal mobility platform (e.g. Gloat, Eightfold, Phenom, Beamery). If not found: [CONFIRM: talent marketplace not specified]. TA proposals: omit or leave null.",
+  "content_provider": "TM proposals only: the client's learning content provider (e.g. LinkedIn Learning, Coursera, Pluralsight, Skillsoft). If not found: [CONFIRM: content provider not specified]. TA proposals: omit or leave null."
 }`;
 }
 
@@ -377,11 +432,27 @@ function xmlEscape(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+// Template uses yellow highlight to mark placeholder paragraphs. After substitution the
+// highlight must be removed from filled-in text. This strips all <w:highlight> elements
+// from run properties across the entire document — unfilled [CONFIRM] markers remain
+// visually identifiable by their text content alone.
+function stripHighlights(xml: string): string {
+  return xml.replace(/<w:highlight[^/]*\/>/g, "");
+}
+
 // Strip newlines — Word <w:t> nodes don't render \n as line breaks.
 // Each exec-summary field and scope_intro is already its own <w:p>; within a
 // single paragraph, sentences should flow continuously.
 function sanitize(text: string): string {
   return text.replace(/[\r\n]+/g, " ").trim();
+}
+
+// For fields that support multi-paragraph output or bullet lists: preserve \n so
+// applyParagraphLevelSubstitutions can split the value into multiple <w:p> nodes.
+// Lines starting with "• " become ListParagraph bullets; blank lines and other
+// lines become normal paragraphs.
+function sanitizeMultiLine(text: string): string {
+  return text.replace(/\r/g, "").trim();
 }
 
 // ── Substitution helpers ───────────────────────────────────────────────────────
@@ -392,7 +463,16 @@ function sanitize(text: string): string {
 // of each paragraph by concatenating all <w:t> nodes, matches against known tokens,
 // and replaces the entire paragraph with a clean single run — preserving the
 // original paragraph and run formatting.
+//
+// Multi-line values: if `value` contains "\n", each non-empty line becomes its own
+// <w:p> node. Lines starting with "• " (U+2022 + space) become ListParagraph bullets.
+// The original pPr is stripped of any <w:numPr> so template bullet styles don't
+// carry over to non-bullet replacement content.
 function applyParagraphLevelSubstitutions(xml: string, subs: [string, string][]): string {
+  // Find a numId to use for injected bullet paragraphs (reuse first bullet definition)
+  const numIdMatch = xml.match(/<w:numId w:val="(\d+)"/);
+  const bulletNumId = numIdMatch ? numIdMatch[1] : "1";
+
   return xml.replace(/<w:p[ >][\s\S]*?<\/w:p>/g, (para) => {
     const tMatches = [...para.matchAll(/<w:t(?:[^>]*)>([^<]*)<\/w:t>/g)];
     const fullText = tMatches
@@ -407,7 +487,29 @@ function applyParagraphLevelSubstitutions(xml: string, subs: [string, string][])
         const pPr = pPrMatch ? pPrMatch[0] : "";
         const rPrMatch = para.match(/<w:rPr>[\s\S]*?<\/w:rPr>/);
         const rPr = rPrMatch ? rPrMatch[0] : "";
-        return `<w:p${pAttrs}>${pPr}<w:r>${rPr}<w:t xml:space="preserve">${xmlEscape(value)}</w:t></w:r></w:p>`;
+
+        // Strip <w:numPr> from pPr — replaced content manages its own list style.
+        const cleanPPr = pPr.replace(/<w:numPr>[\s\S]*?<\/w:numPr>/g, "");
+        // If the template paragraph was a ListParagraph (bullet placeholder), non-bullet
+        // replacement lines must not inherit the list indentation — use a plain <w:pPr/>.
+        const isListParagraph = /pStyle w:val="ListParagraph"/.test(pPr);
+        const normalPPr = isListParagraph ? "<w:pPr/>" : cleanPPr;
+
+        if (!value.includes("\n")) {
+          return `<w:p${pAttrs}>${normalPPr}<w:r>${rPr}<w:t xml:space="preserve">${xmlEscape(value)}</w:t></w:r></w:p>`;
+        }
+
+        // Multi-line: split into paragraphs. Empty lines are skipped (paragraph separator).
+        const lines = value.split("\n").map(l => l.trim()).filter(l => l.length > 0);
+        return lines.map(line => {
+          if (line.startsWith("• ")) {
+            // Bullet line → ListParagraph with numPr
+            const bulletText = line.slice(2);
+            const bulletPPr = `<w:pPr><w:pStyle w:val="ListParagraph"/><w:numPr><w:ilvl w:val="0"/><w:numId w:val="${bulletNumId}"/></w:numPr></w:pPr>`;
+            return `<w:p${pAttrs}>${bulletPPr}<w:r>${rPr}<w:t xml:space="preserve">${xmlEscape(bulletText)}</w:t></w:r></w:p>`;
+          }
+          return `<w:p${pAttrs}>${normalPPr}<w:r>${rPr}<w:t xml:space="preserve">${xmlEscape(line)}</w:t></w:r></w:p>`;
+        }).join("\n");
       }
     }
     return para;
@@ -492,6 +594,22 @@ function replaceTocWithField(xml: string): string {
   return result;
 }
 
+// The TA template has no "Table of Content" heading paragraph — TOC1/TOC2 entries
+// begin immediately after the cover-page section. Inject a Heading1 paragraph
+// labelled "Table of Content" immediately before the first TOC-styled entry.
+function injectTocHeading(xml: string): string {
+  const tocParaRe = /<w:p[ >](?:(?!<\/w:p>).)*?<w:pStyle w:val="TOC[12]"(?:(?!<\/w:p>).)*?<\/w:p>/s;
+  const m = tocParaRe.exec(xml);
+  if (!m) {
+    console.warn("[injectTocHeading] no TOC1/TOC2 paragraph found — heading not injected");
+    return xml;
+  }
+  const heading =
+    `<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr>` +
+    `<w:r><w:t xml:space="preserve">Table of Content</w:t></w:r></w:p>\n`;
+  return xml.slice(0, m.index) + heading + xml.slice(m.index);
+}
+
 // Word's spell-checker splits heading text across multiple <w:r> runs, so a plain
 // indexOf on the heading string will miss it. We scan paragraph by paragraph,
 // concatenate all <w:t> node values, and match against the anchor text — the same
@@ -509,7 +627,12 @@ function findHeadingParaEnd(xml: string, headingText: string): number {
   return -1;
 }
 
-function injectDeliverables(xml: string, deliverables: string[], config: TemplateConfig): string {
+function injectDeliverables(
+  xml: string,
+  deliverables: string[],
+  config: TemplateConfig,
+  scopeIntro?: string,
+): string {
   const numId = discoverBulletNumId(xml);
   const bullets = buildBulletParagraphs(deliverables, numId);
 
@@ -519,7 +642,23 @@ function injectDeliverables(xml: string, deliverables: string[], config: Templat
     return xml.replace("</w:body>", `${bullets}</w:body>`);
   }
 
-  return xml.slice(0, insertAt) + "\n" + bullets + xml.slice(insertAt);
+  let injected = "";
+
+  // For TM, scope_intro is not substituted into a body placeholder — inject it as a
+  // paragraph before the deliverables subheading so it appears in the Proposal Summary.
+  if (scopeIntro) {
+    const rPr = `<w:rPr><w:rFonts w:ascii="Poppins" w:hAnsi="Poppins" w:cs="Poppins"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr>`;
+    injected += `<w:p><w:pPr><w:pStyle w:val="NormalWeb"/></w:pPr><w:r>${rPr}<w:t xml:space="preserve">${xmlEscape(sanitize(scopeIntro))}</w:t></w:r></w:p>\n`;
+  }
+
+  // Optional subheading (Heading2) before the bullet list
+  if (config.anchors.deliverablesSubheading) {
+    injected += `<w:p><w:pPr><w:pStyle w:val="Heading2"/></w:pPr><w:r><w:t xml:space="preserve">${xmlEscape(config.anchors.deliverablesSubheading)}</w:t></w:r></w:p>\n`;
+  }
+
+  injected += bullets;
+
+  return xml.slice(0, insertAt) + "\n" + injected + xml.slice(insertAt);
 }
 
 function injectIntegrationsContent(xml: string, content: string, config: TemplateConfig): string {
@@ -820,11 +959,20 @@ export const generateProposalFn = createServerFn({ method: "POST" })
 
     const docXml = await zip.file("word/document.xml")!.async("string");
     let editedDocXml = applySubstitutions(docXml, intake, config);
-    editedDocXml = injectDeliverables(editedDocXml, intake.deliverables, config);
-    if (intake.integrations_content) {
+    // Inject "Table of Content" heading if the template doesn't have one (TA)
+    if (config.injectTocHeading) {
+      editedDocXml = injectTocHeading(editedDocXml);
+    }
+    // For TM, scope_intro has no body placeholder — pass it to injectDeliverables so it
+    // appears as a paragraph before the "In Scope Deliverables" subheading.
+    const tmScopeIntro = intake.product === "TM" ? intake.scope_intro : undefined;
+    editedDocXml = injectDeliverables(editedDocXml, intake.deliverables, config, tmScopeIntro);
+    if (intake.integrations_content && config.anchors.integrationsBookmark) {
       editedDocXml = injectIntegrationsContent(editedDocXml, intake.integrations_content, config);
     }
-    editedDocXml = replaceTocWithField(editedDocXml);
+    // Strip template highlight markers — filled values should not appear yellow in Word.
+    // Unfilled [CONFIRM] / [TO PROVIDE] markers remain identifiable by their text content.
+    editedDocXml = stripHighlights(editedDocXml);
     zip.file("word/document.xml", editedDocXml);
 
     for (const filename of Object.keys(zip.files)) {

@@ -1,13 +1,14 @@
 import { useState } from "react";
 import {
-  Circle, Users, Activity,
-  LayoutList, CheckCircle2, ArrowRight, UserPlus, X, Loader2, ChevronRight,
+  Users, Activity,
+  LayoutList, ArrowRight, UserPlus, X, Loader2, ChevronRight, FileDown,
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import type { Bid } from "@/lib/bid-queries";
-import { useStageItems, useToggleDeliverable, useBidTeam, useBidActivity, useTeamMembers } from "@/lib/bid-queries";
-import { initials } from "@/lib/bid-constants";
+import { useStageItems, useBidTeam, useBidActivity, useTeamMembers } from "@/lib/bid-queries";
+import { useDocuments } from "@/lib/doc-queries";
 import { supabase } from "@/integrations/supabase/client";
+import { initials } from "@/lib/bid-constants";
 import { useQueryClient } from "@tanstack/react-query";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { AdvanceStageFooter } from "./AdvanceStageFooter";
@@ -29,12 +30,6 @@ function daysLeft(deadline: string) {
   return Math.ceil((new Date(deadline).getTime() - Date.now()) / 86400000);
 }
 
-const STATUS_STYLE: Record<string, { bg: string; color: string; label: string }> = {
-  done:        { bg: "#dcfce7", color: "#15803d", label: "Completed" },
-  in_progress: { bg: "#dbeafe", color: "#1d4ed8", label: "In Progress" },
-  blocked:     { bg: "#fef9c3", color: "#854d0e", label: "Review" },
-  pending:     { bg: "var(--color-muted)", color: "var(--color-muted-foreground)", label: "Pending" },
-};
 
 export function RFPWorkspace({ bid, activeTab, onTabChange }: { bid: Bid; activeTab: string; onTabChange: (t: string) => void }) {
   const items = useStageItems(bid.id, "rfp");
@@ -76,15 +71,12 @@ export function RFPWorkspace({ bid, activeTab, onTabChange }: { bid: Bid; active
   function handleProposalGenerated(preview: ProposalPreview) {
     setProposalPreview(preview);
     try { sessionStorage.setItem(`rfp_preview_${bid.id}`, JSON.stringify(preview)); } catch {}
+    refetchProposals();
   }
 
-  const deliverables = items.data?.deliverables ?? [];
-  const toggleD = useToggleDeliverable();
-
-  const totalSections = deliverables.length;
-  const completedSections = deliverables.filter((d) => d.status === "done").length;
-  const inProgressSections = deliverables.filter((d) => d.status === "in_progress").length;
-  const pendingSections = deliverables.filter((d) => d.status === "pending").length;
+  // Fetch generated proposal docs for this bid
+  const { data: proposalDocs = [], refetch: refetchProposals } = useDocuments({ bidId: bid.id, type: "proposal" });
+  const generatedProposal = proposalDocs.find((d: any) => d.source === "generated") ?? null;
 
   const dl = daysLeft(bid.deadline);
 
@@ -151,8 +143,11 @@ export function RFPWorkspace({ bid, activeTab, onTabChange }: { bid: Bid; active
             className="h-9 px-4 rounded-lg text-white text-[12px] font-semibold hover:opacity-90 transition-opacity inline-flex items-center gap-2 disabled:opacity-50"
             style={{ background: "#fd5b0e" }}
           >
-            {creatingSession && <Loader2 className="size-3.5 animate-spin" />}
-            ✦ Generate Proposal
+            {creatingSession
+              ? <><Loader2 className="size-3.5 animate-spin" /> Creating session…</>
+              : generatedProposal
+                ? <>✦ Regenerate Proposal</>
+                : <>✦ Generate Proposal</>}
           </button>
         )}
         <Link
@@ -167,92 +162,18 @@ export function RFPWorkspace({ bid, activeTab, onTabChange }: { bid: Bid; active
       {/* Proposal Details */}
       <div className="bg-card hairline border rounded-xl p-4 mb-5">
         <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-3">Proposal Details</div>
-        <div className="grid grid-cols-6 gap-y-2 gap-x-6">
+        <div className="grid grid-cols-4 gap-y-2 gap-x-6">
           <KV label="Due Date" value={bid.deadline ? new Date(bid.deadline).toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" }) : "—"} />
           <KV label="Time Remaining" value={dl < 0 ? `${Math.abs(dl)}d over` : `${dl}d left`} urgent={dl <= 5} />
-          <KV label="Sections Tracked" value={String(totalSections)} />
-          <KV label="Completed" value={String(completedSections)} />
-          <KV label="In Progress" value={String(inProgressSections)} />
-          <KV label="Pending" value={String(pendingSections)} />
+          <KV label="Client" value={bid.client_name} />
+          <KV label="Value" value={bid.value ? `$${(bid.value / 1_000_000).toFixed(1)}M` : "—"} />
         </div>
       </div>
 
-      {/* Proposal Sections (deliverables) */}
-      <div className="bg-card hairline border rounded-xl overflow-hidden mb-4">
-        <div className="flex items-center justify-between px-4 py-3 border-b hairline border-border">
-          <h3 className="text-[13px] font-semibold">Proposal Sections</h3>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-              <LegendDot color="#16a34a" label={`${completedSections} completed`} />
-              <LegendDot color="#1d4ed8" label={`${inProgressSections} in progress`} />
-              <LegendDot color="var(--color-border-strong)" label={`${pendingSections} pending`} />
-            </div>
-          </div>
-        </div>
-
-        {deliverables.length === 0 ? (
-          <div className="py-10 text-center text-[12px] text-muted-foreground">No proposal sections added yet.</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-[12px]">
-              <thead>
-                <tr className="bg-muted/40 text-[10px] uppercase tracking-wider text-muted-foreground">
-                  <th className="text-left px-4 py-2.5 font-medium w-8">#</th>
-                  <th className="text-left px-4 py-2.5 font-medium">Section</th>
-                  <th className="text-left px-4 py-2.5 font-medium">Type</th>
-                  <th className="text-center px-4 py-2.5 font-medium w-28">Status</th>
-                  <th className="text-left px-4 py-2.5 font-medium w-40">Progress</th>
-                  <th className="text-left px-4 py-2.5 font-medium w-8"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y hairline divide-border">
-                {deliverables.map((d, i) => {
-                  const done = d.status === "done";
-                  const s = STATUS_STYLE[d.status] ?? STATUS_STYLE.pending;
-                  const progWidth = done ? 100 : d.status === "in_progress" ? 50 : 0;
-                  return (
-                    <tr key={d.id} className="hover:bg-muted/20 transition-colors">
-                      <td className="px-4 py-3 text-muted-foreground">{i + 1}</td>
-                      <td className="px-4 py-3 font-medium">{d.label}</td>
-                      <td className="px-4 py-3 text-muted-foreground capitalize">{d.type}</td>
-                      <td className="px-4 py-3 text-center">
-                        <span
-                          className="text-[9px] font-semibold px-2 py-1 rounded-full"
-                          style={{ background: s.bg, color: s.color }}
-                        >
-                          {s.label}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                            <div
-                              className="h-full rounded-full transition-all"
-                              style={{ width: `${progWidth}%`, background: s.color }}
-                            />
-                          </div>
-                          <span className="text-[10px] text-muted-foreground w-8 text-right">{progWidth}%</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <button
-                          onClick={() => toggleD.mutate({ id: d.id, status: done ? "pending" : "done" })}
-                          className="size-6 rounded flex items-center justify-center hover:bg-muted transition-colors"
-                          title={done ? "Mark pending" : "Mark done"}
-                        >
-                          {done
-                            ? <CheckCircle2 className="size-3.5 text-success-foreground" />
-                            : <Circle className="size-3.5 text-muted-foreground" />}
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      {/* Generated proposal document */}
+      {generatedProposal && (
+        <GeneratedProposalCard doc={generatedProposal} />
+      )}
 
       {/* Proposal Preview Panel — shown after Generate Proposal runs */}
       {proposalPreview && (
@@ -277,6 +198,71 @@ export function RFPWorkspace({ bid, activeTab, onTabChange }: { bid: Bid; active
           onGenerated={handleProposalGenerated}
         />
       )}
+    </div>
+  );
+}
+
+// ── GeneratedProposalCard ─────────────────────────────────────────────────────
+
+function GeneratedProposalCard({ doc }: { doc: any }) {
+  const [downloading, setDownloading] = useState(false);
+
+  async function handleDownload() {
+    setDownloading(true);
+    try {
+      const { data, error } = await (supabase.storage as any)
+        .from("bid-documents")
+        .createSignedUrl(doc.storage_path, 300);
+      if (error || !data?.signedUrl) throw new Error("Could not create download link");
+      const res = await fetch(data.signedUrl);
+      if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = doc.name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error("[GeneratedProposalCard] download failed:", e);
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  const ext = doc.name.split(".").pop()?.toUpperCase() ?? "DOCX";
+  const sizeKb = Math.round((doc.size_bytes ?? 0) / 1024);
+  const createdAt = new Date(doc.created_at).toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" });
+
+  return (
+    <div className="bg-card hairline border rounded-xl overflow-hidden mb-4">
+      <div className="flex items-center justify-between px-4 py-3 border-b hairline border-border"
+        style={{ background: "rgba(253,91,14,.05)" }}>
+        <span className="text-[10px] font-bold text-orange-600 dark:text-orange-400 uppercase tracking-wider">
+          ✦ Generated Proposal
+        </span>
+        <span className="text-[10px] text-muted-foreground">{createdAt}</span>
+      </div>
+      <div className="flex items-center gap-4 px-4 py-3">
+        <div className="size-9 rounded-lg bg-orange-500/10 flex items-center justify-center shrink-0">
+          <FileDown className="size-4 text-orange-500" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-[12px] font-medium text-foreground truncate">{doc.name}</div>
+          <div className="text-[10px] text-muted-foreground mt-0.5">{ext} · {sizeKb} KB</div>
+        </div>
+        <button
+          onClick={handleDownload}
+          disabled={downloading}
+          className="h-8 px-3.5 rounded-lg bg-orange-500 text-white text-[11px] font-semibold hover:bg-orange-600 disabled:opacity-50 transition-colors inline-flex items-center gap-1.5 shrink-0"
+        >
+          {downloading
+            ? <><Loader2 className="size-3 animate-spin" /> Downloading…</>
+            : <><FileDown className="size-3" /> Download</>}
+        </button>
+      </div>
     </div>
   );
 }
@@ -450,12 +436,4 @@ function KV({ label, value, urgent }: { label: string; value: string; urgent?: b
   );
 }
 
-function LegendDot({ color, label }: { color: string; label: string }) {
-  return (
-    <div className="flex items-center gap-1.5">
-      <div className="size-2 rounded-full shrink-0" style={{ background: color }} />
-      <span>{label}</span>
-    </div>
-  );
-}
 

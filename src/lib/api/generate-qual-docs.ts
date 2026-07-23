@@ -645,7 +645,7 @@ export const generateQualResultFn = createServerFn({ method: "POST" })
 
     function ovLabelCell(text: string): TableCell {
       return new TableCell({
-        shading: { type: ShadingType.SOLID, color: C.mutedBg },
+        shading: { type: ShadingType.SOLID, fill: C.mutedBg },
         borders: { top: hairline, bottom: hairline, left: hairline, right: hairline },
         width: { size: 28, type: WidthType.PERCENTAGE },
         margins: { top: 80, bottom: 80, left: 140, right: 80 },
@@ -655,7 +655,7 @@ export const generateQualResultFn = createServerFn({ method: "POST" })
 
     function ovValueCell(text: string, shade?: string): TableCell {
       return new TableCell({
-        shading: shade ? { type: ShadingType.SOLID, color: shade } : undefined,
+        shading: shade ? { type: ShadingType.SOLID, fill: shade } : undefined,
         borders: { top: hairline, bottom: hairline, left: hairline, right: hairline },
         width: { size: 72, type: WidthType.PERCENTAGE },
         margins: { top: 80, bottom: 80, left: 140, right: 80 },
@@ -689,9 +689,14 @@ export const generateQualResultFn = createServerFn({ method: "POST" })
           }),
         },
         children: [
+          // ── Logo above title ───────────────────────────────────────────────
+          new Paragraph({
+            spacing: { before: 120, after: 140 },
+            children: [new ImageRun({ data: logo, transformation: { width: 120, height: 25 }, type: "png" })],
+          }),
           // ── Title block ────────────────────────────────────────────────────
           new Paragraph({
-            spacing: { before: 200, after: 40 },
+            spacing: { before: 0, after: 40 },
             children: [new TextRun({ text: `Deal Brief – ${bid.client_name} (${productShort})`, color: C.navy, bold: true, size: 44, font: "Calibri" })],
           }),
           new Paragraph({
@@ -712,14 +717,14 @@ export const generateQualResultFn = createServerFn({ method: "POST" })
                 tableHeader: true,
                 children: [
                   new TableCell({
-                    shading: { type: ShadingType.SOLID, color: C.navy },
+                    shading: { type: ShadingType.SOLID, fill: C.navy },
                     borders: { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder },
                     width: { size: 28, type: WidthType.PERCENTAGE },
                     margins: { top: 80, bottom: 80, left: 140, right: 80 },
                     children: [new Paragraph({ children: [new TextRun({ text: "Item", color: C.white, bold: true, size: 19, font: "Calibri" })] })],
                   }),
                   new TableCell({
-                    shading: { type: ShadingType.SOLID, color: C.navy },
+                    shading: { type: ShadingType.SOLID, fill: C.navy },
                     borders: { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder },
                     width: { size: 72, type: WidthType.PERCENTAGE },
                     margins: { top: 80, bottom: 80, left: 140, right: 80 },
@@ -777,60 +782,6 @@ export const generateQualResultFn = createServerFn({ method: "POST" })
           bSectionHeading(11, "Key Risks / Clarifications Required"),
           ...keyRisksList.map(bBullet),
 
-          // ── iMocha branding footer table ───────────────────────────────────
-          // Paragraph-level shading inside cells is more reliable than cell-level shading in Word renderers
-          new Paragraph({ spacing: { before: 400, after: 0 }, children: [] }),
-          new Table({
-            width: { size: 100, type: WidthType.PERCENTAGE },
-            rows: [new TableRow({
-              children: [
-                new TableCell({
-                  borders: { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder },
-                  width: { size: 50, type: WidthType.PERCENTAGE },
-                  margins: { top: 0, bottom: 0, left: 0, right: 0 },
-                  children: [
-                    new Paragraph({
-                      shading: { type: ShadingType.SOLID, color: C.purple },
-                      spacing: { before: 140, after: 60 },
-                      indent: { left: 200, right: 120 },
-                      children: [new TextRun({ text: "Brewing A Skills-First Planet", color: C.white, bold: true, size: 22, font: "Calibri" })],
-                    }),
-                    new Paragraph({
-                      shading: { type: ShadingType.SOLID, color: C.purple },
-                      spacing: { before: 0, after: 60 },
-                      indent: { left: 200, right: 120 },
-                      children: [new TextRun({ text: "Call us +1-408-915-5158 or write to us at support@imocha.io", color: "CCBBFF", size: 16, font: "Calibri" })],
-                    }),
-                    new Paragraph({
-                      shading: { type: ShadingType.SOLID, color: C.purple },
-                      spacing: { before: 0, after: 140 },
-                      indent: { left: 200, right: 120 },
-                      children: [new TextRun({ text: "www.imocha.io", color: "CCBBFF", size: 16, font: "Calibri" })],
-                    }),
-                  ],
-                }),
-                new TableCell({
-                  borders: { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder },
-                  width: { size: 50, type: WidthType.PERCENTAGE },
-                  margins: { top: 0, bottom: 0, left: 0, right: 0 },
-                  children: [
-                    new Paragraph({
-                      shading: { type: ShadingType.SOLID, color: C.navy },
-                      spacing: { before: 140, after: 60 },
-                      indent: { left: 200, right: 120 },
-                      children: [new TextRun({ text: "About iMocha", color: C.white, bold: true, size: 18, font: "Calibri" })],
-                    }),
-                    new Paragraph({
-                      shading: { type: ShadingType.SOLID, color: C.navy },
-                      spacing: { before: 0, after: 140 },
-                      indent: { left: 200, right: 120 },
-                      children: [new TextRun({ text: "iMocha is a global provider of AI-powered Skills Intelligence, enabling organizations to implement a skills-first strategy across hiring, upskilling, reskilling, workforce planning, and internal mobility. Leveraging an AI-driven taxonomy and ontology, its platform supports structured skills management and governance while delivering data-driven insights into workforce capabilities.", color: "AAAACC", size: 15, font: "Calibri" })],
-                    }),
-                  ],
-                }),
-              ],
-            })],
-          }),
         ],
       }],
     });
@@ -906,7 +857,7 @@ export const generateDealBriefFn = createServerFn({ method: "POST" })
     // ── Cell helpers ────────────────────────────────────────────────────────
     function hdrCell(text: string, widthPct?: number): TableCell {
       return new TableCell({
-        shading: { type: ShadingType.SOLID, color: C.navy },
+        shading: { type: ShadingType.SOLID, fill: C.navy },
         borders: { top: noBorder, bottom: noBorder, left: noBorder, right: hairline },
         width: widthPct ? { size: widthPct, type: WidthType.PERCENTAGE } : undefined,
         margins: { top: 80, bottom: 80, left: 120, right: 80 },
@@ -917,8 +868,8 @@ export const generateDealBriefFn = createServerFn({ method: "POST" })
     function profileRow(label: string, value: string, i: number): TableRow {
       const shade = i % 2 === 0 ? C.purpleTint : "FFFFFF";
       return new TableRow({ children: [
-        new TableCell({ shading: { type: ShadingType.SOLID, color: shade }, borders: { top: hairline, bottom: hairline, left: noBorder, right: hairline }, margins: { top: 80, bottom: 80, left: 120, right: 80 }, children: [new Paragraph({ children: [new TextRun({ text: label, bold: true, size: 18, font: "Calibri", color: C.muted })] })] }),
-        new TableCell({ shading: { type: ShadingType.SOLID, color: shade }, borders: { top: hairline, bottom: hairline, left: noBorder, right: noBorder }, margins: { top: 80, bottom: 80, left: 120, right: 80 }, children: [new Paragraph({ children: [new TextRun({ text: value, size: 18, font: "Calibri", color: C.ink })] })] }),
+        new TableCell({ shading: { type: ShadingType.SOLID, fill: shade }, borders: { top: hairline, bottom: hairline, left: noBorder, right: hairline }, margins: { top: 80, bottom: 80, left: 120, right: 80 }, children: [new Paragraph({ children: [new TextRun({ text: label, bold: true, size: 18, font: "Calibri", color: C.muted })] })] }),
+        new TableCell({ shading: { type: ShadingType.SOLID, fill: shade }, borders: { top: hairline, bottom: hairline, left: noBorder, right: noBorder }, margins: { top: 80, bottom: 80, left: 120, right: 80 }, children: [new Paragraph({ children: [new TextRun({ text: value, size: 18, font: "Calibri", color: C.ink })] })] }),
       ]});
     }
 
@@ -927,7 +878,7 @@ export const generateDealBriefFn = createServerFn({ method: "POST" })
         width: { size: 22, type: WidthType.PERCENTAGE },
         rows: [new TableRow({
           children: [new TableCell({
-            shading: { type: ShadingType.SOLID, color: decisionColour(dec) },
+            shading: { type: ShadingType.SOLID, fill: decisionColour(dec) },
             borders: { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder },
             margins: { top: 100, bottom: 100, left: 200, right: 200 },
             children: [new Paragraph({
@@ -943,7 +894,7 @@ export const generateDealBriefFn = createServerFn({ method: "POST" })
       return new Paragraph({
         spacing: { before: 280, after: 80 },
         children: [
-          new TextRun({ text: `${num}. `, color: C.orange, bold: true, size: 26, font: "Calibri" }),
+          new TextRun({ text: `${num}. `, color: C.ink, bold: true, size: 26, font: "Calibri" }),
           new TextRun({ text: title, color: C.navy, bold: true, size: 26, font: "Calibri" }),
         ],
       });
@@ -979,9 +930,9 @@ export const generateDealBriefFn = createServerFn({ method: "POST" })
         headers: {
           default: new Header({
             children: [new Paragraph({
-              alignment: AlignmentType.RIGHT,
               children: [
-                new TextRun({ text: "iMocha Bid Compass  ·  CONFIDENTIAL — INTERNAL", color: C.muted, size: 14, font: "Calibri" }),
+                new ImageRun({ data: logo, transformation: { width: 90, height: 19 }, type: "png" }),
+                new TextRun({ text: "        Confidential — Internal", color: C.muted, size: 16, font: "Calibri", italics: true }),
               ],
             })],
           }),
@@ -991,21 +942,18 @@ export const generateDealBriefFn = createServerFn({ method: "POST" })
             children: [new Paragraph({
               alignment: AlignmentType.CENTER,
               children: [
-                new TextRun({ text: `Prepared by ${preparedBy} via iMocha Bid Compass · ${today} · CONFIDENTIAL  `, color: C.muted, size: 16, font: "Calibri" }),
+                new TextRun({ text: `Prepared by ${preparedBy} · ${today} · Confidential  `, color: C.muted, size: 16, font: "Calibri" }),
                 new TextRun({ children: [PageNumber.CURRENT] }),
               ],
             })],
           }),
         },
         children: [
-          // Cover header band
+          // Logo above title
           new Paragraph({
-            shading: { type: ShadingType.SOLID, color: C.purple },
-            spacing: { before: 0, after: 0 },
+            spacing: { before: 80, after: 120 },
             children: [
-              new ImageRun({ data: logo, transformation: { width: 102, height: 22 }, type: "png" }),
-              new TextRun({ text: "  iMocha Bid Compass", color: C.white, bold: true, size: 22, font: "Calibri" }),
-              new TextRun({ text: "        CONFIDENTIAL — INTERNAL", color: "CCBBFF", size: 16, font: "Calibri" }),
+              new ImageRun({ data: logo, transformation: { width: 110, height: 23 }, type: "png" }),
             ],
           }),
 
@@ -1031,7 +979,7 @@ export const generateDealBriefFn = createServerFn({ method: "POST" })
           }),
           // Decision banner
           new Paragraph({
-            shading: { type: ShadingType.SOLID, color: decisionColour(dec) },
+            shading: { type: ShadingType.SOLID, fill: decisionColour(dec) },
             spacing: { before: 40, after: 200 },
             children: [
               new TextRun({ text: `  ${decisionLabel(dec)}`, color: C.white, bold: true, size: 24, font: "Calibri" }),
@@ -1045,9 +993,7 @@ export const generateDealBriefFn = createServerFn({ method: "POST" })
           // ── 1. Executive Summary ─────────────────────────────────────────
           sectionHeading("1", "Executive Summary"),
           new Paragraph({
-            shading: { type: ShadingType.SOLID, color: C.purpleTint },
             spacing: { before: 60, after: 80 },
-            indent: { left: 160, right: 160 },
             children: [new TextRun({
               text: insights?.recommendation
                 ?? `${bid.client_name} has submitted a ${(bid.type ?? "bid").toUpperCase()} aligned to iMocha's ${productLine} offering. Run the AI Assessment in the Assessment & Result tab to generate the executive summary.`,
@@ -1080,6 +1026,7 @@ export const generateDealBriefFn = createServerFn({ method: "POST" })
           ),
 
           // ── 4. Assessment Score Breakdown (with AI rationales) ───────────
+          new Paragraph({ pageBreakBefore: true, children: [] }),
           sectionHeading("4", "Assessment Score Breakdown"),
           new Paragraph({
             spacing: { before: 0, after: 80 },
@@ -1107,18 +1054,18 @@ export const generateDealBriefFn = createServerFn({ method: "POST" })
                 const shade = i % 2 === 0 ? undefined : C.mutedBg;
                 const justification = rationales[c.id] ?? (s > 0 ? `Manually scored ${s}/5.` : "Not yet scored.");
                 return new TableRow({ children: [
-                  new TableCell({ shading: shade ? { type: ShadingType.SOLID, color: shade } : undefined, borders: { top: hairline, bottom: hairline, left: noBorder, right: hairline }, margins: { top: 60, bottom: 60, left: 80, right: 40 }, children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: String(i + 1), size: 17, font: "Calibri", color: C.muted })] })] }),
-                  new TableCell({ shading: shade ? { type: ShadingType.SOLID, color: shade } : undefined, borders: { top: hairline, bottom: hairline, left: noBorder, right: hairline }, margins: { top: 60, bottom: 60, left: 80, right: 80 }, children: [new Paragraph({ children: [new TextRun({ text: c.parameter, bold: true, size: 17, font: "Calibri", color: C.ink })] })] }),
-                  new TableCell({ shading: shade ? { type: ShadingType.SOLID, color: shade } : undefined, borders: { top: hairline, bottom: hairline, left: noBorder, right: hairline }, margins: { top: 60, bottom: 60, left: 80, right: 80 }, children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: s > 0 ? `${s}/5` : "—", bold: true, size: 17, font: "Calibri", color: s > 0 ? stCol : C.muted })] })] }),
-                  new TableCell({ shading: shade ? { type: ShadingType.SOLID, color: shade } : undefined, borders: { top: hairline, bottom: hairline, left: noBorder, right: hairline }, margins: { top: 60, bottom: 60, left: 80, right: 80 }, children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: `${Math.round(c.weight * 100)}%`, size: 17, font: "Calibri", color: C.muted })] })] }),
-                  new TableCell({ shading: { type: ShadingType.SOLID, color: stShade }, borders: { top: hairline, bottom: hairline, left: noBorder, right: hairline }, margins: { top: 60, bottom: 60, left: 80, right: 80 }, children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: st, bold: true, size: 17, font: "Calibri", color: stCol })] })] }),
-                  new TableCell({ shading: shade ? { type: ShadingType.SOLID, color: shade } : undefined, borders: { top: hairline, bottom: hairline, left: noBorder, right: noBorder }, margins: { top: 60, bottom: 60, left: 80, right: 80 }, children: [new Paragraph({ children: [new TextRun({ text: justification, size: 16, font: "Calibri", color: C.ink })] })] }),
+                  new TableCell({ shading: shade ? { type: ShadingType.SOLID, fill: shade } : undefined, borders: { top: hairline, bottom: hairline, left: noBorder, right: hairline }, margins: { top: 60, bottom: 60, left: 80, right: 40 }, children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: String(i + 1), size: 17, font: "Calibri", color: C.muted })] })] }),
+                  new TableCell({ shading: shade ? { type: ShadingType.SOLID, fill: shade } : undefined, borders: { top: hairline, bottom: hairline, left: noBorder, right: hairline }, margins: { top: 60, bottom: 60, left: 80, right: 80 }, children: [new Paragraph({ children: [new TextRun({ text: c.parameter, bold: true, size: 17, font: "Calibri", color: C.ink })] })] }),
+                  new TableCell({ shading: shade ? { type: ShadingType.SOLID, fill: shade } : undefined, borders: { top: hairline, bottom: hairline, left: noBorder, right: hairline }, margins: { top: 60, bottom: 60, left: 80, right: 80 }, children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: s > 0 ? `${s}/5` : "—", bold: true, size: 17, font: "Calibri", color: s > 0 ? stCol : C.muted })] })] }),
+                  new TableCell({ shading: shade ? { type: ShadingType.SOLID, fill: shade } : undefined, borders: { top: hairline, bottom: hairline, left: noBorder, right: hairline }, margins: { top: 60, bottom: 60, left: 80, right: 80 }, children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: `${Math.round(c.weight * 100)}%`, size: 17, font: "Calibri", color: C.muted })] })] }),
+                  new TableCell({ shading: { type: ShadingType.SOLID, fill: stShade }, borders: { top: hairline, bottom: hairline, left: noBorder, right: hairline }, margins: { top: 60, bottom: 60, left: 80, right: 80 }, children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: st, bold: true, size: 17, font: "Calibri", color: stCol })] })] }),
+                  new TableCell({ shading: shade ? { type: ShadingType.SOLID, fill: shade } : undefined, borders: { top: hairline, bottom: hairline, left: noBorder, right: noBorder }, margins: { top: 60, bottom: 60, left: 80, right: 80 }, children: [new Paragraph({ children: [new TextRun({ text: justification, size: 16, font: "Calibri", color: C.ink })] })] }),
                 ]});
               }),
               // Total row
               new TableRow({ children: [
-                new TableCell({ columnSpan: 5, shading: { type: ShadingType.SOLID, color: C.navy }, borders: { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder }, children: [new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: "Total Weighted Score", color: C.white, bold: true, size: 18, font: "Calibri" })] })] }),
-                new TableCell({ shading: { type: ShadingType.SOLID, color: C.navy }, borders: { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder }, children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: `${totalScore} / 100`, color: C.white, bold: true, size: 22, font: "Calibri" })] })] }),
+                new TableCell({ columnSpan: 5, shading: { type: ShadingType.SOLID, fill: C.navy }, borders: { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder }, children: [new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: "Total Weighted Score", color: C.white, bold: true, size: 18, font: "Calibri" })] })] }),
+                new TableCell({ shading: { type: ShadingType.SOLID, fill: C.navy }, borders: { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder }, children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: `${totalScore} / 100`, color: C.white, bold: true, size: 22, font: "Calibri" })] })] }),
               ]}),
             ],
           }),
@@ -1132,9 +1079,7 @@ export const generateDealBriefFn = createServerFn({ method: "POST" })
           // ── 6. Recommended Win Strategy ──────────────────────────────────
           sectionHeading("6", "Recommended Win Strategy"),
           new Paragraph({
-            shading: { type: ShadingType.SOLID, color: C.purpleTint },
             spacing: { before: 60, after: 80 },
-            indent: { left: 160, right: 160 },
             children: [new TextRun({
               text: insights?.recommendation ?? "Run AI Assessment to generate the recommendation.",
               size: 20, font: "Calibri", color: C.ink,

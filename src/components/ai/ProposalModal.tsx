@@ -19,6 +19,10 @@ function collectFlags(preview: ProposalPreview): { field: string; token: string 
   scan("Scope Introduction",             preview.scope_intro);
   scan("Integrations",                   preview.integrations);
   scan("Integrations Content",           preview.integrations_content);
+  scan("HCM / HRIS System",             preview.hcm_hris);
+  scan("LMS / LXP Platform",            preview.lms_lxp);
+  scan("Talent Marketplace",            preview.talent_marketplace);
+  scan("Content Provider",              preview.content_provider);
   for (const [i, d] of (preview.deliverables ?? []).entries())
     scan(`Deliverable ${i + 1}`,         d);
   return hits;
@@ -268,6 +272,31 @@ export function ProposalModal({ open, onClose, bidId, sessionId, clientName, onG
                             {(() => { FLAG_RE.lastIndex = 0; return highlightFlags(preview.integrations_content); })()}
                           </p>
                         )}
+                      </FlaggedCard>
+                    )}
+
+                    {preview.product === "TM" && (preview.hcm_hris || preview.lms_lxp || preview.talent_marketplace || preview.content_provider) && (
+                      <FlaggedCard
+                        title="HR Systems & Integrations"
+                        flagged={[preview.hcm_hris, preview.lms_lxp, preview.talent_marketplace, preview.content_provider].some(v => { FLAG_RE.lastIndex = 0; return v ? FLAG_RE.test(v) : false; })}
+                        onRegen={handleRegen}
+                        isPending={isPending}
+                      >
+                        <div className="flex flex-col gap-2">
+                          {([
+                            ["HCM / HRIS",         preview.hcm_hris],
+                            ["LMS / LXP",          preview.lms_lxp],
+                            ["Talent Marketplace", preview.talent_marketplace],
+                            ["Content Provider",   preview.content_provider],
+                          ] as [string, string | undefined][]).filter(([, v]) => v).map(([label, value]) => (
+                            <div key={label} className="flex items-start gap-2">
+                              <span className="text-[10px] text-muted-foreground w-32 shrink-0 pt-0.5">{label}</span>
+                              <span className="text-[12px] text-foreground leading-relaxed">
+                                {(() => { FLAG_RE.lastIndex = 0; return highlightFlags(value!); })()}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
                       </FlaggedCard>
                     )}
                   </div>
