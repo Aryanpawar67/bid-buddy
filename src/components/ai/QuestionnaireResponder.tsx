@@ -413,46 +413,88 @@ export function QuestionnaireResponder() {
   }
 
   // ── Build result buffer (shared between download + save) ────────────────────
+  //
+  // Root-cause note: mutating wbRef.current and calling xlsx.writeBuffer() re-serialises
+  // EVERY style from the original file (blue/pink fills, coloured fonts, borders).
+  // Fix: build a BRAND-NEW workbook, copy only cell values + row heights + column widths,
+  // then write our answers. No original styles survive.
 
   async function buildResultBuffer(): Promise<{ buf: ArrayBuffer; filename: string } | null> {
     if (!file || !answered.length) return null;
-    const wb = wbRef.current;
-    if (!wb) return null;
-    const ws = wb.worksheets[selectedSheet];
-    if (!ws) return null;
+    const srcWb = wbRef.current;
+    if (!srcWb) return null;
+    const srcWs = srcWb.worksheets[selectedSheet];
+    if (!srcWs) return null;
 
-    const aCol = colLetterToNum(answerCol);
-    const sCol = colLetterToNum(statusCol);
+    const aColNum = colLetterToNum(answerCol);
+    const sColNum = colLetterToNum(statusCol);
 
-    // Write column labels to the actual header row only if the cell is currently empty
+    // Map answered rows for fast lookup
+    const answerMap = new Map(answered.map((a) => [a.row, a]));
+
+    // ── New clean workbook ──────────────────────────────────────────────────
+    const newWb = new ExcelJS.Workbook();
+    const newWs = newWb.addWorksheet(srcWs.name || "Responses");
+
+    // Copy column widths (no styles)
+    const lastCol = srcWs.columnCount || 10;
+    for (let c = 1; c <= lastCol; c++) {
+      const srcCol = srcWs.getColumn(c);
+      const newCol = newWs.getColumn(c);
+      newCol.width = typeof srcCol.width === "number" ? srcCol.width : 15;
+    }
+    // Override answer + status column widths
+    newWs.getColumn(aColNum).width = 60;
+    newWs.getColumn(sColNum).width = 18;
+
+    // Determine the header row index
     const headerRowIdx = headerRows > 0 ? headerRows : 1;
-    const hRow = ws.getRow(headerRowIdx);
-    const aHeaderCell = hRow.getCell(aCol);
-    const sHeaderCell = hRow.getCell(sCol);
-    if (!String(aHeaderCell.value ?? "").trim()) {
-      aHeaderCell.value = "iMocha Response";
+
+    // Copy rows — values only, no fills, no font colours
+    srcWs.eachRow({ includeEmpty: false }, (srcRow, rowNum) => {
+      const newRow = newWs.getRow(rowNum);
+      // Preserve row height for readability
+      if (srcRow.height) newRow.height = srcRow.height;
+
+      srcRow.eachCell({ includeEmpty: true }, (srcCell, colNum) => {
+        const newCell = newRow.getCell(colNum);
+        // Value only — skip all styling
+        newCell.value = srcCell.value;
+        newCell.alignment = { wrapText: true, vertical: "top" };
+        // Bold on the header row to keep column labels readable
+        if (rowNum === headerRowIdx) {
+          newCell.font = { bold: true };
+          newCell.alignment = { wrapText: true, vertical: "middle", horizontal: "center" };
+        }
+      });
+
+      // Inject iMocha's answer + coverage status
+      const a = answerMap.get(rowNum);
+      if (a) {
+        // Answer cell
+        const ansCell = newRow.getCell(aColNum);
+        ansCell.value = a.answer;
+        ansCell.alignment = { wrapText: true, vertical: "top" };
+
+        // Status cell — plain text, no fill
+        const stCell = newRow.getCell(sColNum);
+        stCell.value = CONFIDENCE_LABEL[a.confidence];
+        stCell.alignment = { horizontal: "center", vertical: "top" };
+      }
+    });
+
+    // Ensure header labels exist in answer/status columns
+    const hRow = newWs.getRow(headerRowIdx);
+    if (!String(hRow.getCell(aColNum).value ?? "").trim()) {
+      hRow.getCell(aColNum).value = "iMocha Response";
+      hRow.getCell(aColNum).font = { bold: true };
     }
-    if (!String(sHeaderCell.value ?? "").trim()) {
-      sHeaderCell.value = "Coverage";
+    if (!String(hRow.getCell(sColNum).value ?? "").trim()) {
+      hRow.getCell(sColNum).value = "Coverage";
+      hRow.getCell(sColNum).font = { bold: true };
     }
 
-    for (const a of answered) {
-      const wsRow = ws.getRow(a.row);
-      // Answer column — plain text, no color formatting
-      wsRow.getCell(aCol).value = a.answer;
-      wsRow.getCell(aCol).alignment = { wrapText: true, vertical: "top" };
-      // Status column — plain text only, no background fill or font colors
-      wsRow.getCell(sCol).value = CONFIDENCE_LABEL[a.confidence];
-      wsRow.getCell(sCol).alignment = { horizontal: "center", vertical: "top" };
-    }
-
-    ws.getColumn(aCol).width = 60;
-    ws.getColumn(sCol).width = 18;
-
-    // Make Excel open to the answered sheet
-    wb.views = [{ activeTab: selectedSheet, type: "normal" } as any];
-
-    const buf = await wb.xlsx.writeBuffer();
+    const buf = await newWb.xlsx.writeBuffer();
     const filename = `${file.name.replace(/\.xlsx$/i, "")} iMocha Responses.xlsx`;
     return { buf, filename };
   }
