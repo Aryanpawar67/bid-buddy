@@ -959,6 +959,8 @@ export const generateProposalFn = createServerFn({ method: "POST" })
 
     const docXml = await zip.file("word/document.xml")!.async("string");
     let editedDocXml = applySubstitutions(docXml, intake, config);
+    // Replace static pre-baked TOC entries with an auto-update field instruction
+    editedDocXml = replaceTocWithField(editedDocXml);
     // Inject "Table of Content" heading if the template doesn't have one (TA)
     if (config.injectTocHeading) {
       editedDocXml = injectTocHeading(editedDocXml);

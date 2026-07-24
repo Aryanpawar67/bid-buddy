@@ -774,14 +774,6 @@ export const generateQualResultFn = createServerFn({ method: "POST" })
           bSectionHeading(9, "Key Proposal Themes"),
           ...PROPOSAL_THEMES.map(bBullet),
 
-          // ── 10. Potential iMocha Strengths ─────────────────────────────────
-          bSectionHeading(10, "Potential iMocha Strengths"),
-          ...content.imochaStrengths.map(bBullet),
-
-          // ── 11. Key Risks / Clarifications Required ────────────────────────
-          bSectionHeading(11, "Key Risks / Clarifications Required"),
-          ...keyRisksList.map(bBullet),
-
         ],
       }],
     });

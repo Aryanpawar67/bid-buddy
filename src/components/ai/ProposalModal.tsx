@@ -46,7 +46,7 @@ export function ProposalModal({ open, onClose, bidId, sessionId, clientName, onG
     spoc_name: "",
     spoc_email: "",
   });
-  const [format, setFormat] = useState<"docx" | "pdf">("docx");
+  const format = "docx" as const;
   const [error, setError] = useState<string | null>(null);
 
   const readinessMutation = useCheckProposalReadiness();
@@ -348,26 +348,6 @@ export function ProposalModal({ open, onClose, bidId, sessionId, clientName, onG
                   />
                 </div>
 
-                <div className="flex flex-col gap-1">
-                  <label className="text-[10px] text-muted-foreground">Output Format</label>
-                  <div className="flex gap-2">
-                    {(["docx", "pdf"] as const).map((f) => (
-                      <button
-                        key={f}
-                        type="button"
-                        onClick={() => setFormat(f)}
-                        className={[
-                          "text-[11px] px-4 py-1.5 rounded-full border hairline font-medium transition-colors",
-                          format === f
-                            ? "bg-primary text-white border-primary"
-                            : "border-border text-muted-foreground hover:text-foreground hover:bg-background",
-                        ].join(" ")}
-                      >
-                        {f === "docx" ? "Word (.docx)" : "PDF (.pdf)"}
-                      </button>
-                    ))}
-                  </div>
-                </div>
 
                 {error && (
                   <span className="text-[11px] text-destructive">{error}</span>
@@ -450,7 +430,7 @@ export function ProposalModal({ open, onClose, bidId, sessionId, clientName, onG
                       Generating…
                     </>
                   ) : (
-                    `✦ Generate ${format === "pdf" ? "PDF" : "DOCX"}`
+                    "✦ Generate DOCX"
                   )}
                 </button>
               </>
