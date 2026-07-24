@@ -364,6 +364,9 @@ export function QuestionnaireResponder({ bidId }: { bidId: string }) {
     const { data: { session } } = await supabase.auth.getSession();
     const token = session?.access_token ?? "";
 
+    // Accumulate locally — avoids stale closure when calling saveToBidDocs
+    const localAnswers: AnswerRow[] = [];
+
     try {
       const resp = (await answerQuestionnaireFn({
         data: {
@@ -392,14 +395,16 @@ export function QuestionnaireResponder({ bidId }: { bidId: string }) {
             const r = JSON.parse(line);
             const q = questions.find((q) => q.row === r.row);
             if (q) {
-              setAnswered((prev) => [...prev, { ...r, text: q.text }]);
+              const row: AnswerRow = { ...r, text: q.text };
+              localAnswers.push(row);
+              setAnswered((prev) => [...prev, row]);
               setProgress((prev) => prev + 1);
             }
           } catch { /* skip malformed */ }
         }
       }
       setStep("done");
-      void saveToBidDocs();
+      void saveToBidDocs(localAnswers);
     } catch (e: any) {
       setParseError(e.message ?? "Answering failed.");
       setStep("preview");
@@ -424,12 +429,13 @@ export function QuestionnaireResponder({ bidId }: { bidId: string }) {
   // is touched — no style overrides, no column width changes, no header rewrites
   // unless the header cell was already empty.
 
-  async function buildResultBuffer(): Promise<{ buf: ArrayBuffer; filename: string } | null> {
-    if (!file || !answered.length) return null;
+  async function buildResultBuffer(finalAnswers?: AnswerRow[]): Promise<{ buf: ArrayBuffer; filename: string } | null> {
+    const answers = finalAnswers ?? answered;
+    if (!file || !answers.length) return null;
 
     const aColNum = colLetterToNum(answerCol);
     const sColNum = colLetterToNum(statusCol);
-    const answerMap = new Map(answered.map((a) => [a.row, a]));
+    const answerMap = new Map(answers.map((a) => [a.row, a]));
 
     // Fresh load of the original file — preserves all client-side formatting
     const originalBuf = await file.arrayBuffer();
@@ -484,34 +490,40 @@ export function QuestionnaireResponder({ bidId }: { bidId: string }) {
 
   // ── Save to bid documents ────────────────────────────────────────────────────
 
-  async function saveToBidDocs(): Promise<boolean> {
-    const result = await buildResultBuffer();
+  async function saveToBidDocs(finalAnswers?: AnswerRow[]): Promise<boolean> {
+    const result = await buildResultBuffer(finalAnswers);
     if (!result) return false;
     const { buf, filename } = result;
 
-    // Each questionnaire file gets its own storage path — multiple per bid supported
-    const storagePath = `${bidId}/questionnaire/${filename}`;
+    // Unique path per run — avoids needing an UPDATE storage policy
+    const runId = crypto.randomUUID().slice(0, 8);
+    const storagePath = `${bidId}/questionnaire/${runId}_${filename}`;
     const fileBlob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     const { error: storageErr } = await supabase.storage
       .from("bid-documents")
-      .upload(storagePath, fileBlob, { upsert: true });
+      .upload(storagePath, fileBlob, { upsert: false });
 
     if (storageErr) {
       toast.error("Failed to save questionnaire response.");
       return false;
     }
 
-    const { data: session } = await supabase.auth.getSession();
-    const { data: doc } = await (supabase as any).from("bid_documents").insert({
+    const { data: sessionData } = await supabase.auth.getSession();
+    const { data: doc, error: insertErr } = await (supabase as any).from("bid_documents").insert({
       bid_id: bidId,
       name: filename,
       type: "questionnaire",
       stage: "rfi",
       storage_path: storagePath,
       size_bytes: buf.byteLength,
-      uploaded_by: session?.session?.user?.id ?? user?.id,
+      uploaded_by: sessionData?.session?.user?.id ?? user?.id,
       source: "generated",
     }).select("id").single();
+
+    if (insertErr) {
+      toast.error("Failed to save questionnaire response.");
+      return false;
+    }
 
     if (doc?.id) setSavedDocId(doc.id);
     qc.invalidateQueries({ queryKey: ["documents"] });
@@ -564,39 +576,61 @@ export function QuestionnaireResponder({ bidId }: { bidId: string }) {
 
       <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
 
-        {/* ── Prior completed questionnaires ─────────────────────────────── */}
-        {priorDocs.length > 0 && (
-          <div className="max-w-2xl">
-            <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold mb-2">
-              Completed questionnaires
-            </p>
-            <div className="rounded-lg hairline border border-border overflow-hidden">
-              {priorDocs.map((doc, i) => (
-                <PriorDocRow key={doc.id} doc={doc} isLast={i === priorDocs.length - 1} />
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* ── Step 1: Upload ─────────────────────────────────────────────── */}
         {step === "upload" && (
-          <div className="max-w-lg space-y-4">
-            {/* Drop zone */}
-            <div
-              onClick={() => fileRef.current?.click()}
-              onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
-              onDragOver={(e) => e.preventDefault()}
-              className="border-2 border-dashed border-border rounded-xl p-10 flex flex-col items-center gap-3 cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-colors"
-            >
-              <FileSpreadsheet className="size-8 text-muted-foreground" />
-              <p className="text-[12px] text-muted-foreground text-center">
-                Drop your prospect's questionnaire XLSX here or click to browse
-              </p>
-              <p className="text-[10px] text-muted-foreground text-center">
-                Any format — AI will detect question and response columns automatically
-              </p>
-              <span className="text-[11px] text-primary font-medium">Choose file</span>
-            </div>
+          <div className="max-w-2xl space-y-5">
+            {/* ── Completed questionnaires (persists after tab switch) ──── */}
+            {priorDocs.length > 0 && (
+              <div>
+                <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold mb-2">
+                  Completed questionnaires
+                </p>
+                <div className="rounded-xl hairline border border-border overflow-hidden">
+                  {priorDocs.map((doc, i) => (
+                    <PriorDocRow key={doc.id} doc={doc} isLast={i === priorDocs.length - 1} />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ── Upload area ────────────────────────────────────────────── */}
+            {priorDocs.length === 0 ? (
+              /* Primary drop zone — no prior questionnaires */
+              <div className="max-w-lg space-y-4">
+                <div
+                  onClick={() => fileRef.current?.click()}
+                  onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
+                  onDragOver={(e) => e.preventDefault()}
+                  className="border-2 border-dashed border-border rounded-xl p-10 flex flex-col items-center gap-3 cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-colors"
+                >
+                  <FileSpreadsheet className="size-8 text-muted-foreground" />
+                  <p className="text-[12px] text-muted-foreground text-center">
+                    Drop your prospect's questionnaire XLSX here or click to browse
+                  </p>
+                  <p className="text-[10px] text-muted-foreground text-center">
+                    Any format — AI will detect question and response columns automatically
+                  </p>
+                  <span className="text-[11px] text-primary font-medium">Choose file</span>
+                </div>
+              </div>
+            ) : (
+              /* Secondary "add another" row — prior questionnaires already shown above */
+              <div
+                onClick={() => fileRef.current?.click()}
+                onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
+                onDragOver={(e) => e.preventDefault()}
+                className="flex items-center gap-3 p-3.5 rounded-lg hairline border border-dashed border-border hover:border-primary/50 hover:bg-primary/5 cursor-pointer transition-colors"
+              >
+                <div className="size-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                  <Plus className="size-3.5 text-primary" />
+                </div>
+                <div>
+                  <p className="text-[12px] font-medium">Add another questionnaire</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">Upload a second XLSX for this bid — answers will be saved alongside this one</p>
+                </div>
+              </div>
+            )}
+
             <input ref={fileRef} type="file" accept=".xlsx" className="hidden"
               onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
 
@@ -992,20 +1026,12 @@ export function QuestionnaireResponder({ bidId }: { bidId: string }) {
                 >
                   <Download className="size-3.5" /> Download XLSX
                 </button>
-              </div>
-            </div>
-
-            {/* Process another questionnaire */}
-            <div
-              onClick={reset}
-              className="flex items-center gap-3 p-3 rounded-lg hairline border border-dashed border-border hover:border-primary/50 hover:bg-primary/5 cursor-pointer transition-colors"
-            >
-              <div className="size-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                <Plus className="size-3.5 text-primary" />
-              </div>
-              <div>
-                <p className="text-[12px] font-medium">Process another questionnaire</p>
-                <p className="text-[10px] text-muted-foreground mt-0.5">Upload a second XLSX for this bid — answers will be saved alongside this one</p>
+                <button
+                  onClick={reset}
+                  className="h-8 px-3 rounded-md hairline border border-border bg-card text-[11px] text-foreground font-medium inline-flex items-center gap-1.5 hover:bg-muted transition-colors"
+                >
+                  <Plus className="size-3" /> Add another
+                </button>
               </div>
             </div>
 
