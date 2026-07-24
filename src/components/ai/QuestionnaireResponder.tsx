@@ -1,8 +1,8 @@
 import { useRef, useState } from "react";
-import { Download, FileSpreadsheet, Loader2, CheckCircle2, AlertCircle, X, ChevronDown, Pencil, Sparkles, RotateCcw } from "lucide-react";
+import { Download, FileSpreadsheet, Loader2, CheckCircle2, AlertCircle, X, ChevronDown, Pencil, Sparkles, RotateCcw, Plus } from "lucide-react";
 import { useCurrentUser } from "@/lib/auth";
-import { useBids } from "@/lib/bid-queries";
 import { supabase } from "@/integrations/supabase/client";
+import { useDocuments, type BidDocument } from "@/lib/doc-queries";
 import { answerQuestionnaireFn } from "@/lib/api/answer-questionnaire";
 import { detectColumnsFn } from "@/lib/api/detect-questionnaire-columns";
 import ExcelJS from "exceljs";
@@ -179,14 +179,15 @@ function analyzeWorksheet(ws: ExcelJS.Worksheet): SheetAnalysis {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function QuestionnaireResponder() {
+export function QuestionnaireResponder({ bidId }: { bidId: string }) {
   const { user } = useCurrentUser();
-  const { data: bids = [] } = useBids();
   const qc = useQueryClient();
+
+  // Prior completed questionnaires for this bid
+  const { data: priorDocs = [] } = useDocuments({ bidId, type: "questionnaire" });
 
   const fileRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
-  const [bidId, setBidId] = useState<string>("__global");
   const [savedDocId, setSavedDocId] = useState<string | null>(null);
 
   // Multi-sheet
@@ -367,7 +368,7 @@ export function QuestionnaireResponder() {
       const resp = (await answerQuestionnaireFn({
         data: {
           questions,
-          bidId: bidId === "__global" ? null : bidId,
+          bidId,
           additionalContext: additionalContext.trim() || undefined,
         },
         headers: { authorization: `Bearer ${token}` },
@@ -398,10 +399,7 @@ export function QuestionnaireResponder() {
         }
       }
       setStep("done");
-      // Auto-save to bid documents when a bid is selected
-      if (bidId !== "__global") {
-        void saveToBidDocs();
-      }
+      void saveToBidDocs();
     } catch (e: any) {
       setParseError(e.message ?? "Answering failed.");
       setStep("preview");
@@ -486,40 +484,12 @@ export function QuestionnaireResponder() {
 
   // ── Save to bid documents ────────────────────────────────────────────────────
 
-  async function saveToBidDocs(force = false): Promise<boolean> {
-    if (bidId === "__global") return false;
+  async function saveToBidDocs(): Promise<boolean> {
     const result = await buildResultBuffer();
     if (!result) return false;
     const { buf, filename } = result;
 
-    // Check if a questionnaire response doc already exists for this bid
-    const { data: existing } = await (supabase as any)
-      .from("bid_documents")
-      .select("id, name, storage_path")
-      .eq("bid_id", bidId)
-      .eq("type", "questionnaire")
-      .eq("source", "generated")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (existing && !force) {
-      toast.warning(`Questionnaire response already exists: ${existing.name}`, {
-        description: "Replace it or keep the existing one.",
-        action: {
-          label: "Replace",
-          onClick: () => void saveToBidDocs(true),
-        },
-      });
-      return false;
-    }
-
-    // Delete old file from storage + DB if replacing
-    if (existing && force) {
-      await supabase.storage.from("bid-documents").remove([existing.storage_path]);
-      await (supabase as any).from("bid_documents").delete().eq("id", existing.id);
-    }
-
+    // Each questionnaire file gets its own storage path — multiple per bid supported
     const storagePath = `${bidId}/questionnaire/${filename}`;
     const fileBlob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     const { error: storageErr } = await supabase.storage
@@ -594,29 +564,23 @@ export function QuestionnaireResponder() {
 
       <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
 
+        {/* ── Prior completed questionnaires ─────────────────────────────── */}
+        {priorDocs.length > 0 && (
+          <div className="max-w-2xl">
+            <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold mb-2">
+              Completed questionnaires
+            </p>
+            <div className="rounded-lg hairline border border-border overflow-hidden">
+              {priorDocs.map((doc, i) => (
+                <PriorDocRow key={doc.id} doc={doc} isLast={i === priorDocs.length - 1} />
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* ── Step 1: Upload ─────────────────────────────────────────────── */}
         {step === "upload" && (
           <div className="max-w-lg space-y-4">
-            {/* Bid context */}
-            <div>
-              <label className="text-[11px] uppercase tracking-wider text-muted-foreground block mb-1.5">
-                Bid context (optional)
-              </label>
-              <div className="relative">
-                <select
-                  value={bidId}
-                  onChange={(e) => setBidId(e.target.value)}
-                  className="w-full h-8 rounded-md hairline border border-border bg-card px-2 pr-7 text-[12px] text-foreground appearance-none"
-                >
-                  <option value="__global">Global KB only (no bid docs)</option>
-                  {bids.map((b) => (
-                    <option key={b.id} value={b.id}>{b.client_name} — {b.title}</option>
-                  ))}
-                </select>
-                <ChevronDown className="size-3 text-muted-foreground absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
-              </div>
-            </div>
-
             {/* Drop zone */}
             <div
               onClick={() => fileRef.current?.click()}
@@ -1010,14 +974,10 @@ export function QuestionnaireResponder() {
                   {answered.filter((a) => a.confidence === "medium").length} partial ·{" "}
                   {answered.filter((a) => a.confidence === "low").length} review required
                 </p>
-                {savedDocId && bidId !== "__global" && (
-                  <p className="text-[11px] text-emerald-600 mt-1 font-medium">
-                    ✓ Saved to bid documents — visible in the Questionnaire tab
-                  </p>
-                )}
-                {bidId !== "__global" && !savedDocId && (
-                  <p className="text-[11px] text-muted-foreground mt-1">Saving to bid documents…</p>
-                )}
+                {savedDocId
+                  ? <p className="text-[11px] text-emerald-600 mt-1 font-medium">✓ Saved to bid documents</p>
+                  : <p className="text-[11px] text-muted-foreground mt-1">Saving to bid documents…</p>
+                }
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <button
@@ -1032,6 +992,20 @@ export function QuestionnaireResponder() {
                 >
                   <Download className="size-3.5" /> Download XLSX
                 </button>
+              </div>
+            </div>
+
+            {/* Process another questionnaire */}
+            <div
+              onClick={reset}
+              className="flex items-center gap-3 p-3 rounded-lg hairline border border-dashed border-border hover:border-primary/50 hover:bg-primary/5 cursor-pointer transition-colors"
+            >
+              <div className="size-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                <Plus className="size-3.5 text-primary" />
+              </div>
+              <div>
+                <p className="text-[12px] font-medium">Process another questionnaire</p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">Upload a second XLSX for this bid — answers will be saved alongside this one</p>
               </div>
             </div>
 
@@ -1052,6 +1026,52 @@ export function QuestionnaireResponder() {
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
+
+function PriorDocRow({ doc, isLast }: { doc: BidDocument; isLast: boolean }) {
+  const [downloading, setDownloading] = useState(false);
+
+  async function download() {
+    setDownloading(true);
+    try {
+      const { data } = await supabase.storage
+        .from("bid-documents")
+        .createSignedUrl(doc.storage_path, 120);
+      if (!data?.signedUrl) throw new Error("No signed URL");
+      const res = await fetch(data.signedUrl);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = doc.name;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      // silent — user can retry
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  const created = new Date(doc.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+
+  return (
+    <div className={`flex items-center gap-3 px-3 py-2.5 ${isLast ? "" : "border-b hairline border-border"}`}>
+      <FileSpreadsheet className="size-4 text-emerald-600 shrink-0" />
+      <div className="flex-1 min-w-0">
+        <p className="text-[12px] font-medium truncate">{doc.name}</p>
+        <p className="text-[10px] text-muted-foreground mt-0.5">{created}</p>
+      </div>
+      <button
+        onClick={download}
+        disabled={downloading}
+        className="h-7 px-2.5 rounded-md hairline border border-border bg-card text-[11px] text-foreground inline-flex items-center gap-1.5 hover:bg-muted transition-colors disabled:opacity-50"
+      >
+        {downloading ? <Loader2 className="size-3 animate-spin" /> : <Download className="size-3" />}
+        Download
+      </button>
+    </div>
+  );
+}
 
 function ColPicker({
   label, value, onChange, cols, accent, hint,

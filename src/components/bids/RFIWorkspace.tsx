@@ -323,7 +323,7 @@ export function RFIWorkspace({ bid, activeTab, onTabChange }: {
   if (activeTab === "autopilot") {
     return (
       <div className="flex-1 min-h-0 overflow-auto">
-        <QuestionnaireResponder />
+        <QuestionnaireResponder bidId={bid.id} />
       </div>
     );
   }
